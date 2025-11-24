@@ -1,10 +1,10 @@
 import { Request, Response, NextFunction } from "express";
+import { getReasonPhrase, StatusCodes } from "http-status-codes";
 
 export class AppError extends Error {
   constructor(
     public statusCode: number,
     public message: string,
-    public isOperational: boolean
   ) {
     super(message);
     Object.setPrototypeOf(this, AppError.prototype);
@@ -17,8 +17,8 @@ export const errorHandler = (
   res: Response,
   next: NextFunction
 ) => {
-  let statusCode = 500;
-  let message = "Internal Server Error";
+  let statusCode = StatusCodes.INTERNAL_SERVER_ERROR;
+  let message = getReasonPhrase(StatusCodes.INTERNAL_SERVER_ERROR);
 
   if (err instanceof AppError) {
     statusCode = err.statusCode;
@@ -27,9 +27,11 @@ export const errorHandler = (
 
   console.error("Error: ", err);
   res.status(statusCode).json({
-    success: "false",
+    success: false,
     message,
-    error: err.message,
-    ...(process.env.NODE_ENV === "development" && { stack: err.stack }),
+    error: {
+      message: err.message,
+      ...(process.env.NODE_ENV === "development" && { stack: err.stack }),
+    },
   });
 };

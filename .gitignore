@@ -35,4 +35,10 @@ backend/src/uploads/*
 
 # Test coverage
 coverage/
+shadcn-docs/
 design-document.md
+.claude/
+.spec-workflow/
+.playwright-mcp/
+self-docs/
+google-drive-prev/
