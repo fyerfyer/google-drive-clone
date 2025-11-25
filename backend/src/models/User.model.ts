@@ -8,7 +8,7 @@ export interface IUserMethod {
 export interface IAvatar {
   publicId: string;
   thumbnailId: string;
-  url: string;
+  url: string; // TODO: 这个东西要不要删掉？貌似没有用
   thumbnail: string;
   createdAt: Date;
 }
@@ -35,6 +35,7 @@ const userSchema = new Schema<IUser>(
       lowercase: true,
       trim: true,
       match: [/^\S+@\S+\.\S+$/, "Please provide a valid email"],
+      index: true,
     },
 
     password: {
@@ -95,6 +96,8 @@ const userSchema = new Schema<IUser>(
     },
   }
 );
+
+userSchema.set("autoIndex", false);
 
 // userSchema.index({ email: 1 });
 

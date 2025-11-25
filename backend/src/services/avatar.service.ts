@@ -5,6 +5,7 @@ import sharp from "sharp";
 import { config } from "../config/env";
 import { StatusCodes } from "http-status-codes";
 import { AppError } from "../middlewares/errorHandler";
+import UserModel from "../models/User.model";
 
 interface AvatarResponse {
   publicId: string;
@@ -33,11 +34,25 @@ const MAX_AVATAR_BYTES = 5 * 1024 * 1024;
 
 export class AvatarService {
   async uploadAvatar(data: AvatarDTO): Promise<AvatarResponse> {
-    return this.processUpload({
+    const user = await UserModel.findById(data.userId);
+    const oldAvatarId = user?.avatar?.publicId;
+    const oldThumbnailId = user?.avatar?.thumbnailId;
+
+    const response = await this.processUpload({
       userId: data.userId,
       buffer: data.avatarFile.buffer,
       originalName: data.avatarFile.originalname,
     });
+
+    if (oldAvatarId) {
+      await minioClient.removeObject("avatar", oldAvatarId);
+    }
+
+    if (oldThumbnailId) {
+      await minioClient.removeObject("avatar", oldThumbnailId);
+    }
+
+    return response;
   }
 
   async uploadAvatarFromDataUrl(
