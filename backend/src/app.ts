@@ -6,15 +6,19 @@ import { config } from "./config/env";
 import { notFound } from "./middlewares/notFound";
 import { errorHandler } from "./middlewares/errorHandler";
 import { createAuthRouter } from "./routes/auth.route.js";
+import { createUserRouter } from "./routes/user.route.js";
+import { createFileRouter } from "./routes/file.route.js";
 import { AvatarService } from "./services/avatar.service";
 import { UserService } from "./services/user.service";
 import { AuthService } from "./services/auth.service";
 import { AuthController } from "./controllers/auth.controller";
+import { UserController } from "./controllers/user.controller";
 
 const avatarService = new AvatarService();
 const userService = new UserService(avatarService);
 const authService = new AuthService(userService);
-const authController = new AuthController(authService, userService);
+const authController = new AuthController(authService);
+const userController = new UserController(userService);
 
 const app: Application = express();
 const bodyLimit = "10mb";
@@ -50,6 +54,8 @@ app.get("/api", (req, res) => {
 });
 
 app.use("/api/auth", createAuthRouter(authController));
+app.use("/api/users", createUserRouter(userController));
+app.use("/api/files", createFileRouter());
 
 app.use(notFound);
 app.use(errorHandler);

@@ -4,7 +4,7 @@ import { getReasonPhrase, StatusCodes } from "http-status-codes";
 export class AppError extends Error {
   constructor(
     public statusCode: number,
-    public message: string,
+    public message: string
   ) {
     super(message);
     Object.setPrototypeOf(this, AppError.prototype);

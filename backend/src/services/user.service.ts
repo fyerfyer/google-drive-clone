@@ -1,5 +1,4 @@
 import { getReasonPhrase, StatusCodes } from "http-status-codes";
-import type { Express } from "express";
 import { AppError } from "../middlewares/errorHandler";
 import User, { IUser } from "../models/User.model";
 import { AvatarService } from "./avatar.service";

@@ -99,7 +99,7 @@ const folderSchema = new Schema<IFolder>(
   }
 );
 
-// 唯一性约束，同时注意回收站可能违反
+// 唯一性约束，注意回收站不满足
 folderSchema.index(
   { user: 1, parent: 1, name: 1 },
   { unique: true, partialFilterExpression: { isTrashed: false } }

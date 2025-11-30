@@ -5,7 +5,7 @@ import {
   registerValidator,
   updateValidator,
 } from "../middlewares/validator.js";
-import upload from "../middlewares/upload.js";
+import { avatarUpload } from "../middlewares/upload.js";
 import { AuthController } from "../controllers/auth.controller.js";
 
 // using shared `upload` middleware from `middlewares/upload.ts`
@@ -27,9 +27,10 @@ import { AuthController } from "../controllers/auth.controller.js";
 
 export function createAuthRouter(authController: AuthController) {
   const authRouter = Router();
+
   authRouter.post(
     "/register",
-    upload.single("avatar"),
+    avatarUpload.single("avatar"),
     registerValidator,
     authController.register.bind(authController)
   );
@@ -41,15 +42,6 @@ export function createAuthRouter(authController: AuthController) {
 
   authRouter.use(jwtAuth);
   authRouter.post("/logout", authController.logout.bind(authController));
-  authRouter.get(
-    "/profile",
-    authController.getCurrentUser.bind(authController)
-  );
-  authRouter.patch(
-    "/update",
-    upload.single("avatar"),
-    updateValidator,
-    authController.updateUser.bind(authController)
-  );
+
   return authRouter;
 }

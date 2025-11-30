@@ -12,7 +12,7 @@ type UpdatePayload = Omit<UpdateRequest, "avatarDataUrl"> & {
 export const userService = {
   getCurrentUser: async (): Promise<User> => {
     try {
-      const response = await api.get<User>("/api/auth/profile");
+      const response = await api.get<User>("/api/users/profile");
       if (response.success && response.data) {
         return response.data;
       }
@@ -33,7 +33,7 @@ export const userService = {
         : rest;
 
       const response = await api.patch<User, UpdatePayload>(
-        "/api/auth/update",
+        "/api/users/profile",
         payload
       );
       if (response.success && response.data) {
