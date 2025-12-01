@@ -2,7 +2,7 @@ import { Request, Response, NextFunction } from "express";
 import { AppError } from "../middlewares/errorHandler";
 import { FileService } from "../services/file.service";
 import { StatusCodes } from "http-status-codes";
-import { IUser } from "../models/User.model";
+import User, { IUser } from "../models/User.model";
 
 export class FileController {
   constructor(private fileService: FileService) {}
@@ -16,14 +16,15 @@ export class FileController {
       throw new AppError(StatusCodes.UNAUTHORIZED, "User not authenticated");
     }
 
-    const user = req.user as IUser;
+    const { folderId, hash } = req.body;
     const file = await this.fileService.uploadFile({
-      userId: String(user._id),
-      folderId: req.body.folderId,
+      userId: req.user.id,
+      folderId,
       fileBuffer: req.file.buffer,
       fileSize: req.file.size,
       mimeType: req.file.mimetype,
       originalName: req.file.originalname,
+      hash,
     });
 
     res.status(StatusCodes.CREATED).json({

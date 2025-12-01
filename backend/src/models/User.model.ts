@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 
 export interface IUserMethod {
   comparePassword(inputPassword: string): Promise<boolean>;
+  checkStorageQuota(fileSize: number): boolean;
 }
 
 export interface IAvatar {
@@ -79,7 +80,7 @@ const userSchema = new Schema<IUser>(
 
     storageQuota: {
       type: Number,
-      default: 5 * 1024 * 1024, // 5MB
+      default: 5 * 1024 * 1024 * 1024, // 5GB
       min: 0,
     },
   },
@@ -115,6 +116,10 @@ userSchema.methods.comparePassword = async function (
   inputPassword: string
 ): Promise<boolean> {
   return await bcrypt.compare(inputPassword, this.password);
+};
+
+userSchema.methods.checkStorageQuota = function (fileSize: number): boolean {
+  return this.storageUsage + fileSize <= this.storageQuota;
 };
 
 const User = mongoose.model<IUser, UserModel>("User", userSchema);

@@ -9,6 +9,7 @@ interface EnvConfig {
   jwtSecret: string;
   jwtExpire: string;
   corsOrigin: string;
+  trashRetentionDays: number;
   MINIO_ENDPOINT: string;
   MINIO_PORT: number;
   MINIO_USE_SSL: boolean;
@@ -24,6 +25,7 @@ export const config: EnvConfig = {
   jwtSecret: process.env.JWT_SECRET!,
   jwtExpire: process.env.JWT_EXPIRE || "7d",
   corsOrigin: process.env.CORS_ORIGIN || "http://localhost:5173",
+  trashRetentionDays: parseInt(process.env.TRASH_RETENTION_DAYS || "30", 10),
   MINIO_ENDPOINT: process.env.MINIO_ENDPOINT || "localhost",
   MINIO_PORT: parseInt(process.env.MINIO_PORT || "9000", 10),
   MINIO_USE_SSL: process.env.MINIO_USE_SSL === "true",

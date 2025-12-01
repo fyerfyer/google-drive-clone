@@ -66,6 +66,7 @@ const fileSchema = new Schema<IFile>(
 
     isStarred: { type: Boolean, required: true, index: true },
     isTrashed: { type: Boolean, required: true, index: true },
+    trashedAt: { type: Date, default: null },
 
     isPublic: { type: Boolean, default: false },
     sharedWith: [
@@ -101,6 +102,10 @@ fileSchema.index({ user: 1, folder: 1, isTrashed: 1 });
 
 // 类型筛选
 fileSchema.index({ user: 1, mimeType: 1 });
+
+// 快传索引
+fileSchema.index({ hash: 1 });
+
 fileSchema.set("autoIndex", false);
 
 const File = mongoose.model<IFile>("File", fileSchema);

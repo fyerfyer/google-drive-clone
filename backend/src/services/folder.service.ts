@@ -1,8 +1,10 @@
 import mongoose from "mongoose";
 import Folder, { IFolder } from "../models/Folder.model";
-import File from "../models/File.model";
+import File, { IFile } from "../models/File.model";
+import User from "../models/User.model";
 import { AppError } from "../middlewares/errorHandler";
 import { StatusCodes } from "http-status-codes";
+import { minioClient } from "../config/minio";
 
 interface CreateFolderDTO {
   userId: string;
@@ -58,7 +60,7 @@ export class FolderService {
       // 标记自己的 isTrashed
       await Folder.updateOne(
         { _id: folderObjectId, user: userObjectId },
-        { isTrashed: true },
+        { isTrashed: true, trashedAt: new Date() },
         { session }
       );
 
@@ -72,15 +74,187 @@ export class FolderService {
 
       await Folder.updateMany(
         { _id: { $in: allFoldersIds } },
-        { isTrashed: true },
+        { isTrashed: true, trashedAt: new Date() },
         { session }
       );
+
+      // 标记文件夹内的所有文件
+      await File.updateMany(
+        {
+          folder: { $in: [folderObjectId, ...allFoldersIds] },
+          user: userObjectId,
+        },
+        { isTrashed: true, trashedAt: new Date() },
+        { session }
+      );
+
       await session.commitTransaction();
     } catch (error) {
       console.error("Error removing folder:", error);
       await session.abortTransaction();
+      throw new AppError(
+        StatusCodes.INTERNAL_SERVER_ERROR,
+        "Failed to trash folder"
+      );
     } finally {
       session.endSession();
+    }
+  }
+
+  async restoreFolder(folderId: string, userId: string) {
+    const folderObjectId = new mongoose.Types.ObjectId(folderId);
+    const userObjectId = new mongoose.Types.ObjectId(userId);
+    const session = await mongoose.startSession();
+    session.startTransaction();
+    try {
+      // 标记自己的 isTrashed
+      await Folder.updateOne(
+        { _id: folderObjectId, user: userObjectId },
+        { isTrashed: false, trashedAt: null },
+        { session }
+      );
+
+      // 标记子文件夹
+      const allFoldersIds = await Folder.find({
+        ancestors: { $in: folderObjectId },
+        user: userObjectId,
+      })
+        .distinct("_id")
+        .session(session);
+
+      await Folder.updateMany(
+        { _id: { $in: allFoldersIds } },
+        { isTrashed: false, trashedAt: null },
+        { session }
+      );
+
+      // 恢复文件夹内的所有文件
+      await File.updateMany(
+        {
+          folder: { $in: [folderObjectId, ...allFoldersIds] },
+          user: userObjectId,
+        },
+        { isTrashed: false, trashedAt: null },
+        { session }
+      );
+
+      await session.commitTransaction();
+    } catch (error) {
+      console.error("Error restoring folder:", error);
+      await session.abortTransaction();
+      throw new AppError(
+        StatusCodes.INTERNAL_SERVER_ERROR,
+        "Failed to restore folder"
+      );
+    } finally {
+      session.endSession();
+    }
+  }
+
+  async deleteFolderPermanent(folderId: string, userId: string) {
+    const folderObjectId = new mongoose.Types.ObjectId(folderId);
+    const userObjectId = new mongoose.Types.ObjectId(userId);
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
+    let filesToDelete: IFile[] = [];
+
+    try {
+      const folderToDelete = await Folder.findOne({
+        _id: folderId,
+        user: userObjectId,
+        isTrashed: true,
+      });
+
+      if (!folderToDelete) {
+        throw new AppError(
+          StatusCodes.NOT_FOUND,
+          "Folder not found or not trashed"
+        );
+      }
+
+      // 找到所有子文件夹和文件
+      const folderIdsToDelete = await Folder.find({
+        $or: [{ _id: folderObjectId }, { ancestors: folderObjectId }],
+        user: userObjectId,
+        isTrashed: true,
+      })
+        .distinct("_id")
+        .session(session);
+
+      // 查找所有需要删除的文件
+      filesToDelete = await File.find({
+        folder: { $in: folderIdsToDelete },
+        user: userObjectId,
+        isTrashed: true,
+      })
+        .select("+key +hash size")
+        .session(session);
+
+      const fileIdsToDelete = filesToDelete.map((f) => f._id);
+      const totalFileSize = filesToDelete.reduce((sum, f) => sum + f.size, 0);
+
+      await File.deleteMany(
+        {
+          _id: { $in: fileIdsToDelete },
+          user: userObjectId,
+        },
+        { session }
+      );
+
+      await Folder.deleteMany(
+        {
+          _id: { $in: folderIdsToDelete },
+          user: userObjectId,
+        },
+        { session }
+      );
+
+      // 更新用户存储使用量
+      if (totalFileSize > 0) {
+        await User.updateOne(
+          { _id: userId },
+          { $inc: { storageUsage: -totalFileSize } },
+          { session }
+        );
+      }
+
+      await session.commitTransaction();
+    } catch (error) {
+      console.error("Error deleting folder permanently:", error);
+      await session.abortTransaction();
+      throw new AppError(
+        StatusCodes.INTERNAL_SERVER_ERROR,
+        "Failed to delete folder permanently"
+      );
+    } finally {
+      session.endSession();
+    }
+
+    // 在事务提交后从 MinIO 删除所有文件对象
+    // 不然无法获取最新引用计数
+    if (filesToDelete.length > 0) {
+      await Promise.all(
+        filesToDelete.map((file) =>
+          this.cleanupMinioObject(file.key, file.hash)
+        )
+      );
+    }
+  }
+
+  private async cleanupMinioObject(key: string, hash?: string) {
+    // 如果有hash，按hash查询；否则按key查询
+    const query = hash ? { hash: hash } : { key: key };
+    const count = await File.countDocuments(query);
+    if (count === 0) {
+      console.log(
+        `No references left for key ${key} (hash: ${hash}), deleting from MinIO...`
+      );
+      await minioClient.removeObject("file", key).catch(console.error);
+    } else {
+      console.log(
+        `Key ${key} is still referenced by ${count} files. Keeping it.`
+      );
     }
   }
 
@@ -96,6 +270,7 @@ export class FolderService {
       const folderToMove = await Folder.findOne({
         _id: folderId,
         user: userObjectId,
+        isTrashed: false,
       });
 
       if (!folderToMove) {
@@ -105,15 +280,24 @@ export class FolderService {
       const destinationFolder = await Folder.findOne({
         _id: destinationId,
         user: userObjectId,
+        isTrashed: false,
       });
 
       if (!destinationFolder) {
         throw new AppError(StatusCodes.NOT_FOUND, "Folder not found");
       }
 
-      // 循环引用检查：不能把自己移到自己的文件夹
+      // 检查是否移动到自己
+      if (folderObjectId.equals(destinationObjectId)) {
+        throw new AppError(
+          StatusCodes.BAD_REQUEST,
+          "Cannot move folder to itself"
+        );
+      }
+
+      // 循环引用检查：不能把自己移到自己的子文件夹
       const isCircular = destinationFolder.ancestors.some((_id) =>
-        _id.equals(folderId)
+        _id.equals(folderObjectId)
       );
       if (isCircular) {
         throw new AppError(
@@ -164,6 +348,10 @@ export class FolderService {
     } catch (error) {
       console.error("Error moving folder:", error);
       await session.abortTransaction();
+      throw new AppError(
+        StatusCodes.INTERNAL_SERVER_ERROR,
+        "Failed to move folder"
+      );
     } finally {
       session.endSession();
     }
