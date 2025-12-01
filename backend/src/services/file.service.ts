@@ -25,12 +25,18 @@ export class FileService {
     const { userId, folderId, fileBuffer, fileSize, mimeType, originalName } =
       data;
 
-    const folderExists = await Folder.exists({ _id: folderId });
+    const userObjectId = new mongoose.Types.ObjectId(userId);
+    const folderObjectId = new mongoose.Types.ObjectId(folderId);
+
+    const folderExists = await Folder.exists({ _id: folderObjectId });
     if (!folderExists) {
       throw new AppError(StatusCodes.NOT_FOUND, "Folder not found");
     }
 
-    const folder = await Folder.findOne({ _id: folderId, user: userId });
+    const folder = await Folder.findOne({
+      _id: folderObjectId,
+      user: userObjectId,
+    });
     if (!folder) {
       throw new AppError(StatusCodes.FORBIDDEN, "Access denied to folder");
     }
@@ -49,8 +55,8 @@ export class FileService {
         mimeType: mimeType,
         size: fileSize,
         key: objectKey,
-        user: userId,
-        folder: folderId,
+        user: userObjectId,
+        folder: folderObjectId,
         isStarred: false,
         isTrashed: false,
       });
@@ -74,9 +80,12 @@ export class FileService {
   }
 
   async getDownloadLink(data: DownloadLinkDTO) {
+    const fileObjectId = new mongoose.Types.ObjectId(data.fileId);
+    const userObjectId = new mongoose.Types.ObjectId(data.userId);
+
     const file = await File.findOne({
-      _id: data.fileId,
-      user: data.userId,
+      _id: fileObjectId,
+      user: userObjectId,
       isTrashed: false,
     }).select("+key mimeType originalName");
 

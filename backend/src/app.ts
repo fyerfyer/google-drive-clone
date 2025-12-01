@@ -13,12 +13,22 @@ import { UserService } from "./services/user.service";
 import { AuthService } from "./services/auth.service";
 import { AuthController } from "./controllers/auth.controller";
 import { UserController } from "./controllers/user.controller";
+import { FileService } from "./services/file.service";
+import { FileController } from "./controllers/file.controller";
+import { FolderService } from "./services/folder.service";
+import { FolderController } from "./controllers/folder.controller";
+import { createFolderRouter } from "./routes/folder.route";
 
 const avatarService = new AvatarService();
 const userService = new UserService(avatarService);
 const authService = new AuthService(userService);
 const authController = new AuthController(authService);
 const userController = new UserController(userService);
+
+const fileService = new FileService();
+const fileController = new FileController(fileService);
+const folderService = new FolderService();
+const folderController = new FolderController(folderService);
 
 const app: Application = express();
 const bodyLimit = "10mb";
@@ -55,7 +65,8 @@ app.get("/api", (req, res) => {
 
 app.use("/api/auth", createAuthRouter(authController));
 app.use("/api/users", createUserRouter(userController));
-app.use("/api/files", createFileRouter());
+app.use("/api/files", createFileRouter(fileController));
+app.use("/api/folders", createFolderRouter(folderController));
 
 app.use(notFound);
 app.use(errorHandler);
