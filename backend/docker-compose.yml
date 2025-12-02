@@ -1,5 +1,5 @@
 services:
-  # MongoDB
+  # MongoDB with Replica Set (required for transactions)
   mongo:
     image: mongo:7
     container_name: gdrive-mongo
@@ -7,30 +7,48 @@ services:
     ports:
       - "27017:27017"
     environment:
-      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
-      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME:-admin}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD:-password123}
+    command: |
+      bash -c '
+        openssl rand -base64 756 > /data/mongodb-keyfile
+        chmod 400 /data/mongodb-keyfile
+        chown 999:999 /data/mongodb-keyfile
+        exec docker-entrypoint.sh mongod --replSet rs0 --bind_ip_all --keyFile /data/mongodb-keyfile
+      '
     volumes:
       - mongo-data:/data/db
+      - ./scripts/mongo-init.sh:/docker-entrypoint-initdb.d/mongo-init.sh:ro
     networks:
       - gdrive-network
     healthcheck:
-      test: ["CMD", "mongo", "--quiet", "--eval", "db.adminCommand('ping')"]
-      interval: 10s
+      test: |
+        mongosh --quiet -u $${MONGO_INITDB_ROOT_USERNAME:-admin} -p $${MONGO_INITDB_ROOT_PASSWORD:-password123} --authenticationDatabase admin --eval "
+        try {
+          rs.status();
+        } catch (err) {
+          rs.initiate({
+            _id: 'rs0',
+            members: [{ _id: 0, host: 'localhost:27017' }]
+          });
+        }
+        "
+      interval: 5s
       timeout: 5s
       retries: 5
-      start_period: 10s
+      start_period: 15s
 
-  # MinIO
+  # MinIO Object Storage
   minio:
     image: minio/minio:latest
     container_name: gdrive-minio
     restart: unless-stopped
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "9000:9000"   # API port
+      - "9001:9001"   # Console port
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin123}
     volumes:
       - minio-data:/data
     command: server /data --console-address ":9001"

@@ -1,0 +1,46 @@
+services:
+  mongo-test:
+    image: mongo:7
+    container_name: gdrive-mongo-test
+    ports:
+      - "27018:27017"  # 改端口避免冲突
+    command: ["--replSet", "rs0", "--bind_ip_all"]
+    tmpfs:
+      - /data/db  # 用内存存储，测试后自动清空
+    networks:
+      - gdrive-test-network
+    healthcheck:
+      test: |
+        mongosh --quiet --eval "
+        try {
+          rs.status();
+        } catch (err) {
+          rs.initiate({
+            _id: 'rs0',
+            members: [{ _id: 0, host: 'localhost:27017' }]
+          });
+        }
+        "
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  minio-test:
+    image: minio/minio:latest
+    container_name: gdrive-minio-test
+    ports:
+      - "9012:9000"  # 改端口避免冲突
+      - "9013:9001"
+    environment:
+      MINIO_ROOT_USER: testminio
+      MINIO_ROOT_PASSWORD: testminio123
+    tmpfs:
+      - /data  # 用内存存储，测试后自动清空
+    command: server /data --console-address ":9001"
+    networks:
+      - gdrive-test-network
+
+networks:
+  gdrive-test-network:
+    driver: bridge

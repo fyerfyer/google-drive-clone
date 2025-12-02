@@ -1,10 +1,10 @@
 import express, { type Application } from "express";
 import cors from "cors";
 import helmet from "helmet";
-import morgan from "morgan";
 import { config } from "./config/env";
 import { notFound } from "./middlewares/notFound";
 import { errorHandler } from "./middlewares/errorHandler";
+import { requestLogger } from "./middlewares/requestLogger";
 import { createAuthRouter } from "./routes/auth.route.js";
 import { createUserRouter } from "./routes/user.route.js";
 import { createFileRouter } from "./routes/file.route.js";
@@ -39,9 +39,7 @@ app.use(
   })
 );
 app.use(helmet());
-if (config.nodeEnv === "development") {
-  app.use(morgan("dev"));
-}
+app.use(requestLogger);
 
 app.use(express.json({ limit: bodyLimit }));
 app.use(express.urlencoded({ extended: true, limit: bodyLimit }));

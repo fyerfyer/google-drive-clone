@@ -5,6 +5,7 @@ import User from "../models/User.model";
 import { AppError } from "../middlewares/errorHandler";
 import { StatusCodes } from "http-status-codes";
 import { minioClient } from "../config/minio";
+import { logger } from "../lib/logger";
 
 interface CreateFolderDTO {
   userId: string;
@@ -90,7 +91,7 @@ export class FolderService {
 
       await session.commitTransaction();
     } catch (error) {
-      console.error("Error removing folder:", error);
+      logger.error({ err: error, folderId, userId }, "Failed to trash folder");
       await session.abortTransaction();
       throw new AppError(
         StatusCodes.INTERNAL_SERVER_ERROR,
@@ -140,7 +141,10 @@ export class FolderService {
 
       await session.commitTransaction();
     } catch (error) {
-      console.error("Error restoring folder:", error);
+      logger.error(
+        { err: error, folderId, userId },
+        "Failed to restore folder"
+      );
       await session.abortTransaction();
       throw new AppError(
         StatusCodes.INTERNAL_SERVER_ERROR,
@@ -221,7 +225,10 @@ export class FolderService {
 
       await session.commitTransaction();
     } catch (error) {
-      console.error("Error deleting folder permanently:", error);
+      logger.error(
+        { err: error, folderId, userId },
+        "Failed to delete folder permanently"
+      );
       await session.abortTransaction();
       throw new AppError(
         StatusCodes.INTERNAL_SERVER_ERROR,
@@ -247,13 +254,17 @@ export class FolderService {
     const query = hash ? { hash: hash } : { key: key };
     const count = await File.countDocuments(query);
     if (count === 0) {
-      console.log(
-        `No references left for key ${key} (hash: ${hash}), deleting from MinIO...`
+      logger.info(
+        { key, hash },
+        "No file references remaining, deleting object from MinIO"
       );
-      await minioClient.removeObject("file", key).catch(console.error);
+      await minioClient.removeObject("file", key).catch((err) => {
+        logger.error({ err, key }, "Failed to delete object from MinIO");
+      });
     } else {
-      console.log(
-        `Key ${key} is still referenced by ${count} files. Keeping it.`
+      logger.debug(
+        { key, hash, referenceCount: count },
+        "Object still has file references, keeping in MinIO"
       );
     }
   }
@@ -313,9 +324,17 @@ export class FolderService {
 
       // 更新自己
       await Folder.updateOne(
-        { _id: folderObjectId, user: userObjectId },
-        { ancestors: newAncestors },
+        {
+          _id: folderObjectId,
+          user: userObjectId,
+        },
+        { parent: destinationObjectId, ancestors: newAncestors },
         { session }
+      );
+
+      logger.debug(
+        { folderId, destinationId, newAncestors },
+        "Folder ancestors updated"
       );
 
       // 更新所有子目录
@@ -346,7 +365,15 @@ export class FolderService {
 
       await session.commitTransaction();
     } catch (error) {
-      console.error("Error moving folder:", error);
+      logger.error(
+        {
+          err: error,
+          folderId: data.folderId,
+          destinationId: data.destinationId,
+          userId: data.userId,
+        },
+        "Failed to move folder"
+      );
       await session.abortTransaction();
       throw new AppError(
         StatusCodes.INTERNAL_SERVER_ERROR,
@@ -355,6 +382,18 @@ export class FolderService {
     } finally {
       session.endSession();
     }
+  }
+
+  async renameFolder(folderId: string, userId: string, newName: string) {
+    const userObjectId = new mongoose.Types.ObjectId(userId);
+    const folder = await Folder.findOne({ _id: folderId, user: userObjectId });
+    if (!folder) {
+      throw new AppError(StatusCodes.NOT_FOUND, "Folder not found");
+    }
+
+    folder.name = newName;
+    await folder.save();
+    logger.info({ folderId, newName }, "Folder renamed successfully");
   }
 
   async getFolderContent(folderId: string, userId: string) {
@@ -417,5 +456,23 @@ export class FolderService {
       folders,
       files,
     };
+  }
+
+  async starFolder(folderId: string, userId: string, star: boolean = true) {
+    const userObjectId = new mongoose.Types.ObjectId(userId);
+    const folderObjectId = new mongoose.Types.ObjectId(folderId);
+
+    const folder = await Folder.findOne({
+      _id: folderObjectId,
+      user: userObjectId,
+    });
+
+    if (!folder) {
+      throw new AppError(StatusCodes.NOT_FOUND, "Folder not found");
+    }
+
+    folder.isStarred = star;
+    await folder.save();
+    logger.info({ folderId, userId, star }, "Folder star status updated");
   }
 }

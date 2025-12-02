@@ -2,7 +2,8 @@ import { config } from "../config/env";
 import { v4 as uuidv4 } from "uuid";
 import { minioClient } from "../config/minio";
 import { Readable } from "stream";
-import mime from "mime";
+import mimeTypes from "mime-types";
+import { logger } from "../lib/logger";
 
 const replaceHostInUrl = (originalUrl: string): string => {
   try {
@@ -14,7 +15,10 @@ const replaceHostInUrl = (originalUrl: string): string => {
     urlObj.host = publicUrl.host;
     return urlObj.toString();
   } catch (error) {
-    console.error("URL Replacement Error:", error);
+    logger.error(
+      { err: error, originalUrl },
+      "Failed to replace host in MinIO URL"
+    );
     return originalUrl;
   }
 };
@@ -25,7 +29,7 @@ export const uploadObject = async (
   size: number,
   mimeType: string
 ): Promise<string> => {
-  const extension = mime.extension(mimeType) || "bin";
+  const extension = mimeTypes.extension(mimeType) || "bin";
   const objectKey = `${uuidv4()}.${extension}`;
   const metaData = { "Content-Type": mimeType };
   await minioClient.putObject(bucketName, objectKey, buffer, size, metaData);
