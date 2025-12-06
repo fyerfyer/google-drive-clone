@@ -9,7 +9,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { AvatarUploader } from "@/components/avatar/AvatarUploader";
-import { updateSchema } from "@/types/user.types";
+import { updateUserSchema } from "@/types/user.types";
 import { userService } from "@/services/user.service";
 import { useAuth } from "@/hooks/auth/useAuth";
 import { ValidateAlert } from "@/components/auth/FormStatusAlert";
@@ -55,7 +55,7 @@ export const ProfilePanel = () => {
     event.preventDefault();
     setStatus(null);
 
-    const result = updateSchema.safeParse({
+    const result = updateUserSchema.safeParse({
       name,
       avatarDataUrl,
     });

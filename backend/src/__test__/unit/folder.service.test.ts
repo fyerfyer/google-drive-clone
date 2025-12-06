@@ -1,6 +1,6 @@
-import { IFile } from "../../models/File.model";
 import Folder, { IFolder } from "../../models/Folder.model";
-import File from "../../models/File.model";
+import { IFilePublic } from "../../services/file.service";
+import File, { IFile } from "../../models/File.model";
 import User, { IUser } from "../../models/User.model";
 import { FileService } from "../../services/file.service";
 import { FolderService } from "../../services/folder.service";
@@ -12,9 +12,9 @@ describe("Test file service", () => {
   let mockUser: IUser;
   let parentFolder: IFolder;
   let sharedHash: string;
-  let file1: IFile;
-  let file2: IFile;
-  let file3: IFile;
+  let file1: IFilePublic;
+  let file2: IFilePublic;
+  let file3: IFilePublic;
 
   beforeEach(async () => {
     folderService = new FolderService();
@@ -76,21 +76,29 @@ describe("Test file service", () => {
       parentId: String(parentFolder._id),
       name: "Folder1",
     });
+    const folder1Doc = await Folder.findById(folder1.id);
 
     const folder2 = await folderService.createFolder({
       userId: String(mockUser._id),
-      parentId: String(folder1._id),
+      parentId: String(folder1.id),
       name: "Folder2",
     });
+    const folder2Doc = await Folder.findById(folder2.id);
 
-    expect(folder1.parent?.toString()).toBe(parentFolder._id.toString());
-    expect(folder1.ancestors).toHaveLength(1);
-    expect(folder1.ancestors[0].toString()).toBe(parentFolder._id.toString());
+    expect(folder1Doc?.parent?.toString()).toBe(parentFolder._id.toString());
+    expect(folder1Doc?.ancestors).toHaveLength(1);
+    expect(folder1Doc?.ancestors[0].toString()).toBe(
+      parentFolder._id.toString()
+    );
 
-    expect(folder2.parent?.toString()).toBe(folder1._id.toString());
-    expect(folder2.ancestors).toHaveLength(2);
-    expect(folder2.ancestors[0].toString()).toBe(parentFolder._id.toString());
-    expect(folder2.ancestors[1].toString()).toBe(folder1._id.toString());
+    expect(folder2Doc?.parent?.toString()).toBe(folder1Doc?._id.toString());
+    expect(folder2Doc?.ancestors).toHaveLength(2);
+    expect(folder2Doc?.ancestors[0].toString()).toBe(
+      parentFolder._id.toString()
+    );
+    expect(folder2Doc?.ancestors[1].toString()).toBe(
+      folder1Doc?._id.toString()
+    );
   });
 
   it("delete folder with contents", async () => {
@@ -99,13 +107,14 @@ describe("Test file service", () => {
       parentId: String(parentFolder._id),
       name: "Folder1",
     });
+    const folder1Doc = await Folder.findById(folder1.id);
 
     const mockContent = "test content";
     const mockBuffer = Buffer.from(mockContent);
 
     await fileService.uploadFile({
       userId: String(mockUser._id),
-      folderId: String(folder1._id),
+      folderId: String(folder1.id),
       fileBuffer: mockBuffer,
       fileSize: mockBuffer.length,
       mimeType: "text/plain",
@@ -138,13 +147,14 @@ describe("Test file service", () => {
       parentId: String(parentFolder._id),
       name: "Folder1",
     });
+    const folder1Doc = await Folder.findById(folder1.id);
 
     const mockContent = "test content";
     const mockBuffer = Buffer.from(mockContent);
 
     await fileService.uploadFile({
       userId: String(mockUser._id),
-      folderId: String(folder1._id),
+      folderId: String(folder1.id),
       fileBuffer: mockBuffer,
       fileSize: mockBuffer.length,
       mimeType: "text/plain",
@@ -152,9 +162,9 @@ describe("Test file service", () => {
       hash: sharedHash,
     });
 
-    await folderService.trashFolder(String(folder1._id), String(mockUser._id));
+    await folderService.trashFolder(String(folder1.id), String(mockUser._id));
     await folderService.deleteFolderPermanent(
-      String(folder1._id),
+      String(folder1.id),
       String(mockUser._id)
     );
 
@@ -176,9 +186,10 @@ describe("Test file service", () => {
 
     const folder2 = await folderService.createFolder({
       userId: String(mockUser._id),
-      parentId: String(folder1._id),
+      parentId: String(folder1.id),
       name: "Folder2",
     });
+    const folder2Doc = await Folder.findById(folder2.id);
 
     await folderService.trashFolder(
       String(parentFolder._id),
@@ -189,8 +200,8 @@ describe("Test file service", () => {
       String(mockUser._id)
     );
 
-    const folder1InDb = await Folder.findById(String(folder1._id));
-    const folder2InDb = await Folder.findById(String(folder2._id));
+    const folder1InDb = await Folder.findById(String(folder1.id));
+    const folder2InDb = await Folder.findById(String(folder2.id));
     expect(folder1InDb).toBeNull();
     expect(folder2InDb).toBeNull();
 

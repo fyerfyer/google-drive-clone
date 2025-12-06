@@ -1,13 +1,12 @@
 import { StatusCodes } from "http-status-codes";
 import { AppError } from "../middlewares/errorHandler";
-import File, { IFile } from "../models/File.model";
+import File from "../models/File.model";
 import Folder from "../models/Folder.model";
 import mongoose from "mongoose";
 import { minioClient } from "../config/minio";
-import { uploadObject } from "../utils/minio.util";
+import { uploadObject, getPresignedUrl } from "../utils/minio.util";
 import User from "../models/User.model";
 import { logger } from "../lib/logger";
-import { log } from "console";
 
 interface FileUploadDTO {
   userId: string;
@@ -24,8 +23,54 @@ interface DownloadLinkDTO {
   fileId: string;
 }
 
+interface PreviewStreamDTO {
+  userId: string;
+  fileId: string;
+}
+
+interface PresignedUrlDTO {
+  userId: string;
+  fileId: string;
+  expirySeconds?: number;
+}
+
+// 用户基础信息（用于所有者和共享者）
+interface IUserBasic {
+  id: string;
+  name: string;
+  email: string;
+  avatar: {
+    thumbnail: string;
+  };
+}
+
+// 共享信息
+interface IShareInfo {
+  user: IUserBasic;
+  role: "viewer" | "editor";
+}
+
+// 返回给前端的脱敏文件信息
+export interface IFilePublic {
+  id: string;
+  name: string;
+  originalName: string;
+  extension: string;
+  mimeType: string;
+  size: number;
+  folder: string;
+  user: IUserBasic;
+  isStarred: boolean;
+  isTrashed: boolean;
+  trashedAt?: Date;
+  isPublic: boolean;
+  sharedWith: IShareInfo[];
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 export class FileService {
-  async uploadFile(data: FileUploadDTO): Promise<IFile> {
+  async uploadFile(data: FileUploadDTO): Promise<IFilePublic> {
     const {
       userId,
       folderId,
@@ -157,11 +202,34 @@ export class FileService {
         { fileId: newFile._id, hash, objectKey, userId },
         "File uploaded successfully"
       );
-      return newFile;
+
+      return {
+        id: newFile.id,
+        name: newFile.name,
+        originalName: newFile.originalName,
+        extension: newFile.extension,
+        mimeType: newFile.mimeType,
+        size: newFile.size,
+        folder: String(newFile.folder),
+        user: {
+          id: userId,
+          name: user.name,
+          email: user.email,
+          avatar: {
+            thumbnail: user.avatar?.thumbnail || "",
+          },
+        },
+        isStarred: newFile.isStarred,
+        isTrashed: newFile.isTrashed,
+        trashedAt: newFile.trashedAt,
+        isPublic: newFile.isPublic,
+        sharedWith: [],
+        createdAt: newFile.createdAt,
+        updatedAt: newFile.updatedAt,
+      };
     } catch (error) {
       await session.abortTransaction();
 
-      // 记录详细的错误信息用于调试
       console.error("File upload error details:", error);
       logger.error(
         { error, userId, folderId, hash, fileSize },
@@ -278,8 +346,26 @@ export class FileService {
       await session.endSession();
     }
 
-    // 在事务提交后清理MinIO对象（需要查询最新的引用计数）
+    // 在事务提交后清理MinIO对象
     await this.cleanupMinioObject(fileToDelete.key, fileToDelete.hash);
+  }
+
+  async starFile(fileId: string, userId: string, star: boolean) {
+    const fileObjectId = new mongoose.Types.ObjectId(fileId);
+    const userObjectId = new mongoose.Types.ObjectId(userId);
+    const folder = await File.findOne({
+      _id: fileObjectId,
+      user: userObjectId,
+      isStarred: { $ne: star },
+    });
+
+    if (!folder) {
+      throw new AppError(StatusCodes.NOT_FOUND, "File not found");
+    }
+
+    folder.isStarred = star;
+    await folder.save();
+    logger.info({ fileId, userId, star }, "File star status updated");
   }
 
   private async cleanupMinioObject(key: string, hash?: string) {
@@ -365,7 +451,7 @@ export class FileService {
     logger.info({ fileId, newName, userId }, "File renamed successfully");
   }
 
-  async getDownloadLink(data: DownloadLinkDTO) {
+  async getPresignedDownloadUrl(data: PresignedUrlDTO) {
     const fileObjectId = new mongoose.Types.ObjectId(data.fileId);
     const userObjectId = new mongoose.Types.ObjectId(data.userId);
 
@@ -373,35 +459,84 @@ export class FileService {
       _id: fileObjectId,
       user: userObjectId,
       isTrashed: false,
-    }).select("+key mimeType originalName");
+    }).select("+key mimeType originalName size");
 
     if (!file) {
+      logger.warn(
+        { fileId: data.fileId, userId: data.userId },
+        "File not found for download"
+      );
       throw new AppError(StatusCodes.NOT_FOUND, "File not found");
     }
 
+    const expirySeconds = data.expirySeconds || 3600;
+    const presignedUrl = await getPresignedUrl(
+      "file",
+      file.key,
+      file.originalName,
+      expirySeconds,
+      "attachment"
+    );
+
+    logger.info(
+      { fileId: data.fileId, userId: data.userId, expirySeconds },
+      "Generated presigned download URL"
+    );
+
+    return {
+      url: presignedUrl,
+      fileName: file.originalName,
+      mimeType: file.mimeType,
+      size: file.size,
+      expiresIn: expirySeconds,
+    };
+  }
+
+  async getPreviewStream(data: PreviewStreamDTO) {
+    const fileObjectId = new mongoose.Types.ObjectId(data.fileId);
+    const userObjectId = new mongoose.Types.ObjectId(data.userId);
+
+    // 验证文件权限
+    const file = await File.findOne({
+      _id: fileObjectId,
+      user: userObjectId,
+      isTrashed: false,
+    }).select("+key mimeType originalName size");
+
+    if (!file) {
+      logger.warn(
+        { fileId: data.fileId, userId: data.userId },
+        "File not found for preview"
+      );
+      throw new AppError(StatusCodes.NOT_FOUND, "File not found");
+    }
+
+    // 避免代理超大文件（50MB 以内）
+    const MAX_PREVIEW_SIZE = 50 * 1024 * 1024; // 50MB
+    if (file.size > MAX_PREVIEW_SIZE) {
+      logger.warn(
+        { fileId: data.fileId, fileSize: file.size, maxSize: MAX_PREVIEW_SIZE },
+        "File too large for preview stream"
+      );
+      throw new AppError(
+        StatusCodes.BAD_REQUEST,
+        "File too large for preview. Please use download instead."
+      );
+    }
+
+    // 从 MinIO 获取文件流
     const stream = await minioClient.getObject("file", file.key);
+
+    logger.info(
+      { fileId: data.fileId, userId: data.userId, fileSize: file.size },
+      "Generated preview stream"
+    );
+
     return {
       stream,
       mimeType: file.mimeType,
       fileName: file.originalName,
+      size: file.size,
     };
-  }
-
-  async starFile(fileId: string, userId: string, star: boolean = true) {
-    const fileObjectId = new mongoose.Types.ObjectId(fileId);
-    const userObjectId = new mongoose.Types.ObjectId(userId);
-    const file = await File.findOne({
-      _id: fileObjectId,
-      user: userObjectId,
-    });
-
-    if (!file) {
-      throw new AppError(StatusCodes.NOT_FOUND, "File not found");
-    }
-
-    file.isStarred = star;
-    await file.save();
-
-    logger.info({ fileId, userId, star }, "File star status updated");
   }
 }

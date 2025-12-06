@@ -1,5 +1,4 @@
 import { getReasonPhrase, StatusCodes } from "http-status-codes";
-import type { Express } from "express";
 import { AppError } from "../middlewares/errorHandler";
 import { generateToken } from "../utils/jwt.util";
 import { UserService, IUserPublic } from "./user.service";

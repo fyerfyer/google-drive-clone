@@ -5,6 +5,8 @@ import type {
 } from "@/types/auth.types";
 import { api } from "./api";
 
+const AUTH_API_BASE = "/api/auth";
+
 type RegisterPayload = Omit<RegisterRequest, "avatarDataUrl"> & {
   avatarDataUrl?: string;
 };
@@ -13,7 +15,7 @@ export const authService = {
   login: async (req: LoginRequest): Promise<AuthResponse> => {
     try {
       const response = await api.post<AuthResponse, LoginRequest>(
-        "/api/auth/login",
+        `${AUTH_API_BASE}/login`,
         req
       );
       if (response.success && response.data) {
@@ -34,7 +36,7 @@ export const authService = {
         : rest;
 
       const response = await api.post<AuthResponse, RegisterPayload>(
-        "/api/auth/register",
+        `${AUTH_API_BASE}/register`,
         payload
       );
       if (response.success && response.data) {
@@ -42,16 +44,23 @@ export const authService = {
         return response.data;
       }
 
-      throw new Error(response.message || "Register failed");
+      throw new Error(response.message || "Registration failed");
     } catch (error) {
       throw new Error(
-        error instanceof Error ? error.message : "Register failed"
+        error instanceof Error ? error.message : "Registration failed"
       );
     }
   },
 
-  logout: (): void => {
-    localStorage.removeItem("token");
+  logout: async (): Promise<void> => {
+    try {
+      await api.post(`${AUTH_API_BASE}/logout`);
+    } catch (error) {
+      // Ignore error, always clear local token
+      console.error("Logout error:", error);
+    } finally {
+      localStorage.removeItem("token");
+    }
   },
 
   isAuthenticated: (): boolean => {

@@ -72,12 +72,14 @@ describe("Test file service", () => {
   it("File upload and hash handling", async () => {
     const file1 = await fileService.uploadFile(fileDTO1);
     expect(file1).toBeDefined();
-    expect(file1.hash).toBe(sharedHash);
+    const file1Doc = await File.findById(String(file1.id)).select("+hash +key");
+    expect(file1Doc?.hash).toBe(sharedHash);
 
     const file2 = await fileService.uploadFile(fileDTO2);
     expect(file2).toBeDefined();
-    expect(file2.hash).toBe(sharedHash);
-    expect(file2.key).toEqual(file1.key);
+    const file2Doc = await File.findById(String(file2.id)).select("+hash +key");
+    expect(file2Doc?.hash).toBe(sharedHash);
+    expect(file2Doc?.key).toEqual(file1Doc?.key);
 
     const objectCount = await testMinioClient
       .listObjectsV2("file", "", true)
@@ -86,8 +88,9 @@ describe("Test file service", () => {
 
     const file3 = await fileService.uploadFile(fileDTO3);
     expect(file3).toBeDefined();
-    expect(file3.hash).toBe("unique-hash");
-    expect(file3.key).not.toEqual(file1.key);
+    const file3Doc = await File.findById(String(file3.id)).select("+hash +key");
+    expect(file3Doc?.hash).toBe("unique-hash");
+    expect(file3Doc?.key).not.toEqual(file1Doc?.key);
 
     const finalObjectCount = await testMinioClient
       .listObjectsV2("file", "", true)
@@ -99,31 +102,31 @@ describe("Test file service", () => {
     const file1 = await fileService.uploadFile(fileDTO1);
     const file2 = await fileService.uploadFile(fileDTO2);
     const file3 = await fileService.uploadFile(fileDTO3);
-    await fileService.trashFile(String(file1._id), String(mockUser._id));
+    await fileService.trashFile(String(file1.id), String(mockUser._id));
     let objectCount = await testMinioClient
       .listObjectsV2("file", "", true)
       .reduce((count) => count + 1, 0);
     expect(objectCount).toBe(2);
 
-    let file1InDb = await File.findById(String(file1._id));
+    let file1InDb = await File.findById(String(file1.id));
     expect(file1InDb?.isTrashed).toBe(true);
 
-    await fileService.trashFile(String(file2._id), String(mockUser._id));
+    await fileService.trashFile(String(file2.id), String(mockUser._id));
     objectCount = await testMinioClient
       .listObjectsV2("file", "", true)
       .reduce((count) => count + 1, 0);
     expect(objectCount).toBe(2);
 
-    let file2InDb = await File.findById(String(file2._id));
+    let file2InDb = await File.findById(String(file2.id));
     expect(file2InDb?.isTrashed).toBe(true);
 
-    await fileService.trashFile(String(file3._id), String(mockUser._id));
+    await fileService.trashFile(String(file3.id), String(mockUser._id));
 
     await fileService.deleteFilePermanent(
-      String(file1._id),
+      String(file1.id),
       String(mockUser._id)
     );
-    file1InDb = await File.findById(String(file1._id));
+    file1InDb = await File.findById(String(file1.id));
     expect(file1InDb).toBeNull();
     objectCount = await testMinioClient
       .listObjectsV2("file", "", true)
@@ -131,7 +134,7 @@ describe("Test file service", () => {
     expect(objectCount).toBe(2);
 
     await fileService.deleteFilePermanent(
-      String(file2._id),
+      String(file2.id),
       String(mockUser._id)
     );
     objectCount = await testMinioClient
@@ -140,7 +143,7 @@ describe("Test file service", () => {
     expect(objectCount).toBe(1);
 
     await fileService.deleteFilePermanent(
-      String(file3._id),
+      String(file3.id),
       String(mockUser._id)
     );
     objectCount = await testMinioClient

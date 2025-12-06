@@ -5,8 +5,7 @@ export interface ApiError {
 }
 
 export interface ApiResponse<T> {
-  success?: boolean;
+  success: boolean;
   data?: T;
-  message: string;
-  error?: ApiError;
+  message?: string;
 }

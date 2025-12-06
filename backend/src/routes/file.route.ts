@@ -14,9 +14,57 @@ export function createFileRouter(fileController: FileController) {
   );
 
   router.get(
-    "/download/:fileId",
+    "/:fileId/download",
     jwtAuth,
     fileController.downloadFile.bind(fileController)
+  );
+
+  router.get(
+    "/:fileId/preview",
+    jwtAuth,
+    fileController.previewFile.bind(fileController)
+  );
+
+  router.patch(
+    "/:fileId/rename",
+    jwtAuth,
+    fileController.renameFile.bind(fileController)
+  );
+
+  router.patch(
+    "/:fileId/move",
+    jwtAuth,
+    fileController.moveFile.bind(fileController)
+  );
+
+  router.patch(
+    "/:fileId/star",
+    jwtAuth,
+    fileController.starFile.bind(fileController)
+  );
+
+  router.patch(
+    "/:fileId/unstar",
+    jwtAuth,
+    fileController.unstarFile.bind(fileController)
+  );
+
+  router.post(
+    "/:fileId/trash",
+    jwtAuth,
+    fileController.trashFile.bind(fileController)
+  );
+
+  router.post(
+    "/:fileId/restore",
+    jwtAuth,
+    fileController.restoreFile.bind(fileController)
+  );
+
+  router.delete(
+    "/:fileId",
+    jwtAuth,
+    fileController.deleteFilePermanent.bind(fileController)
   );
 
   return router;

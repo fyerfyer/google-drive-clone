@@ -6,6 +6,7 @@ import { AppError } from "../middlewares/errorHandler";
 import { StatusCodes } from "http-status-codes";
 import { minioClient } from "../config/minio";
 import { logger } from "../lib/logger";
+import { IFilePublic } from "./file.service";
 
 interface CreateFolderDTO {
   userId: string;
@@ -19,8 +20,55 @@ interface MoveFolderDTO {
   userId: string;
 }
 
+// 用户基础信息（用于所有者和共享者）
+interface IUserBasic {
+  id: string;
+  name: string;
+  email: string;
+  avatar: {
+    thumbnail: string;
+  };
+}
+
+// 共享信息
+interface IShareInfo {
+  user: IUserBasic;
+  role: "viewer" | "editor";
+}
+
+// 返回给前端的脱敏文件夹信息
+export interface IFolderPublic {
+  id: string;
+  name: string;
+  parent: string | null;
+  user: IUserBasic;
+  color: string;
+  description?: string;
+  isStarred: boolean;
+  isTrashed: boolean;
+  trashedAt?: Date;
+  isPublic: boolean;
+  sharedWith: IShareInfo[];
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// 面包屑项
+export interface IBreadcrumbItem {
+  id: string;
+  name: string;
+  user?: IUserBasic;
+}
+
+export interface IFolderContent {
+  currentFolder: IFolderPublic;
+  breadcrumbs: IBreadcrumbItem[];
+  folders: IFolderPublic[];
+  files: IFilePublic[];
+}
+
 export class FolderService {
-  async createFolder(data: CreateFolderDTO): Promise<IFolder> {
+  async createFolder(data: CreateFolderDTO): Promise<IFolderPublic> {
     let ancestors: mongoose.Types.ObjectId[] = [];
     let parentId: mongoose.Types.ObjectId | null = null;
 
@@ -49,7 +97,30 @@ export class FolderService {
       isStarred: false,
     });
 
-    return folder;
+    // 获取用户信息
+    const user = await User.findById(userObjectId);
+    return {
+      id: folder.id,
+      name: folder.name,
+      parent: folder.parent ? folder.parent.toString() : null,
+      user: {
+        id: data.userId,
+        name: user?.name || "Unknown",
+        email: user?.email || "",
+        avatar: {
+          thumbnail: user?.avatar?.thumbnail || "",
+        },
+      },
+      color: folder.color,
+      description: folder.description,
+      isStarred: folder.isStarred,
+      isTrashed: folder.isTrashed,
+      trashedAt: folder.trashedAt,
+      isPublic: folder.isPublic,
+      sharedWith: [],
+      createdAt: folder.createdAt,
+      updatedAt: folder.updatedAt,
+    };
   }
 
   async trashFolder(folderId: string, userId: string) {
@@ -177,7 +248,6 @@ export class FolderService {
         );
       }
 
-      // 找到所有子文件夹和文件
       const folderIdsToDelete = await Folder.find({
         $or: [{ _id: folderObjectId }, { ancestors: folderObjectId }],
         user: userObjectId,
@@ -186,7 +256,6 @@ export class FolderService {
         .distinct("_id")
         .session(session);
 
-      // 查找所有需要删除的文件
       filesToDelete = await File.find({
         folder: { $in: folderIdsToDelete },
         user: userObjectId,
@@ -214,7 +283,6 @@ export class FolderService {
         { session }
       );
 
-      // 更新用户存储使用量
       if (totalFileSize > 0) {
         await User.updateOne(
           { _id: userId },
@@ -238,8 +306,6 @@ export class FolderService {
       session.endSession();
     }
 
-    // 在事务提交后从 MinIO 删除所有文件对象
-    // 不然无法获取最新引用计数
     if (filesToDelete.length > 0) {
       await Promise.all(
         filesToDelete.map((file) =>
@@ -396,7 +462,10 @@ export class FolderService {
     logger.info({ folderId, newName }, "Folder renamed successfully");
   }
 
-  async getFolderContent(folderId: string, userId: string) {
+  async getFolderContent(
+    folderId: string,
+    userId: string
+  ): Promise<IFolderContent> {
     const userObjectId = new mongoose.Types.ObjectId(userId);
     const folderObjectId = new mongoose.Types.ObjectId(folderId);
     const currentFolder = await Folder.findOne({
@@ -408,7 +477,7 @@ export class FolderService {
       throw new AppError(StatusCodes.NOT_FOUND, "Folder not found");
     }
 
-    const [folders, files] = await Promise.all([
+    const [folders, files, user] = await Promise.all([
       Folder.find({
         parent: folderObjectId,
         user: userObjectId,
@@ -420,11 +489,22 @@ export class FolderService {
         user: userObjectId,
         isTrashed: false,
       }).sort({ createdAt: -1 }),
+
+      User.findById(userObjectId),
     ]);
 
+    // 用户基础信息
+    const userBasic: IUserBasic = {
+      id: userId,
+      name: user?.name || "Unknown",
+      email: user?.email || "",
+      avatar: {
+        thumbnail: user?.avatar?.thumbnail || "",
+      },
+    };
+
     // 构建面包屑导航
-    // 先找出所有父目录再排序
-    let breadcrumbs: Array<{ _id: mongoose.Types.ObjectId; name: string }> = [];
+    let breadcrumbs: IBreadcrumbItem[] = [];
     if (currentFolder && currentFolder.ancestors.length > 0) {
       const ancestorDocs = await Folder.find({
         _id: { $in: currentFolder.ancestors },
@@ -439,22 +519,75 @@ export class FolderService {
         .map((ancestorId) => {
           const doc = ancestorMap.get(ancestorId.toString());
           if (doc) {
-            return { _id: ancestorId, name: doc.name };
+            return {
+              id: String(ancestorId),
+              name: doc.name,
+            };
           }
-
           return null;
         })
-        .filter(
-          (item): item is { _id: mongoose.Types.ObjectId; name: string } =>
-            item !== null
-        );
+        .filter((item): item is IBreadcrumbItem => item !== null);
     }
 
+    const currentFolderPublic: IFolderPublic = {
+      id: currentFolder.id,
+      name: currentFolder.name,
+      parent: currentFolder.parent.toString(),
+      user: userBasic,
+      color: currentFolder.color,
+      description: currentFolder.description,
+      isStarred: currentFolder.isStarred,
+      isTrashed: currentFolder.isTrashed,
+      trashedAt: currentFolder.trashedAt,
+      isPublic: currentFolder.isPublic,
+      sharedWith: [],
+      createdAt: currentFolder.createdAt,
+      updatedAt: currentFolder.updatedAt,
+    };
+
+    const foldersPublic: IFolderPublic[] = folders.map((folder) => {
+      return {
+        id: folder.id,
+        name: folder.name,
+        parent: folder.parent.toString(),
+        user: userBasic,
+        color: folder.color,
+        description: folder.description,
+        isStarred: folder.isStarred,
+        isTrashed: folder.isTrashed,
+        trashedAt: folder.trashedAt,
+        isPublic: folder.isPublic,
+        sharedWith: [],
+        createdAt: folder.createdAt,
+        updatedAt: folder.updatedAt,
+      };
+    });
+
+    const filesPublic: IFilePublic[] = files.map((file) => {
+      return {
+        id: file.id,
+        name: file.name,
+        originalName: file.originalName,
+        extension: file.extension,
+        mimeType: file.mimeType,
+        size: file.size,
+        folder: file.folder.toString(),
+        user: userBasic,
+        isStarred: file.isStarred,
+        isTrashed: file.isTrashed,
+        trashedAt: file.trashedAt,
+        isPublic: file.isPublic,
+        sharedWith: [],
+        createdAt: file.createdAt,
+        updatedAt: file.updatedAt,
+      };
+    });
+
     return {
-      currentFolder,
+      currentFolder: currentFolderPublic,
       breadcrumbs,
-      folders,
-      files,
+      folders: foldersPublic,
+      files: filesPublic,
     };
   }
 
@@ -465,6 +598,7 @@ export class FolderService {
     const folder = await Folder.findOne({
       _id: folderObjectId,
       user: userObjectId,
+      isStarred: { $ne: star },
     });
 
     if (!folder) {

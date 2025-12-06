@@ -4,7 +4,6 @@ import User, { IUser } from "../../models/User.model";
 import { FileService } from "../../services/file.service";
 import { FolderService } from "../../services/folder.service";
 import { testMinioClient } from "../setup";
-import { rename } from "fs";
 
 describe("Folder-File Integration Test", () => {
   let folderService: FolderService;
@@ -30,29 +29,31 @@ describe("Folder-File Integration Test", () => {
       parentId: "",
       name: "Root",
     });
-
+    const rootFolderDoc = await Folder.findById(rootFolder.id);
     const subFolder1 = await folderService.createFolder({
-      userId: String(mockUser._id),
-      parentId: String(rootFolder._id),
+      userId: String(mockUser.id),
+      parentId: String(rootFolder.id),
       name: "SubFolder1",
     });
+    const subFolder1Doc = await Folder.findById(subFolder1.id);
 
     const subFolder2 = await folderService.createFolder({
       userId: String(mockUser._id),
-      parentId: String(subFolder1._id),
+      parentId: String(subFolder1.id),
       name: "SubFolder2",
     });
+    const subFolder2Doc = await Folder.findById(subFolder2.id);
 
     // 测试祖先路径
-    expect(rootFolder.ancestors).toHaveLength(0);
-    expect(subFolder1.ancestors).toHaveLength(1);
-    expect(subFolder2.ancestors).toHaveLength(2);
+    expect(rootFolderDoc?.ancestors).toHaveLength(0);
+    expect(subFolder1Doc?.ancestors).toHaveLength(1);
+    expect(subFolder2Doc?.ancestors).toHaveLength(2);
 
     const mockContent1 = "content for file 1";
     const mockBuffer1 = Buffer.from(mockContent1);
     const file1 = await fileService.uploadFile({
       userId: String(mockUser._id),
-      folderId: String(rootFolder._id),
+      folderId: String(rootFolder.id),
       fileBuffer: mockBuffer1,
       fileSize: mockBuffer1.length,
       mimeType: "text/plain",
@@ -64,7 +65,7 @@ describe("Folder-File Integration Test", () => {
     const mockBuffer2 = Buffer.from(mockContent2);
     const file2 = await fileService.uploadFile({
       userId: String(mockUser._id),
-      folderId: String(subFolder1._id),
+      folderId: String(subFolder1.id),
       fileBuffer: mockBuffer2,
       fileSize: mockBuffer2.length,
       mimeType: "text/plain",
@@ -75,8 +76,8 @@ describe("Folder-File Integration Test", () => {
     const mockContent3 = "content for file 3";
     const mockBuffer3 = Buffer.from(mockContent3);
     const file3 = await fileService.uploadFile({
-      userId: String(mockUser._id),
-      folderId: String(subFolder2._id),
+      userId: String(mockUser.id),
+      folderId: String(subFolder2.id),
       fileBuffer: mockBuffer3,
       fileSize: mockBuffer3.length,
       mimeType: "text/plain",
@@ -92,7 +93,7 @@ describe("Folder-File Integration Test", () => {
 
     const file4 = await fileService.uploadFile({
       userId: String(mockUser._id),
-      folderId: String(rootFolder._id),
+      folderId: String(rootFolder.id),
       fileBuffer: mockBuffer1,
       fileSize: mockBuffer1.length,
       mimeType: "text/plain",
@@ -100,44 +101,43 @@ describe("Folder-File Integration Test", () => {
       hash: "hash1",
     });
 
-    // 测试 hash 快传
-    expect(file4.key).toBe(file1.key);
+    // 测试 hash 快传 (通过 MinIO 对象数量断言)
     objectCount = await testMinioClient
       .listObjectsV2("file", "", true)
       .reduce((count) => count + 1, 0);
     expect(objectCount).toBe(3);
 
     // 测试回收站和恢复功能
-    await fileService.trashFile(String(file1._id), String(mockUser._id));
-    let file1InDb = await File.findById(String(file1._id));
+    await fileService.trashFile(String(file1.id), String(mockUser._id));
+    let file1InDb = await File.findById(String(file1.id));
     expect(file1InDb?.isTrashed).toBe(true);
 
     await folderService.trashFolder(
-      String(subFolder1._id),
+      String(subFolder1.id),
       String(mockUser._id)
     );
-    let subFolder1InDb = await Folder.findById(String(subFolder1._id));
-    let subFolder2InDb = await Folder.findById(String(subFolder2._id));
-    let file2InDb = await File.findById(String(file2._id));
-    let file3InDb = await File.findById(String(file3._id));
+    let subFolder1InDb = await Folder.findById(String(subFolder1.id));
+    let subFolder2InDb = await Folder.findById(String(subFolder2.id));
+    let file2InDb = await File.findById(String(file2.id));
+    let file3InDb = await File.findById(String(file3.id));
 
     expect(subFolder1InDb?.isTrashed).toBe(true);
     expect(subFolder2InDb?.isTrashed).toBe(true);
     expect(file2InDb?.isTrashed).toBe(true);
     expect(file3InDb?.isTrashed).toBe(true);
 
-    await fileService.restoreFile(String(file1._id), String(mockUser._id));
-    file1InDb = await File.findById(String(file1._id));
+    await fileService.restoreFile(String(file1.id), String(mockUser._id));
+    file1InDb = await File.findById(String(file1.id));
     expect(file1InDb?.isTrashed).toBe(false);
 
     await folderService.restoreFolder(
-      String(subFolder1._id),
+      String(subFolder1.id),
       String(mockUser._id)
     );
-    subFolder1InDb = await Folder.findById(String(subFolder1._id));
-    subFolder2InDb = await Folder.findById(String(subFolder2._id));
-    file2InDb = await File.findById(String(file2._id));
-    file3InDb = await File.findById(String(file3._id));
+    subFolder1InDb = await Folder.findById(String(subFolder1.id));
+    subFolder2InDb = await Folder.findById(String(subFolder2.id));
+    file2InDb = await File.findById(String(file2.id));
+    file3InDb = await File.findById(String(file3.id));
 
     expect(subFolder1InDb?.isTrashed).toBe(false);
     expect(subFolder2InDb?.isTrashed).toBe(false);
@@ -145,12 +145,12 @@ describe("Folder-File Integration Test", () => {
     expect(file3InDb?.isTrashed).toBe(false);
 
     // 测试永久删除
-    await fileService.trashFile(String(file1._id), String(mockUser._id));
+    await fileService.trashFile(String(file1.id), String(mockUser._id));
     await fileService.deleteFilePermanent(
-      String(file1._id),
+      String(file1.id),
       String(mockUser._id)
     );
-    file1InDb = await File.findById(String(file1._id));
+    file1InDb = await File.findById(String(file1.id));
     expect(file1InDb).toBeNull();
 
     objectCount = await testMinioClient
@@ -159,11 +159,11 @@ describe("Folder-File Integration Test", () => {
     expect(objectCount).toBe(3);
 
     await folderService.trashFolder(
-      String(rootFolder._id),
+      String(rootFolder.id),
       String(mockUser._id)
     );
     await folderService.deleteFolderPermanent(
-      String(rootFolder._id),
+      String(rootFolder.id),
       String(mockUser._id)
     );
 
@@ -184,24 +184,27 @@ describe("Folder-File Integration Test", () => {
       parentId: "",
       name: "Folder1",
     });
+    const folder1Doc = await Folder.findById(folder1.id);
 
     const folder2 = await folderService.createFolder({
       userId: String(mockUser._id),
       parentId: "",
       name: "Folder2",
     });
+    const folder2Doc = await Folder.findById(folder2.id);
 
     const subFolder = await folderService.createFolder({
       userId: String(mockUser._id),
-      parentId: String(folder1._id),
+      parentId: String(folder1.id),
       name: "SubFolder",
     });
+    const subFolderDoc = await Folder.findById(subFolder.id);
 
     const mockContent = "test content";
     const mockBuffer = Buffer.from(mockContent);
     const file = await fileService.uploadFile({
       userId: String(mockUser._id),
-      folderId: String(subFolder._id),
+      folderId: String(subFolder.id),
       fileBuffer: mockBuffer,
       fileSize: mockBuffer.length,
       mimeType: "text/plain",
@@ -210,18 +213,18 @@ describe("Folder-File Integration Test", () => {
     });
 
     await folderService.moveFolder({
-      folderId: String(subFolder._id),
-      destinationId: String(folder2._id),
+      folderId: String(subFolder.id),
+      destinationId: String(folder2.id),
       userId: String(mockUser._id),
     });
 
-    const movedFolder = await Folder.findById(String(subFolder._id));
-    expect(movedFolder?.parent?.toString()).toBe(folder2._id.toString());
+    const movedFolder = await Folder.findById(String(subFolder.id));
+    expect(movedFolder?.parent?.toString()).toBe(folder2.id.toString());
     expect(movedFolder?.ancestors).toHaveLength(1);
-    expect(movedFolder?.ancestors[0].toString()).toBe(folder2._id.toString());
+    expect(movedFolder?.ancestors[0].toString()).toBe(folder2.id.toString());
 
-    const fileInDb = await File.findById(String(file._id));
-    expect(fileInDb?.folder.toString()).toBe(subFolder._id.toString());
+    const fileInDb = await File.findById(String(file.id));
+    expect(fileInDb?.folder.toString()).toBe(subFolder.id.toString());
   });
 
   it("rename folder and file", async () => {
@@ -230,12 +233,13 @@ describe("Folder-File Integration Test", () => {
       parentId: "",
       name: "OriginalFolder",
     });
+    const folderDoc = await Folder.findById(folder.id);
 
     const mockContent = "test content";
     const mockBuffer = Buffer.from(mockContent);
     const file = await fileService.uploadFile({
       userId: String(mockUser._id),
-      folderId: String(folder._id),
+      folderId: String(folder.id),
       fileBuffer: mockBuffer,
       fileSize: mockBuffer.length,
       mimeType: "text/plain",
@@ -244,19 +248,19 @@ describe("Folder-File Integration Test", () => {
     });
 
     await folderService.renameFolder(
-      String(folder._id),
+      String(folder.id),
       String(mockUser._id),
       "RenamedFolder"
     );
-    const renamedFolder = await Folder.findById(String(folder._id));
+    const renamedFolder = await Folder.findById(String(folder.id));
     expect(renamedFolder?.name).toBe("RenamedFolder");
 
     await fileService.renameFile(
-      String(file._id),
+      String(file.id),
       String(mockUser._id),
       "renamed.txt"
     );
-    const renamedFile = await File.findById(String(file._id));
+    const renamedFile = await File.findById(String(file.id));
     expect(renamedFile?.name).toBe("renamed.txt");
     expect(renamedFile?.originalName).toBe("original.txt");
   });
@@ -267,12 +271,13 @@ describe("Folder-File Integration Test", () => {
       parentId: "",
       name: "TestFolder",
     });
+    const folderTestDoc = await Folder.findById(folder.id);
 
     const mockContent = "test content";
     const mockBuffer = Buffer.from(mockContent);
     const file = await fileService.uploadFile({
       userId: String(mockUser._id),
-      folderId: String(folder._id),
+      folderId: String(folder.id),
       fileBuffer: mockBuffer,
       fileSize: mockBuffer.length,
       mimeType: "text/plain",
@@ -281,27 +286,27 @@ describe("Folder-File Integration Test", () => {
     });
 
     await folderService.starFolder(
-      String(folder._id),
+      String(folder.id),
       String(mockUser._id),
       true
     );
-    let folderInDb = await Folder.findById(String(folder._id));
+    let folderInDb = await Folder.findById(String(folder.id));
     expect(folderInDb?.isStarred).toBe(true);
 
-    await fileService.starFile(String(file._id), String(mockUser._id), true);
-    let fileInDb = await File.findById(String(file._id));
+    await fileService.starFile(String(file.id), String(mockUser._id), true);
+    let fileInDb = await File.findById(String(file.id));
     expect(fileInDb?.isStarred).toBe(true);
 
     await folderService.starFolder(
-      String(folder._id),
+      String(folder.id),
       String(mockUser._id),
       false
     );
-    folderInDb = await Folder.findById(String(folder._id));
+    folderInDb = await Folder.findById(String(folder.id));
     expect(folderInDb?.isStarred).toBe(false);
 
-    await fileService.starFile(String(file._id), String(mockUser._id), false);
-    fileInDb = await File.findById(String(file._id));
+    await fileService.starFile(String(file.id), String(mockUser._id), false);
+    fileInDb = await File.findById(String(file.id));
     expect(fileInDb?.isStarred).toBe(false);
   });
 });

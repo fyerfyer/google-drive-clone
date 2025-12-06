@@ -1,20 +1,18 @@
-import type {
-  UpdateRequest,
-  UpdateUserResponse,
-  User,
-} from "@/types/user.types";
+import type { UpdateUserRequest, User, UserResponse } from "@/types/user.types";
 import { api } from "./api";
 
-type UpdatePayload = Omit<UpdateRequest, "avatarDataUrl"> & {
+const USER_API_BASE = "/api/users";
+
+type UpdatePayload = Omit<UpdateUserRequest, "avatarDataUrl"> & {
   avatarDataUrl?: string;
 };
 
 export const userService = {
   getCurrentUser: async (): Promise<User> => {
     try {
-      const response = await api.get<User>("/api/users/profile");
+      const response = await api.get<UserResponse>(`${USER_API_BASE}/profile`);
       if (response.success && response.data) {
-        return response.data;
+        return response.data.user;
       }
 
       throw new Error(response.message || "Failed to get user profile");
@@ -25,22 +23,19 @@ export const userService = {
     }
   },
 
-  updateUser: async (req: UpdateRequest): Promise<UpdateUserResponse> => {
+  updateUser: async (req: UpdateUserRequest): Promise<User> => {
     try {
       const { avatarDataUrl, ...rest } = req;
       const payload: UpdatePayload = avatarDataUrl
         ? { ...rest, avatarDataUrl }
         : rest;
 
-      const response = await api.patch<User, UpdatePayload>(
-        "/api/users/profile",
+      const response = await api.patch<UserResponse, UpdatePayload>(
+        `${USER_API_BASE}/profile`,
         payload
       );
       if (response.success && response.data) {
-        return {
-          user: response.data,
-          message: response.message || "Profile updated successfully",
-        };
+        return response.data.user;
       }
 
       throw new Error(response.message || "Failed to update user profile");

@@ -2,6 +2,8 @@ import z from "zod";
 import { MAX_AVATAR_SIZE_BYTES, MAX_AVATAR_SIZE_MB } from "./constants";
 
 export interface Avatar {
+  publicId: string;
+  thumbnailId: string;
   url: string;
   thumbnail: string;
 }
@@ -11,13 +13,14 @@ export interface User {
   name: string;
   email: string;
   avatar: Avatar;
+  storageUsage: number;
+  storageQuota: number;
   createdAt: string;
   updatedAt: string;
 }
 
-export interface UpdateUserResponse {
+export interface UserResponse {
   user: User;
-  message: string;
 }
 
 const AVATAR_DATA_URL_PATTERN = /^data:image\/(png|jpe?g|webp);base64,/i;
@@ -27,7 +30,7 @@ const getBase64Size = (dataUrl: string): number => {
   return Math.ceil((base64.length * 3) / 4);
 };
 
-export const updateSchema = z.object({
+export const updateUserSchema = z.object({
   name: z
     .string()
     .min(2, "Name must be at least 2 characters")
@@ -44,4 +47,4 @@ export const updateSchema = z.object({
     .nullable(),
 });
 
-export type UpdateRequest = z.infer<typeof updateSchema>;
+export type UpdateUserRequest = z.infer<typeof updateUserSchema>;
