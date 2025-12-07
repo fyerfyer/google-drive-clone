@@ -79,13 +79,22 @@ export const requestLogger = pinoHttp({
       remoteAddress: req.socket?.remoteAddress,
       remotePort: req.socket?.remotePort,
     }),
-    res: (res) => ({
-      statusCode: res.statusCode,
-      headers: {
-        "content-type": res.getHeader("content-type"),
-        "content-length": res.getHeader("content-length"),
-      },
-    }),
+    res: (res) => {
+      // Type guard to check if res has getHeader method
+      if (res && typeof res.getHeader === "function") {
+        return {
+          statusCode: res.statusCode,
+          headers: {
+            "content-type": res.getHeader("content-type"),
+            "content-length": res.getHeader("content-length"),
+          },
+        };
+      }
+      // Fallback for cases where res doesn't have getHeader
+      return {
+        statusCode: res.statusCode,
+      };
+    },
     err: (err) => ({
       type: err.type,
       message: err.message,

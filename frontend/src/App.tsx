@@ -1,10 +1,13 @@
 import { AppRouter } from "@/router";
 import { AuthProvider } from "@/contexts/auth/provider";
+import { FolderProvider } from "@/contexts/folder/provider";
 
 function App() {
   return (
     <AuthProvider>
-      <AppRouter />
+      <FolderProvider>
+        <AppRouter />
+      </FolderProvider>
     </AuthProvider>
   );
 }

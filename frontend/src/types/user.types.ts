@@ -21,6 +21,7 @@ export interface User {
 
 export interface UserResponse {
   user: User;
+  message?: string;
 }
 
 const AVATAR_DATA_URL_PATTERN = /^data:image\/(png|jpe?g|webp);base64,/i;

@@ -23,7 +23,7 @@ export const userService = {
     }
   },
 
-  updateUser: async (req: UpdateUserRequest): Promise<User> => {
+  updateUser: async (req: UpdateUserRequest): Promise<UserResponse> => {
     try {
       const { avatarDataUrl, ...rest } = req;
       const payload: UpdatePayload = avatarDataUrl
@@ -35,7 +35,10 @@ export const userService = {
         payload
       );
       if (response.success && response.data) {
-        return response.data.user;
+        return {
+          user: response.data.user,
+          message: response.message,
+        };
       }
 
       throw new Error(response.message || "Failed to update user profile");

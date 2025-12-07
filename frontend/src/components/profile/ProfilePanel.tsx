@@ -37,6 +37,16 @@ export const ProfilePanel = () => {
     }
   }, [user]);
 
+  // Auto-hide success message after 3 seconds
+  useEffect(() => {
+    if (status?.type === "success") {
+      const timer = setTimeout(() => {
+        setStatus(null);
+      }, 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [status]);
+
   const email = useMemo(() => user?.email ?? "", [user]);
   const avatarUrl = useMemo(
     () => user?.avatar?.thumbnail || user?.avatar?.url || null,
@@ -82,7 +92,7 @@ export const ProfilePanel = () => {
       setAvatarDataUrl(null);
       setStatus({
         type: "success",
-        message: response.message,
+        message: response.message || "Profile updated successfully",
       });
     } catch (error) {
       setStatus({

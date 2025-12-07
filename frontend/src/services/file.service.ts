@@ -119,6 +119,13 @@ export const fileService = {
     document.body.removeChild(link);
   },
 
+  triggerDownload: (url: string, fileName: string) => {
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = fileName;
+    link.click();
+  },
+
   getPreviewUrl: (fileId: string): string => {
     return `${FILE_API_BASE}/${fileId}/preview`;
   },

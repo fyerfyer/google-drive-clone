@@ -153,8 +153,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         name: auth.user.name,
         email: auth.user.email,
         avatar: auth.user.avatar || {
-          url: \"\",
-          thumbnail: \"\",
+          url: "",
+          thumbnail: "",
         },
       }
     : {

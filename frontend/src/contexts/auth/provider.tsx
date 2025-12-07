@@ -87,9 +87,10 @@ const authReducer = (state: AuthState, action: AuthAction): AuthState => {
         ...state,
         user: action.payload,
       };
-  }
 
-  return state;
+    default:
+      return state;
+  }
 };
 
 export const AuthProvider = ({ children }: AuthProviderProps) => {
