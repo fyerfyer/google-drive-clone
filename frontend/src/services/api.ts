@@ -64,9 +64,12 @@ export const api = {
       .then((response) => response.data);
   },
 
-  delete: <T>(url: string): Promise<ApiResponse<T>> => {
+  delete: <T, D = undefined>(
+    url: string,
+    data?: D
+  ): Promise<ApiResponse<T>> => {
     return apiClient
-      .delete<ApiResponse<T>>(url)
+      .delete<ApiResponse<T>>(url, data ? { data } : undefined)
       .then((response) => response.data);
   },
 

@@ -20,6 +20,9 @@ import { FolderController } from "./controllers/folder.controller";
 import { createFolderRouter } from "./routes/folder.route";
 import { createUploadRouter } from "./routes/upload.route";
 import { UploadController } from "./controllers/upload.controller";
+import { createBatchRouter } from "./routes/batch.routes";
+import { BatchService } from "./services/batch.service";
+import { BatchController } from "./controllers/batch.controller";
 
 const avatarService = new AvatarService();
 const userService = new UserService(avatarService);
@@ -32,6 +35,8 @@ const fileService = new FileService();
 const fileController = new FileController(fileService);
 const folderService = new FolderService();
 const folderController = new FolderController(folderService);
+const batchService = new BatchService();
+const batchController = new BatchController(batchService);
 
 const app: Application = express();
 const bodyLimit = "10mb";
@@ -69,6 +74,7 @@ app.use("/api/users", createUserRouter(userController));
 app.use("/api/files", createFileRouter(fileController));
 app.use("/api/folders", createFolderRouter(folderController));
 app.use("/api/upload", createUploadRouter(uploadController));
+app.use("/api/batch", createBatchRouter(batchController));
 
 app.use(notFound);
 app.use(errorHandler);

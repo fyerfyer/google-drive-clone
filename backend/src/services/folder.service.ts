@@ -599,18 +599,20 @@ export class FolderService {
     const userObjectId = new mongoose.Types.ObjectId(userId);
     const folderObjectId = new mongoose.Types.ObjectId(folderId);
 
-    const folder = await Folder.findOne({
-      _id: folderObjectId,
-      user: userObjectId,
-      isStarred: { $ne: star },
-    });
+    // 使用原子操作
+    const result = await Folder.findOneAndUpdate(
+      {
+        _id: folderObjectId,
+        user: userObjectId,
+      },
+      { isStarred: star },
+      { new: true }
+    );
 
-    if (!folder) {
+    if (!result) {
       throw new AppError(StatusCodes.NOT_FOUND, "Folder not found");
     }
 
-    folder.isStarred = star;
-    await folder.save();
     logger.info({ folderId, userId, star }, "Folder star status updated");
   }
 }

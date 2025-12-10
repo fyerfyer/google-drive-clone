@@ -5,7 +5,6 @@ import Folder from "../models/Folder.model";
 import mongoose from "mongoose";
 import { StorageService } from "./storage.service";
 import { BUCKETS } from "../config/s3";
-import { v4 as uuidv4 } from "uuid";
 import mimeTypes from "mime-types";
 import User from "../models/User.model";
 import { logger } from "../lib/logger";
@@ -68,17 +67,11 @@ export class FileService {
     const userObjectId = new mongoose.Types.ObjectId(userId);
     const folderObjectId = new mongoose.Types.ObjectId(folderId);
 
-    // 再次检查用户（Upload Controller 中进行了配额检查）
-    const user = await User.findById(userObjectId);
-    if (!user) {
-      throw new AppError(StatusCodes.NOT_FOUND, "User not found");
-    }
-
-    // 扣除配额
-    // 在这里扣除配额，Upload Controller 只是进行检查
+    // 使用原子操作
     const updateUser = await User.findOneAndUpdate(
       {
         _id: userObjectId,
+        // 使用 $expr 确保配额检查是原子的
         $expr: {
           $lte: [{ $add: ["$storageUsage", fileSize] }, "$storageQuota"],
         },
@@ -96,7 +89,10 @@ export class FileService {
         );
       });
 
-      throw new AppError(StatusCodes.BAD_REQUEST, "Storage quota exceeded");
+      throw new AppError(
+        StatusCodes.BAD_REQUEST,
+        "Storage quota exceeded or user not found"
+      );
     }
 
     // 创建文件记录
@@ -236,18 +232,21 @@ export class FileService {
   async starFile(fileId: string, userId: string, star: boolean) {
     const fileObjectId = new mongoose.Types.ObjectId(fileId);
     const userObjectId = new mongoose.Types.ObjectId(userId);
-    const folder = await File.findOne({
-      _id: fileObjectId,
-      user: userObjectId,
-      isStarred: { $ne: star },
-    });
 
-    if (!folder) {
+    // 使用原子操作更新
+    const result = await File.findOneAndUpdate(
+      {
+        _id: fileObjectId,
+        user: userObjectId,
+      },
+      { isStarred: star },
+      { new: true }
+    );
+
+    if (!result) {
       throw new AppError(StatusCodes.NOT_FOUND, "File not found");
     }
 
-    folder.isStarred = star;
-    await folder.save();
     logger.info({ fileId, userId, star }, "File star status updated");
   }
 

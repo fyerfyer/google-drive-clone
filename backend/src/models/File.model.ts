@@ -98,7 +98,7 @@ fileSchema.index(
 );
 
 // 搜索优化
-fileSchema.index({ user: 1, folder: 1, isTrashed: 1 });
+fileSchema.index({ user: 1, folder: 1, isTrashed: 1, createdAt: -1 });
 
 // 类型筛选
 fileSchema.index({ user: 1, mimeType: 1 });

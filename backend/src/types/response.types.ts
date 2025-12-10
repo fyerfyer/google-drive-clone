@@ -57,6 +57,20 @@ export interface FoldersResponse {
 // 使用 Service 层导出的类型
 export interface FolderContentResponse extends IFolderContent {}
 
+// ==================== Batch Operation Responses ====================
+export interface BatchOperationResult {
+  id: string;
+  type: "file" | "folder";
+  success: boolean;
+  error?: string;
+}
+
+export interface BatchOperationResponse {
+  results: BatchOperationResult[];
+  successCount: number;
+  failureCount: number;
+}
+
 // ==================== Common Responses ====================
 export interface MessageResponse {
   message: string;

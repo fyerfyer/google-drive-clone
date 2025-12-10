@@ -6,7 +6,7 @@ export function createFileRouter(fileController: FileController) {
   const router = Router();
   router.use(jwtAuth);
 
-  // Create file record after successful upload
+  // 在上传文件成功后保存 record
   router.post("/", fileController.createFile.bind(fileController));
 
   router.get(
