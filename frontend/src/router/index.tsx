@@ -11,6 +11,7 @@ import LoginPage from "@/pages/auth/LoginPage";
 import RegisterPage from "@/pages/auth/RegisterPage";
 import DashboardPage from "@/pages/dashboard/DashboardPage";
 import ProfilePage from "@/pages/profile/ProfilePage";
+import FilesPage from "@/pages/files/FilesPage";
 import NotFoundPage from "@/pages/NotFoundPage";
 
 const RootRedirector = () => {
@@ -38,6 +39,14 @@ export const AppRouter = () => {
             element={
               <AuthRoute>
                 <DashboardPage />
+              </AuthRoute>
+            }
+          ></Route>
+          <Route
+            path="/files"
+            element={
+              <AuthRoute>
+                <FilesPage />
               </AuthRoute>
             }
           ></Route>

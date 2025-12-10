@@ -18,7 +18,7 @@ const ProfilePage = () => {
       <SidebarInset>
         <SiteHeader />
         <div className="flex flex-1 flex-col px-4 py-6 lg:px-10">
-          <div className="max-w-3xl">
+          <div className="w-full max-w-4xl mx-auto">
             <ProfilePanel />
           </div>
         </div>

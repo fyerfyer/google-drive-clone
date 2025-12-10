@@ -213,6 +213,47 @@ export const ProfilePanel = () => {
             </Field>
           </FieldGroup>
         </form>
+
+        <Separator />
+
+        {/* Storage Usage Section */}
+        <div className="space-y-4">
+          <div>
+            <h3 className="text-lg font-medium">Storage Usage</h3>
+            <p className="text-sm text-muted-foreground">
+              Monitor your storage usage and quota.
+            </p>
+          </div>
+
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-muted-foreground">
+                Used Storage
+              </span>
+              <span className="text-sm font-medium">
+                {(user.storageUsage / (1024 * 1024 * 1024)).toFixed(2)} GB of{" "}
+                {(user.storageQuota / (1024 * 1024 * 1024)).toFixed(2)} GB
+              </span>
+            </div>
+            <div className="space-y-2">
+              <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
+                <div
+                  className="h-full bg-primary transition-all"
+                  style={{
+                    width: `${Math.min(
+                      (user.storageUsage / user.storageQuota) * 100,
+                      100
+                    )}%`,
+                  }}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {((user.storageUsage / user.storageQuota) * 100).toFixed(1)}%
+                used
+              </p>
+            </div>
+          </div>
+        </div>
       </CardContent>
     </Card>
   );
