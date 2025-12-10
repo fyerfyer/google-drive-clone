@@ -3,19 +3,21 @@ import { AppError } from "../middlewares/errorHandler";
 import File from "../models/File.model";
 import Folder from "../models/Folder.model";
 import mongoose from "mongoose";
-import { minioClient } from "../config/minio";
-import { uploadObject, getPresignedUrl } from "../utils/minio.util";
+import { StorageService } from "./storage.service";
+import { BUCKETS } from "../config/s3";
+import { v4 as uuidv4 } from "uuid";
+import mimeTypes from "mime-types";
 import User from "../models/User.model";
 import { logger } from "../lib/logger";
 
-interface FileUploadDTO {
+interface CreateFileRecordDTO {
   userId: string;
   folderId: string;
-  fileBuffer: Buffer;
+  key: string;
   fileSize: number;
   mimeType: string;
   originalName: string;
-  hash: string;
+  hash?: string;
 }
 
 interface DownloadLinkDTO {
@@ -34,19 +36,9 @@ interface PresignedUrlDTO {
   expirySeconds?: number;
 }
 
-// 用户基础信息（用于所有者和共享者）
-interface IUserBasic {
-  id: string;
-  name: string;
-  email: string;
-  avatar: {
-    thumbnail: string;
-  };
-}
-
 // 共享信息
 interface IShareInfo {
-  user: IUserBasic;
+  userId: string;
   role: "viewer" | "editor";
 }
 
@@ -59,7 +51,7 @@ export interface IFilePublic {
   mimeType: string;
   size: number;
   folder: string;
-  user: IUserBasic;
+  user: string;
   isStarred: boolean;
   isTrashed: boolean;
   trashedAt?: Date;
@@ -70,189 +62,80 @@ export interface IFilePublic {
 }
 
 export class FileService {
-  async uploadFile(data: FileUploadDTO): Promise<IFilePublic> {
-    const {
-      userId,
-      folderId,
-      fileBuffer,
-      fileSize,
-      mimeType,
-      originalName,
-      hash,
-    } = data;
-
+  async createFileRecord(data: CreateFileRecordDTO): Promise<IFilePublic> {
+    const { userId, folderId, key, fileSize, mimeType, originalName, hash } =
+      data;
     const userObjectId = new mongoose.Types.ObjectId(userId);
     const folderObjectId = new mongoose.Types.ObjectId(folderId);
 
-    logger.debug({ userId, folderId, fileSize, hash }, "Starting file upload");
-
-    // 检查用户配额（用户已通过 auth middleware 验证存在）
+    // 再次检查用户（Upload Controller 中进行了配额检查）
     const user = await User.findById(userObjectId);
     if (!user) {
-      logger.error({ userId }, "User not found");
       throw new AppError(StatusCodes.NOT_FOUND, "User not found");
     }
-    logger.debug(
+
+    // 扣除配额
+    // 在这里扣除配额，Upload Controller 只是进行检查
+    const updateUser = await User.findOneAndUpdate(
       {
-        userId,
-        storageUsage: user.storageUsage,
-        storageQuota: user.storageQuota,
-      },
-      "User found"
-    );
-
-    if (!user.checkStorageQuota(fileSize)) {
-      logger.warn(
-        {
-          userId,
-          fileSize,
-          storageUsage: user.storageUsage,
-          storageQuota: user.storageQuota,
+        _id: userObjectId,
+        $expr: {
+          $lte: [{ $add: ["$storageUsage", fileSize] }, "$storageQuota"],
         },
-        "Storage quota exceeded"
-      );
-      throw new AppError(
-        StatusCodes.BAD_REQUEST,
-        "Storage quota exceeded. Cannot upload file."
-      );
-    }
-
-    const folderExists = await Folder.exists({ _id: folderObjectId });
-    if (!folderExists) {
-      logger.error({ folderId }, "Folder not found");
-      throw new AppError(StatusCodes.NOT_FOUND, "Folder not found");
-    }
-    logger.debug({ folderId }, "Folder exists");
-
-    const folder = await Folder.findOne({
-      _id: folderObjectId,
-      user: userObjectId,
-    });
-    if (!folder) {
-      logger.error({ folderId, userId }, "Access denied to folder");
-      throw new AppError(StatusCodes.FORBIDDEN, "Access denied to folder");
-    }
-    logger.debug(
-      { folderId, userId, folderName: folder.name },
-      "Folder access verified"
+      },
+      { $inc: { storageUsage: fileSize } },
+      { new: true }
     );
 
-    // 创建文件上传事务
-    const session = await mongoose.startSession();
-    session.startTransaction();
-    logger.debug("Transaction started");
-
-    let objectKey: string | null = null;
-    let isNewUpload = false;
-    try {
-      const existingFile = await File.findOne({ hash: hash }).select("+key");
-      if (existingFile) {
-        objectKey = existingFile.key;
-        logger.info(
-          { hash, objectKey, userId },
-          "File deduplication: reusing existing object key"
+    if (!updateUser) {
+      // 配额不足的话需要回滚 MinIO 中的上传
+      await StorageService.deleteObject(BUCKETS.FILES, key).catch((err) => {
+        logger.error(
+          { err, userId, key },
+          "Failed to rollback MinIO object after quota exceeded"
         );
-      } else {
-        logger.debug(
-          { hash, fileSize, mimeType },
-          "Uploading new object to MinIO"
-        );
-        objectKey = await uploadObject("file", fileBuffer, fileSize, mimeType);
-        isNewUpload = true;
-        logger.debug(
-          { objectKey, hash },
-          "Object uploaded to MinIO successfully"
-        );
-      }
-
-      const newFile = new File({
-        name: originalName,
-        originalName: originalName,
-        extension: originalName.split(".").pop(),
-        mimeType: mimeType,
-        size: fileSize,
-        key: objectKey,
-        hash: hash,
-        user: userObjectId,
-        folder: folderObjectId,
-        isStarred: false,
-        isTrashed: false,
       });
 
-      logger.debug(
-        { fileId: newFile._id, hash, objectKey },
-        "Saving file document"
-      );
-      await newFile.save({ session });
-      logger.debug({ fileId: newFile._id }, "File document saved");
-
-      // 更新用户存储使用
-      // 使用事务内原子更新
-      logger.debug({ userId, fileSize }, "Updating user storage usage");
-      await User.updateOne(
-        { _id: userId },
-        { $inc: { storageUsage: fileSize } },
-        { session }
-      );
-      logger.debug({ userId }, "User storage usage updated");
-
-      logger.debug("Committing transaction");
-      await session.commitTransaction();
-      logger.info(
-        { fileId: newFile._id, hash, objectKey, userId },
-        "File uploaded successfully"
-      );
-
-      return {
-        id: newFile.id,
-        name: newFile.name,
-        originalName: newFile.originalName,
-        extension: newFile.extension,
-        mimeType: newFile.mimeType,
-        size: newFile.size,
-        folder: String(newFile.folder),
-        user: {
-          id: userId,
-          name: user.name,
-          email: user.email,
-          avatar: {
-            thumbnail: user.avatar?.thumbnail || "",
-          },
-        },
-        isStarred: newFile.isStarred,
-        isTrashed: newFile.isTrashed,
-        trashedAt: newFile.trashedAt,
-        isPublic: newFile.isPublic,
-        sharedWith: [],
-        createdAt: newFile.createdAt,
-        updatedAt: newFile.updatedAt,
-      };
-    } catch (error) {
-      await session.abortTransaction();
-
-      console.error("File upload error details:", error);
-      logger.error(
-        { error, userId, folderId, hash, fileSize },
-        "Failed to upload file - detailed error"
-      );
-
-      if (isNewUpload && objectKey) {
-        logger.warn(
-          { objectKey, userId, error },
-          "Transaction aborted, cleaning up MinIO object"
-        );
-        await minioClient.removeObject("file", objectKey).catch((err) => {
-          logger.error({ err, objectKey }, "Failed to cleanup MinIO object");
-        });
-      }
-
-      throw new AppError(
-        StatusCodes.INTERNAL_SERVER_ERROR,
-        "Failed to create file"
-      );
-    } finally {
-      await session.endSession();
+      throw new AppError(StatusCodes.BAD_REQUEST, "Storage quota exceeded");
     }
+
+    // 创建文件记录
+    const file = await File.create({
+      user: userObjectId,
+      folder: folderObjectId,
+      key,
+      size: fileSize,
+      mimeType,
+      originalName,
+      name: originalName,
+      extension: mimeTypes.extension(mimeType) || "",
+      hash,
+      isPublic: false,
+      isStarred: false,
+      isTrashed: false,
+      sharedWith: [],
+    });
+
+    return {
+      id: file._id.toString(),
+      name: originalName,
+      originalName: file.originalName,
+      extension: mimeTypes.extension(file.mimeType) || "",
+      mimeType: file.mimeType,
+      size: file.size,
+      folder: file.folder.toString(),
+      user: userId,
+      isStarred: file.isStarred,
+      isTrashed: file.isTrashed,
+      trashedAt: file.trashedAt,
+      isPublic: file.isPublic,
+      sharedWith: file.sharedWith.map((share) => ({
+        userId: share.user.toString(),
+        role: share.role,
+      })),
+      createdAt: file.createdAt,
+      updatedAt: file.updatedAt,
+    };
   }
 
   async trashFile(fileId: string, userId: string) {
@@ -377,7 +260,7 @@ export class FileService {
         { key, hash },
         "No file references remaining, deleting object from MinIO"
       );
-      await minioClient.removeObject("file", key).catch((err) => {
+      await StorageService.deleteObject(BUCKETS.FILES, key).catch((err) => {
         logger.error({ err, key }, "Failed to delete object from MinIO");
       });
     } else {
@@ -470,10 +353,9 @@ export class FileService {
     }
 
     const expirySeconds = data.expirySeconds || 3600;
-    const presignedUrl = await getPresignedUrl(
-      "file",
+    const presignedUrl = await StorageService.getDownloadUrl(
+      BUCKETS.FILES,
       file.key,
-      file.originalName,
       expirySeconds,
       "attachment"
     );
@@ -525,7 +407,10 @@ export class FileService {
     }
 
     // 从 MinIO 获取文件流
-    const stream = await minioClient.getObject("file", file.key);
+    const stream = await StorageService.getObjectStream(
+      BUCKETS.FILES,
+      file.key
+    );
 
     logger.info(
       { fileId: data.fileId, userId: data.userId, fileSize: file.size },

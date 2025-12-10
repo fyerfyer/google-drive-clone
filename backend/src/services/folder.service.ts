@@ -4,7 +4,8 @@ import File, { IFile } from "../models/File.model";
 import User from "../models/User.model";
 import { AppError } from "../middlewares/errorHandler";
 import { StatusCodes } from "http-status-codes";
-import { minioClient } from "../config/minio";
+import { StorageService } from "./storage.service";
+import { BUCKETS } from "../config/s3";
 import { logger } from "../lib/logger";
 import { IFilePublic } from "./file.service";
 
@@ -324,7 +325,7 @@ export class FolderService {
         { key, hash },
         "No file references remaining, deleting object from MinIO"
       );
-      await minioClient.removeObject("file", key).catch((err) => {
+      await StorageService.deleteObject(BUCKETS.FILES, key).catch((err) => {
         logger.error({ err, key }, "Failed to delete object from MinIO");
       });
     } else {
@@ -572,12 +573,15 @@ export class FolderService {
         mimeType: file.mimeType,
         size: file.size,
         folder: file.folder.toString(),
-        user: userBasic,
+        user: userId,
         isStarred: file.isStarred,
         isTrashed: file.isTrashed,
         trashedAt: file.trashedAt,
         isPublic: file.isPublic,
-        sharedWith: [],
+        sharedWith: file.sharedWith.map((share) => ({
+          userId: share.user.toString(),
+          role: share.role,
+        })),
         createdAt: file.createdAt,
         updatedAt: file.updatedAt,
       };

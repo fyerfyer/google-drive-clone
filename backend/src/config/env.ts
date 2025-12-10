@@ -14,8 +14,6 @@ interface EnvConfig {
   corsOrigin: string;
   trashRetentionDays: number;
   MINIO_ENDPOINT: string;
-  MINIO_PORT: number;
-  MINIO_USE_SSL: boolean;
   MINIO_ACCESS_KEY: string;
   MINIO_SECRET_KEY: string;
   MINIO_PUBLIC_URL: string;
@@ -29,9 +27,7 @@ export const config: EnvConfig = {
   jwtExpire: process.env.JWT_EXPIRE || "7d",
   corsOrigin: process.env.CORS_ORIGIN || "http://localhost:5173",
   trashRetentionDays: parseInt(process.env.TRASH_RETENTION_DAYS || "30", 10),
-  MINIO_ENDPOINT: process.env.MINIO_ENDPOINT || "localhost",
-  MINIO_PORT: parseInt(process.env.MINIO_PORT || "9000", 10),
-  MINIO_USE_SSL: process.env.MINIO_USE_SSL === "true",
+  MINIO_ENDPOINT: process.env.MINIO_ENDPOINT || "http://localhost:9000",
   MINIO_ACCESS_KEY: process.env.MINIO_ACCESS_KEY || "minioadmin",
   MINIO_SECRET_KEY: process.env.MINIO_SECRET_KEY || "minioadmin123",
   MINIO_PUBLIC_URL:

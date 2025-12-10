@@ -29,8 +29,6 @@ export class AuthService {
       email: data.email,
       password: data.password,
       name: data.name,
-      avatarDataUrl: data.avatarDataUrl,
-      avatarFile: data.avatarFile,
     });
 
     const token = generateToken({ id: user.id, email: user.email });

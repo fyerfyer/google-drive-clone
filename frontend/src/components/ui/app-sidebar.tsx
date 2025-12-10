@@ -160,7 +160,10 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     : {
         name: "Guest",
         email: "",
-        avatar: "/avatars/default.png",
+        avatar: {
+          url: "/avatars/default.png",
+          thumbnail: "/avatars/default.png",
+        },
       };
 
   return (

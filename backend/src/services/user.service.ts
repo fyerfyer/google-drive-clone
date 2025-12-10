@@ -7,8 +7,6 @@ interface CreateUserDTO {
   email: string;
   password: string;
   name: string;
-  avatarFile?: Express.Multer.File;
-  avatarDataUrl?: string;
 }
 
 interface IUserAvatarDTO {
@@ -46,27 +44,6 @@ export class UserService {
       name: data.name,
     });
 
-    if (data.avatarFile || data.avatarDataUrl) {
-      const uploadedAvatar = data.avatarFile
-        ? await this.avatarService.uploadAvatar({
-            userId: user.id as string,
-            avatarFile: data.avatarFile,
-          })
-        : await this.avatarService.uploadAvatarFromDataUrl({
-            userId: user.id as string,
-            avatarDataUrl: data.avatarDataUrl!,
-          });
-
-      user.avatar = {
-        publicId: uploadedAvatar.publicId,
-        thumbnailId: uploadedAvatar.thumbnailId,
-        url: uploadedAvatar.url,
-        thumbnail: uploadedAvatar.thumbnail,
-        createdAt: new Date(),
-      };
-      await user.save();
-    }
-
     return user;
   }
 
@@ -89,9 +66,7 @@ export class UserService {
 
   async updateUser(
     userId: string,
-    updates: Partial<Pick<IUser, "name" | "email">>,
-    avatarFile?: Express.Multer.File,
-    avatarDataUrl?: string
+    updates: Partial<Pick<IUser, "name" | "email">>
   ): Promise<IUser> {
     if (updates.email) {
       const existingUser = await User.findOne({
@@ -112,29 +87,35 @@ export class UserService {
       throw new AppError(StatusCodes.NOT_FOUND, "User not found");
     }
 
-    // 如果提供了头像文件或数据 URL，上传新头像
-    if (avatarFile || avatarDataUrl) {
-      const newAvatar = avatarFile
-        ? await this.avatarService.uploadAvatar({
-            userId: userId,
-            avatarFile: avatarFile,
-          })
-        : await this.avatarService.uploadAvatarFromDataUrl({
-            userId,
-            avatarDataUrl: avatarDataUrl!,
-          });
+    return user;
+  }
 
-      user.avatar = {
-        publicId: newAvatar.publicId,
-        thumbnailId: newAvatar.thumbnailId,
-        url: newAvatar.url,
-        thumbnail: newAvatar.thumbnail,
-        createdAt: new Date(),
-      };
-
-      await user.save();
+  async updateAvatar(userId: string, avatarKey: string): Promise<IUser> {
+    const user = await User.findById(userId);
+    if (!user) {
+      throw new AppError(StatusCodes.NOT_FOUND, "User not found");
     }
 
+    // Process and update avatar
+    const newAvatar = await this.avatarService.processUploadAvatar(
+      userId,
+      avatarKey
+    );
+
+    // Delete old avatar if exists
+    if (user.avatar?.publicId) {
+      await this.avatarService.deleteAvatar(user.avatar.publicId);
+    }
+
+    user.avatar = {
+      publicId: newAvatar.publicId,
+      thumbnailId: newAvatar.thumbnailId,
+      url: newAvatar.url,
+      thumbnail: newAvatar.thumbnail,
+      createdAt: new Date(),
+    };
+
+    await user.save();
     return user;
   }
 }

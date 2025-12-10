@@ -203,4 +203,28 @@ export const fileService = {
       throw new Error(response.message || "Failed to unstar file");
     }
   },
+
+  /**
+   * Create file record after successful upload to MinIO
+   * @param data - File metadata including key, size, mimeType, etc.
+   */
+  async createFileRecord(data: {
+    folderId: string;
+    key: string;
+    size: number;
+    mimeType: string;
+    originalName: string;
+    hash?: string;
+  }): Promise<IFile> {
+    const response = await api.post<FileUploadResponse, typeof data>(
+      FILE_API_BASE,
+      data
+    );
+
+    if (!response.success || !response.data?.file) {
+      throw new Error(response.message || "Failed to create file record");
+    }
+
+    return response.data.file;
+  },
 };

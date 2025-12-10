@@ -10,7 +10,7 @@
     "start": "node dist/server.js",
     "lint": "eslint . --ext .ts",
     "format": "prettier --write \"src/**/*.ts\"",
-    "test": "npm run test:setup && jest",
+    "test": "npm run test:setup && jest --runInBand",
     "test:setup": "docker compose -f docker-compose.test.yml up -d && sleep 3",
     "test:teardown": "docker compose -f docker-compose.test.yml down",
     "test:watch": "npm run test:setup && jest --watch"
@@ -19,6 +19,8 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.946.0",
+    "@aws-sdk/s3-request-presigner": "^3.946.0",
     "@types/jsonwebtoken": "^9.0.10",
     "bcryptjs": "^3.0.2",
     "cookie-parser": "^1.4.7",

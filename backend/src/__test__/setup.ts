@@ -15,9 +15,22 @@ export const testMinioClient = new Client({
 
 // 测试 buckets
 export const TEST_BUCKETS = {
-  AVATARS: "avatar",
-  FILES: "file",
+  AVATARS: "avatars",
+  FILES: "files",
 };
+
+// Ensure MINIO endpoint env has protocol and port for AWS SDK S3Client
+if (process.env.MINIO_ENDPOINT) {
+  const raw = process.env.MINIO_ENDPOINT;
+  const port = process.env.MINIO_PORT ? `:${process.env.MINIO_PORT}` : "";
+  if (!/^https?:\/\//i.test(raw)) {
+    process.env.MINIO_ENDPOINT = `http://${raw}${port}`;
+  } else if (!raw.includes(":")) {
+    process.env.MINIO_ENDPOINT = `${raw}${port}`;
+  }
+} else {
+  process.env.MINIO_ENDPOINT = `http://localhost:${process.env.MINIO_PORT || 9000}`;
+}
 
 const TEST_MONGODB_URI =
   "mongodb://localhost:27018/gdrive-test?directConnection=true";

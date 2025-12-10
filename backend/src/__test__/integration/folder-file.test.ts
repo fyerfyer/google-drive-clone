@@ -1,9 +1,10 @@
-import Folder, { IFolder } from "../../models/Folder.model";
-import File, { IFile } from "../../models/File.model";
+import Folder from "../../models/Folder.model";
+import File from "../../models/File.model";
 import User, { IUser } from "../../models/User.model";
 import { FileService } from "../../services/file.service";
 import { FolderService } from "../../services/folder.service";
-import { testMinioClient } from "../setup";
+import { BUCKETS } from "../../config/s3";
+import { countObjectsInBucket, uploadTestFile } from "../utils/file.util";
 
 describe("Folder-File Integration Test", () => {
   let folderService: FolderService;
@@ -50,61 +51,50 @@ describe("Folder-File Integration Test", () => {
     expect(subFolder2Doc?.ancestors).toHaveLength(2);
 
     const mockContent1 = "content for file 1";
-    const mockBuffer1 = Buffer.from(mockContent1);
-    const file1 = await fileService.uploadFile({
-      userId: String(mockUser._id),
-      folderId: String(rootFolder.id),
-      fileBuffer: mockBuffer1,
-      fileSize: mockBuffer1.length,
-      mimeType: "text/plain",
-      originalName: "file1.txt",
-      hash: "hash1",
-    });
+    const file1 = await uploadTestFile(
+      fileService,
+      String(mockUser._id),
+      String(rootFolder.id),
+      "file1.txt",
+      mockContent1,
+      "hash1"
+    );
 
     const mockContent2 = "content for file 2";
-    const mockBuffer2 = Buffer.from(mockContent2);
-    const file2 = await fileService.uploadFile({
-      userId: String(mockUser._id),
-      folderId: String(subFolder1.id),
-      fileBuffer: mockBuffer2,
-      fileSize: mockBuffer2.length,
-      mimeType: "text/plain",
-      originalName: "file2.txt",
-      hash: "hash2",
-    });
+    const file2 = await uploadTestFile(
+      fileService,
+      String(mockUser._id),
+      String(subFolder1.id),
+      "file2.txt",
+      mockContent2,
+      "hash2"
+    );
 
     const mockContent3 = "content for file 3";
-    const mockBuffer3 = Buffer.from(mockContent3);
-    const file3 = await fileService.uploadFile({
-      userId: String(mockUser.id),
-      folderId: String(subFolder2.id),
-      fileBuffer: mockBuffer3,
-      fileSize: mockBuffer3.length,
-      mimeType: "text/plain",
-      originalName: "file3.txt",
-      hash: "hash3",
-    });
+    const file3 = await uploadTestFile(
+      fileService,
+      String(mockUser._id),
+      String(subFolder2.id),
+      "file3.txt",
+      mockContent3,
+      "hash3"
+    );
 
     // 测试文件上传
-    let objectCount = await testMinioClient
-      .listObjectsV2("file", "", true)
-      .reduce((count) => count + 1, 0);
+    let objectCount = await countObjectsInBucket(BUCKETS.FILES);
     expect(objectCount).toBe(3);
 
-    const file4 = await fileService.uploadFile({
-      userId: String(mockUser._id),
-      folderId: String(rootFolder.id),
-      fileBuffer: mockBuffer1,
-      fileSize: mockBuffer1.length,
-      mimeType: "text/plain",
-      originalName: "file4.txt",
-      hash: "hash1",
-    });
+    const file4 = await uploadTestFile(
+      fileService,
+      String(mockUser._id),
+      String(rootFolder.id),
+      "file4.txt",
+      mockContent1,
+      "hash1"
+    );
 
     // 测试 hash 快传 (通过 MinIO 对象数量断言)
-    objectCount = await testMinioClient
-      .listObjectsV2("file", "", true)
-      .reduce((count) => count + 1, 0);
+    objectCount = await countObjectsInBucket(BUCKETS.FILES);
     expect(objectCount).toBe(3);
 
     // 测试回收站和恢复功能
@@ -153,9 +143,7 @@ describe("Folder-File Integration Test", () => {
     file1InDb = await File.findById(String(file1.id));
     expect(file1InDb).toBeNull();
 
-    objectCount = await testMinioClient
-      .listObjectsV2("file", "", true)
-      .reduce((count) => count + 1, 0);
+    objectCount = await countObjectsInBucket(BUCKETS.FILES);
     expect(objectCount).toBe(3);
 
     await folderService.trashFolder(
@@ -172,9 +160,7 @@ describe("Folder-File Integration Test", () => {
     expect(allFolders).toHaveLength(0);
     expect(allFiles).toHaveLength(0);
 
-    objectCount = await testMinioClient
-      .listObjectsV2("file", "", true)
-      .reduce((count) => count + 1, 0);
+    objectCount = await countObjectsInBucket(BUCKETS.FILES);
     expect(objectCount).toBe(0);
   });
 
@@ -184,33 +170,28 @@ describe("Folder-File Integration Test", () => {
       parentId: "",
       name: "Folder1",
     });
-    const folder1Doc = await Folder.findById(folder1.id);
 
     const folder2 = await folderService.createFolder({
       userId: String(mockUser._id),
       parentId: "",
       name: "Folder2",
     });
-    const folder2Doc = await Folder.findById(folder2.id);
 
     const subFolder = await folderService.createFolder({
       userId: String(mockUser._id),
       parentId: String(folder1.id),
       name: "SubFolder",
     });
-    const subFolderDoc = await Folder.findById(subFolder.id);
 
     const mockContent = "test content";
-    const mockBuffer = Buffer.from(mockContent);
-    const file = await fileService.uploadFile({
-      userId: String(mockUser._id),
-      folderId: String(subFolder.id),
-      fileBuffer: mockBuffer,
-      fileSize: mockBuffer.length,
-      mimeType: "text/plain",
-      originalName: "file.txt",
-      hash: "file-hash",
-    });
+    const file = await uploadTestFile(
+      fileService,
+      String(mockUser._id),
+      String(subFolder.id),
+      "file.txt",
+      mockContent,
+      "file-hash"
+    );
 
     await folderService.moveFolder({
       folderId: String(subFolder.id),
@@ -236,16 +217,14 @@ describe("Folder-File Integration Test", () => {
     const folderDoc = await Folder.findById(folder.id);
 
     const mockContent = "test content";
-    const mockBuffer = Buffer.from(mockContent);
-    const file = await fileService.uploadFile({
-      userId: String(mockUser._id),
-      folderId: String(folder.id),
-      fileBuffer: mockBuffer,
-      fileSize: mockBuffer.length,
-      mimeType: "text/plain",
-      originalName: "original.txt",
-      hash: "file-hash",
-    });
+    const file = await uploadTestFile(
+      fileService,
+      String(mockUser._id),
+      String(folder.id),
+      "original.txt",
+      mockContent,
+      "file-hash"
+    );
 
     await folderService.renameFolder(
       String(folder.id),
@@ -271,19 +250,16 @@ describe("Folder-File Integration Test", () => {
       parentId: "",
       name: "TestFolder",
     });
-    const folderTestDoc = await Folder.findById(folder.id);
 
     const mockContent = "test content";
-    const mockBuffer = Buffer.from(mockContent);
-    const file = await fileService.uploadFile({
-      userId: String(mockUser._id),
-      folderId: String(folder.id),
-      fileBuffer: mockBuffer,
-      fileSize: mockBuffer.length,
-      mimeType: "text/plain",
-      originalName: "test.txt",
-      hash: "file-hash",
-    });
+    const file = await uploadTestFile(
+      fileService,
+      String(mockUser._id),
+      String(folder.id),
+      "test.txt",
+      mockContent,
+      "file-hash"
+    );
 
     await folderService.starFolder(
       String(folder.id),

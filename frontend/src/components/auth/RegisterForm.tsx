@@ -17,17 +17,10 @@ import {
   InputGroupInput,
 } from "@/components/ui/input-group";
 import { Spinner } from "@/components/ui/spinner";
-import { AvatarUploader } from "@/components/avatar/AvatarUploader";
 
 export function RegisterForm({ ...props }: React.ComponentProps<typeof Card>) {
-  const {
-    formData,
-    fieldErrors,
-    isLoading,
-    handleInputChange,
-    handleAvatarChange,
-    handleSubmit,
-  } = useRegister();
+  const { formData, fieldErrors, isLoading, handleInputChange, handleSubmit } =
+    useRegister();
   const { error, clearError } = useAuth();
 
   useEffect(() => {
@@ -147,21 +140,6 @@ export function RegisterForm({ ...props }: React.ComponentProps<typeof Card>) {
               {fieldErrors.confirmpassword && (
                 <p className="text-sm text-destructive">
                   {fieldErrors.confirmpassword}
-                </p>
-              )}
-            </Field>
-
-            <Field>
-              <FieldLabel>Avatar (Optional)</FieldLabel>
-              <AvatarUploader
-                value={formData.avatarDataUrl ?? null}
-                onChange={handleAvatarChange}
-                disabled={isLoading}
-                fallbackText={formData.name}
-              />
-              {fieldErrors.avatarDataUrl && (
-                <p className="text-sm text-destructive">
-                  {fieldErrors.avatarDataUrl}
                 </p>
               )}
             </Field>

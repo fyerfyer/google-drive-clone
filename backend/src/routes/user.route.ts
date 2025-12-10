@@ -1,7 +1,6 @@
 import { Router } from "express";
 import { jwtAuth } from "../middlewares/auth.middleware.js";
 import { updateValidator } from "../middlewares/validator.js";
-import { avatarUpload } from "../middlewares/upload.js";
 import { UserController } from "../controllers/user.controller.js";
 
 export function createUserRouter(userController: UserController) {
@@ -14,12 +13,14 @@ export function createUserRouter(userController: UserController) {
     "/profile",
     userController.getCurrentUser.bind(userController)
   );
+
   userRouter.patch(
     "/profile",
-    avatarUpload.single("avatar"),
     updateValidator,
     userController.updateUser.bind(userController)
   );
+
+  userRouter.patch("/avatar", userController.updateAvatar.bind(userController));
 
   return userRouter;
 }

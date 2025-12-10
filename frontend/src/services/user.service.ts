@@ -1,11 +1,7 @@
-import type { UpdateUserRequest, User, UserResponse } from "@/types/user.types";
+import type { User, UserResponse } from "@/types/user.types";
 import { api } from "./api";
 
 const USER_API_BASE = "/api/users";
-
-type UpdatePayload = Omit<UpdateUserRequest, "avatarDataUrl"> & {
-  avatarDataUrl?: string;
-};
 
 export const userService = {
   getCurrentUser: async (): Promise<User> => {
@@ -23,16 +19,14 @@ export const userService = {
     }
   },
 
-  updateUser: async (req: UpdateUserRequest): Promise<UserResponse> => {
+  updateUser: async (data: {
+    name?: string;
+    email?: string;
+  }): Promise<UserResponse> => {
     try {
-      const { avatarDataUrl, ...rest } = req;
-      const payload: UpdatePayload = avatarDataUrl
-        ? { ...rest, avatarDataUrl }
-        : rest;
-
-      const response = await api.patch<UserResponse, UpdatePayload>(
+      const response = await api.patch<UserResponse, typeof data>(
         `${USER_API_BASE}/profile`,
-        payload
+        data
       );
       if (response.success && response.data) {
         return {
@@ -45,6 +39,31 @@ export const userService = {
     } catch (error) {
       throw new Error(
         error instanceof Error ? error.message : "Failed to update user profile"
+      );
+    }
+  },
+
+  /**
+   * Update user avatar separately
+   * @param key - The MinIO object key returned after avatar upload
+   */
+  updateAvatar: async (key: string): Promise<UserResponse> => {
+    try {
+      const response = await api.patch<UserResponse, { key: string }>(
+        `${USER_API_BASE}/avatar`,
+        { key }
+      );
+      if (response.success && response.data) {
+        return {
+          user: response.data.user,
+          message: response.message,
+        };
+      }
+
+      throw new Error(response.message || "Failed to update avatar");
+    } catch (error) {
+      throw new Error(
+        error instanceof Error ? error.message : "Failed to update avatar"
       );
     }
   },

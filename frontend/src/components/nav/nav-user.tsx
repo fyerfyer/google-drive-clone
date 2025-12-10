@@ -41,7 +41,7 @@ export function NavUser({
   const navigate = useNavigate();
   const initials =
     user.name
-      .trim()
+      ?.trim()
       .split(" ")
       .slice(0, 2)
       .map((part) => part[0])

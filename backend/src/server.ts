@@ -1,7 +1,7 @@
 import app from "./app";
 import { config } from "./config/env";
 import { connectDB } from "./config/database";
-import { initializeBuckets } from "./config/minio";
+import { initializeBuckets } from "./config/s3";
 import { logger } from "./lib/logger";
 
 const startServer = async () => {

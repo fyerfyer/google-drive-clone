@@ -9,23 +9,26 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { AvatarUploader } from "@/components/avatar/AvatarUploader";
-import { updateUserSchema } from "@/types/user.types";
+import { updateUserSchema, type User } from "@/types/user.types";
 import { userService } from "@/services/user.service";
 import { useAuth } from "@/hooks/auth/useAuth";
 import { ValidateAlert } from "@/components/auth/FormStatusAlert";
 import { Spinner } from "@/components/ui/spinner";
+import { Separator } from "@/components/ui/separator";
 
 interface FieldErrors {
   name?: string;
-  avatarDataUrl?: string;
 }
 
 export const ProfilePanel = () => {
   const { user, setUser } = useAuth();
   const [name, setName] = useState(user?.name ?? "");
-  const [avatarDataUrl, setAvatarDataUrl] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
-  const [status, setStatus] = useState<{
+  const [profileStatus, setProfileStatus] = useState<{
+    type: "success" | "error";
+    message: string;
+  } | null>(null);
+  const [avatarStatus, setAvatarStatus] = useState<{
     type: "success" | "error";
     message: string;
   } | null>(null);
@@ -37,15 +40,24 @@ export const ProfilePanel = () => {
     }
   }, [user]);
 
-  // Auto-hide success message after 3 seconds
+  // Auto-hide success messages
   useEffect(() => {
-    if (status?.type === "success") {
+    if (profileStatus?.type === "success") {
       const timer = setTimeout(() => {
-        setStatus(null);
+        setProfileStatus(null);
       }, 2000);
       return () => clearTimeout(timer);
     }
-  }, [status]);
+  }, [profileStatus]);
+
+  useEffect(() => {
+    if (avatarStatus?.type === "success") {
+      const timer = setTimeout(() => {
+        setAvatarStatus(null);
+      }, 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [avatarStatus]);
 
   const email = useMemo(() => user?.email ?? "", [user]);
   const avatarUrl = useMemo(
@@ -61,14 +73,34 @@ export const ProfilePanel = () => {
     );
   }
 
+  const handleAvatarUploadSuccess = (result: User | string | undefined) => {
+    if (result && typeof result !== "string") {
+      setUser(result);
+      setAvatarStatus({
+        type: "success",
+        message: "Avatar updated successfully",
+      });
+      return;
+    }
+
+    setAvatarStatus({
+      type: "success",
+      message: "Avatar uploaded successfully",
+    });
+  };
+
+  const handleAvatarUploadError = (error: string) => {
+    setAvatarStatus({
+      type: "error",
+      message: error,
+    });
+  };
+
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    setStatus(null);
+    setProfileStatus(null);
 
-    const result = updateUserSchema.safeParse({
-      name,
-      avatarDataUrl,
-    });
+    const result = updateUserSchema.safeParse({ name });
 
     if (!result.success) {
       const errors: FieldErrors = {};
@@ -86,16 +118,14 @@ export const ProfilePanel = () => {
     try {
       const response = await userService.updateUser({
         name: result.data.name,
-        avatarDataUrl: result.data.avatarDataUrl ?? undefined,
       });
       setUser(response.user);
-      setAvatarDataUrl(null);
-      setStatus({
+      setProfileStatus({
         type: "success",
         message: response.message || "Profile updated successfully",
       });
     } catch (error) {
-      setStatus({
+      setProfileStatus({
         type: "error",
         message:
           error instanceof Error ? error.message : "Failed to update profile",
@@ -110,39 +140,42 @@ export const ProfilePanel = () => {
       <CardHeader>
         <CardTitle>Profile</CardTitle>
       </CardHeader>
-      <CardContent>
+      <CardContent className="space-y-6">
+        {/* Avatar Section - Updates immediately */}
+        <div className="space-y-4">
+          <div>
+            <h3 className="text-lg font-medium">Avatar</h3>
+            <p className="text-sm text-muted-foreground">
+              Upload a new avatar. Changes are saved automatically.
+            </p>
+          </div>
+
+          {avatarStatus && (
+            <ValidateAlert
+              isSuccess={avatarStatus.type === "success"}
+              message={avatarStatus.message}
+            />
+          )}
+
+          <AvatarUploader
+            fallbackText={name}
+            existingImageUrl={avatarUrl}
+            onUploadSuccess={handleAvatarUploadSuccess}
+            onUploadError={handleAvatarUploadError}
+          />
+        </div>
+
+        <Separator />
+
+        {/* Profile Form - Requires submit */}
         <form onSubmit={handleSubmit} className="space-y-6">
           <FieldGroup>
-            {status && (
+            {profileStatus && (
               <ValidateAlert
-                isSuccess={status.type === "success"}
-                message={status.message}
+                isSuccess={profileStatus.type === "success"}
+                message={profileStatus.message}
               />
             )}
-
-            <Field>
-              <FieldLabel>Avatar</FieldLabel>
-              <AvatarUploader
-                value={avatarDataUrl}
-                onChange={(value) => {
-                  setAvatarDataUrl(value);
-                  if (fieldErrors.avatarDataUrl) {
-                    setFieldErrors((prev) => ({
-                      ...prev,
-                      avatarDataUrl: undefined,
-                    }));
-                  }
-                }}
-                disabled={isSaving}
-                fallbackText={name}
-                existingImageUrl={avatarUrl}
-              />
-              {fieldErrors.avatarDataUrl && (
-                <p className="text-sm text-destructive">
-                  {fieldErrors.avatarDataUrl}
-                </p>
-              )}
-            </Field>
 
             <Field>
               <FieldLabel htmlFor="name">Name</FieldLabel>

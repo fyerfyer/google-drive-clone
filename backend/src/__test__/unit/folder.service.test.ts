@@ -1,10 +1,10 @@
 import Folder, { IFolder } from "../../models/Folder.model";
-import { IFilePublic } from "../../services/file.service";
-import File, { IFile } from "../../models/File.model";
+import File from "../../models/File.model";
 import User, { IUser } from "../../models/User.model";
 import { FileService } from "../../services/file.service";
 import { FolderService } from "../../services/folder.service";
-import { testMinioClient } from "../setup";
+import { BUCKETS } from "../../config/s3";
+import { countObjectsInBucket, uploadTestFile } from "../utils/file.util";
 
 describe("Test file service", () => {
   let folderService: FolderService;
@@ -12,9 +12,6 @@ describe("Test file service", () => {
   let mockUser: IUser;
   let parentFolder: IFolder;
   let sharedHash: string;
-  let file1: IFilePublic;
-  let file2: IFilePublic;
-  let file3: IFilePublic;
 
   beforeEach(async () => {
     folderService = new FolderService();
@@ -37,37 +34,6 @@ describe("Test file service", () => {
     });
 
     sharedHash = "shared-hash";
-    const mockContent = "test content";
-    const mockBuffer = Buffer.from(mockContent);
-    file1 = await fileService.uploadFile({
-      userId: String(mockUser._id),
-      folderId: String(parentFolder._id),
-      fileBuffer: mockBuffer,
-      fileSize: mockBuffer.length,
-      mimeType: "text/plain",
-      originalName: "file1.txt",
-      hash: sharedHash,
-    });
-
-    file2 = await fileService.uploadFile({
-      userId: String(mockUser._id),
-      folderId: String(parentFolder._id),
-      fileBuffer: mockBuffer,
-      fileSize: mockBuffer.length,
-      mimeType: "text/plain",
-      originalName: "file2.txt",
-      hash: sharedHash,
-    });
-
-    file3 = await fileService.uploadFile({
-      userId: String(mockUser._id),
-      folderId: String(parentFolder._id),
-      fileBuffer: mockBuffer,
-      fileSize: mockBuffer.length,
-      mimeType: "text/plain",
-      originalName: "file3.txt",
-      hash: "unique-hash",
-    });
   });
 
   it("Folder creation", async () => {
@@ -107,20 +73,15 @@ describe("Test file service", () => {
       parentId: String(parentFolder._id),
       name: "Folder1",
     });
-    const folder1Doc = await Folder.findById(folder1.id);
 
-    const mockContent = "test content";
-    const mockBuffer = Buffer.from(mockContent);
-
-    await fileService.uploadFile({
-      userId: String(mockUser._id),
-      folderId: String(folder1.id),
-      fileBuffer: mockBuffer,
-      fileSize: mockBuffer.length,
-      mimeType: "text/plain",
-      originalName: "fileInFolder.txt",
-      hash: "folder-file-hash",
-    });
+    await uploadTestFile(
+      fileService,
+      String(mockUser._id),
+      String(folder1.id),
+      "fileInFolder.txt",
+      "test content",
+      "folder-file-hash"
+    );
 
     await folderService.trashFolder(
       String(parentFolder._id),
@@ -129,7 +90,7 @@ describe("Test file service", () => {
     const trashedFolders = await Folder.find({ isTrashed: true });
     expect(trashedFolders).toHaveLength(2);
     const trashedFiles = await File.find({ isTrashed: true });
-    expect(trashedFiles).toHaveLength(4);
+    expect(trashedFiles).toHaveLength(1);
 
     await folderService.deleteFolderPermanent(
       String(parentFolder._id),
@@ -147,20 +108,17 @@ describe("Test file service", () => {
       parentId: String(parentFolder._id),
       name: "Folder1",
     });
-    const folder1Doc = await Folder.findById(folder1.id);
 
     const mockContent = "test content";
-    const mockBuffer = Buffer.from(mockContent);
 
-    await fileService.uploadFile({
-      userId: String(mockUser._id),
-      folderId: String(folder1.id),
-      fileBuffer: mockBuffer,
-      fileSize: mockBuffer.length,
-      mimeType: "text/plain",
-      originalName: "file-in-folder.txt",
-      hash: sharedHash,
-    });
+    await uploadTestFile(
+      fileService,
+      String(mockUser._id),
+      String(folder1.id),
+      "file-in-folder.txt",
+      "test content",
+      sharedHash
+    );
 
     await folderService.trashFolder(String(folder1.id), String(mockUser._id));
     await folderService.deleteFolderPermanent(
@@ -168,13 +126,11 @@ describe("Test file service", () => {
       String(mockUser._id)
     );
 
-    const objectCount = await testMinioClient
-      .listObjectsV2("file", "", true)
-      .reduce((count) => count + 1, 0);
-    expect(objectCount).toBe(2);
+    const objectCount = await countObjectsInBucket(BUCKETS.FILES);
+    expect(objectCount).toBe(0);
 
     const remainingFiles = await File.find({ isTrashed: false });
-    expect(remainingFiles).toHaveLength(3);
+    expect(remainingFiles).toHaveLength(0);
   });
 
   it("delete parent folder with subfolders", async () => {

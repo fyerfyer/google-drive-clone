@@ -5,34 +5,70 @@ import { StatusCodes } from "http-status-codes";
 import { IUser } from "../models/User.model";
 import { ResponseHelper } from "../utils/response.util";
 import { FileUploadResponse } from "../types/response.types";
+import { StorageService } from "../services/storage.service";
+import { BUCKETS } from "../config/s3";
 
 export class FileController {
   constructor(private fileService: FileService) {}
 
-  async uploadFile(req: Request, res: Response, next: NextFunction) {
-    if (!req.file) {
-      throw new AppError(StatusCodes.BAD_REQUEST, "No file upload");
-    }
+  // async uploadFile(req: Request, res: Response, next: NextFunction) {
+  //   if (!req.file) {
+  //     throw new AppError(StatusCodes.BAD_REQUEST, "No file upload");
+  //   }
 
+  //   if (!req.user) {
+  //     throw new AppError(StatusCodes.UNAUTHORIZED, "User not authenticated");
+  //   }
+
+  //   const { folderId, hash } = req.body;
+  //   const file = await this.fileService.uploadFile({
+  //     userId: req.user.id,
+  //     folderId,
+  //     fileBuffer: req.file.buffer,
+  //     fileSize: req.file.size,
+  //     mimeType: req.file.mimetype,
+  //     originalName: req.file.originalname,
+  //     hash,
+  //   });
+
+  //   return ResponseHelper.created<FileUploadResponse>(
+  //     res,
+  //     { file },
+  //     "File uploaded successfully"
+  //   );
+  // }
+
+  async createFile(req: Request, res: Response, next: NextFunction) {
     if (!req.user) {
       throw new AppError(StatusCodes.UNAUTHORIZED, "User not authenticated");
     }
 
-    const { folderId, hash } = req.body;
-    const file = await this.fileService.uploadFile({
+    const { folderId, key, size, mimeType, originalName, hash } = req.body;
+    if (!key || !size || !mimeType || !originalName || !folderId) {
+      throw new AppError(StatusCodes.BAD_REQUEST, "Missing required fields");
+    }
+
+    // Verify object exists in storage
+    const exists = await StorageService.checkObjectExists(BUCKETS.FILES, key);
+    if (!exists) {
+      throw new AppError(StatusCodes.BAD_REQUEST, "File not found in storage");
+    }
+
+    // Create file record in database
+    const file = await this.fileService.createFileRecord({
       userId: req.user.id,
       folderId,
-      fileBuffer: req.file.buffer,
-      fileSize: req.file.size,
-      mimeType: req.file.mimetype,
-      originalName: req.file.originalname,
+      key,
+      fileSize: size,
+      mimeType,
+      originalName,
       hash,
     });
 
     return ResponseHelper.created<FileUploadResponse>(
       res,
       { file },
-      "File uploaded successfully"
+      "File created successfully"
     );
   }
 

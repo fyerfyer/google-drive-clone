@@ -18,12 +18,15 @@ import { FileController } from "./controllers/file.controller";
 import { FolderService } from "./services/folder.service";
 import { FolderController } from "./controllers/folder.controller";
 import { createFolderRouter } from "./routes/folder.route";
+import { createUploadRouter } from "./routes/upload.route";
+import { UploadController } from "./controllers/upload.controller";
 
 const avatarService = new AvatarService();
 const userService = new UserService(avatarService);
 const authService = new AuthService(userService);
 const authController = new AuthController(authService);
 const userController = new UserController(userService);
+const uploadController = new UploadController();
 
 const fileService = new FileService();
 const fileController = new FileController(fileService);
@@ -65,6 +68,7 @@ app.use("/api/auth", createAuthRouter(authController));
 app.use("/api/users", createUserRouter(userController));
 app.use("/api/files", createFileRouter(fileController));
 app.use("/api/folders", createFolderRouter(folderController));
+app.use("/api/upload", createUploadRouter(uploadController));
 
 app.use(notFound);
 app.use(errorHandler);
