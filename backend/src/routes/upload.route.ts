@@ -21,7 +21,6 @@ export function createUploadRouter(uploadController: UploadController) {
     uploadController.createMultipartUpload.bind(uploadController)
   );
 
-  // Uppy multipart routes - key passed as query parameter to avoid URL encoding issues
   router.get(
     "/multipart/:uploadId/:partNumber",
     uploadController.signPart.bind(uploadController)

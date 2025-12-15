@@ -48,5 +48,24 @@ export function createFolderRouter(folderController: FolderController) {
     folderController.getFolderContent.bind(folderController)
   );
 
+  // Special views
+  router.get(
+    "/view/starred",
+    folderController.getStarredFolders.bind(folderController)
+  );
+  router.get(
+    "/view/trashed",
+    folderController.getTrashedFolders.bind(folderController)
+  );
+  router.get(
+    "/view/recent",
+    folderController.getRecentFolders.bind(folderController)
+  );
+
+  router.get(
+    "/:folderId/path",
+    folderController.getFolderPath.bind(folderController)
+  );
+
   return router;
 }

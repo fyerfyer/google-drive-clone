@@ -4,7 +4,7 @@ import { useCallback } from "react";
 import { toast } from "sonner";
 
 export const useFolderOperations = () => {
-  const { refreshContent } = useFolder();
+  const { refreshContent, updateItem } = useFolder();
 
   const createFolder = useCallback(
     async (parentId: string, name: string) => {
@@ -27,8 +27,8 @@ export const useFolderOperations = () => {
     async (folderId: string, name: string) => {
       try {
         await folderService.renameFolder(folderId, name);
+        updateItem(folderId, { name });
         toast.success("Folder renamed successfully");
-        await refreshContent();
       } catch (error) {
         const message =
           error instanceof Error ? error.message : "Failed to rename folder";
@@ -36,7 +36,7 @@ export const useFolderOperations = () => {
         throw error;
       }
     },
-    [refreshContent]
+    [updateItem]
   );
 
   const moveFolder = useCallback(
@@ -107,10 +107,10 @@ export const useFolderOperations = () => {
 
   const starFolder = useCallback(
     async (folderId: string) => {
+      updateItem(folderId, { isStarred: true });
       try {
         await folderService.starFolder(folderId);
         toast.success("Folder starred successfully");
-        await refreshContent();
       } catch (error) {
         const message =
           error instanceof Error ? error.message : "Failed to star folder";
@@ -118,15 +118,15 @@ export const useFolderOperations = () => {
         throw error;
       }
     },
-    [refreshContent]
+    [updateItem]
   );
 
   const unstarFolder = useCallback(
     async (folderId: string) => {
+      updateItem(folderId, { isStarred: false });
       try {
         await folderService.unstarFolder(folderId);
         toast.success("Folder unstarred successfully");
-        await refreshContent();
       } catch (error) {
         const message =
           error instanceof Error ? error.message : "Failed to unstar folder";
@@ -134,7 +134,7 @@ export const useFolderOperations = () => {
         throw error;
       }
     },
-    [refreshContent]
+    [updateItem]
   );
 
   return {

@@ -1,21 +1,14 @@
 import * as React from "react";
 import {
-  IconCamera,
   IconDashboard,
-  IconDatabase,
-  IconFileAi,
-  IconFileDescription,
-  IconFileWord,
   IconFolder,
-  IconHelp,
-  IconReport,
-  IconSearch,
-  IconSettings,
+  IconStar,
+  IconTrash,
+  IconClock,
+  IconCloudUp,
 } from "@tabler/icons-react";
 
-import { NavDocuments } from "@/components/nav/nav-documents";
 import { NavMain } from "@/components/nav/nav-main";
-import { NavSecondary } from "@/components/nav/nav-secondary";
 import { NavUser } from "@/components/nav/nav-user";
 import { useAuth } from "@/hooks/auth/useAuth";
 import GoogleDriveIcon from "@/assets/GoogleDriveIcon.svg";
@@ -37,92 +30,31 @@ const data = {
       icon: IconDashboard,
     },
     {
-      title: "My Files",
+      title: "My Drive",
       url: "/files",
+      icon: IconCloudUp,
+    },
+  ],
+  navStorage: [
+    {
+      title: "My Files",
+      url: "/files?view=files",
       icon: IconFolder,
     },
-  ],
-
-  navClouds: [
     {
-      title: "Capture",
-      icon: IconCamera,
-      isActive: true,
-      url: "#",
-      items: [
-        {
-          title: "Active Proposals",
-          url: "#",
-        },
-        {
-          title: "Archived",
-          url: "#",
-        },
-      ],
+      title: "Recent",
+      url: "/files?view=recent",
+      icon: IconClock,
     },
     {
-      title: "Proposal",
-      icon: IconFileDescription,
-      url: "#",
-      items: [
-        {
-          title: "Active Proposals",
-          url: "#",
-        },
-        {
-          title: "Archived",
-          url: "#",
-        },
-      ],
+      title: "Starred",
+      url: "/files?view=starred",
+      icon: IconStar,
     },
     {
-      title: "Prompts",
-      icon: IconFileAi,
-      url: "#",
-      items: [
-        {
-          title: "Active Proposals",
-          url: "#",
-        },
-        {
-          title: "Archived",
-          url: "#",
-        },
-      ],
-    },
-  ],
-  navSecondary: [
-    {
-      title: "Settings",
-      url: "#",
-      icon: IconSettings,
-    },
-    {
-      title: "Get Help",
-      url: "#",
-      icon: IconHelp,
-    },
-    {
-      title: "Search",
-      url: "#",
-      icon: IconSearch,
-    },
-  ],
-  documents: [
-    {
-      name: "Data Library",
-      url: "#",
-      icon: IconDatabase,
-    },
-    {
-      name: "Reports",
-      url: "#",
-      icon: IconReport,
-    },
-    {
-      name: "Word Assistant",
-      url: "#",
-      icon: IconFileWord,
+      title: "Trash",
+      url: "/files?view=trash",
+      icon: IconTrash,
     },
   ],
 };
@@ -173,8 +105,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       </SidebarHeader>
       <SidebarContent>
         <NavMain items={data.navMain} />
-        <NavDocuments items={data.documents} />
-        <NavSecondary items={data.navSecondary} className="mt-auto" />
+        <NavMain items={data.navStorage} hideQuickCreate />
       </SidebarContent>
       <SidebarFooter>
         <NavUser user={userProp} />

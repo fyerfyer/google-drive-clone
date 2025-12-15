@@ -35,6 +35,16 @@ interface PresignedUrlDTO {
   expirySeconds?: number;
 }
 
+// 用户基础信息（用于所有者和共享者）
+interface IUserBasic {
+  id: string;
+  name: string;
+  email: string;
+  avatar: {
+    thumbnail: string;
+  };
+}
+
 // 共享信息
 interface IShareInfo {
   userId: string;
@@ -49,8 +59,8 @@ export interface IFilePublic {
   extension: string;
   mimeType: string;
   size: number;
-  folder: string;
-  user: string;
+  folder: string | null; // Can be null for root-level files
+  user: IUserBasic;
   isStarred: boolean;
   isTrashed: boolean;
   trashedAt?: Date;
@@ -61,6 +71,19 @@ export interface IFilePublic {
 }
 
 export class FileService {
+  private async getUserBasic(userId: string): Promise<IUserBasic> {
+    const userObjectId = new mongoose.Types.ObjectId(userId);
+    const user = await User.findById(userObjectId).select("name email avatar");
+    return {
+      id: userId,
+      name: user?.name || "",
+      email: user?.email || "",
+      avatar: {
+        thumbnail: user?.avatar?.thumbnail || "",
+      },
+    };
+  }
+
   async createFileRecord(data: CreateFileRecordDTO): Promise<IFilePublic> {
     const { userId, folderId, key, fileSize, mimeType, originalName, hash } =
       data;
@@ -112,6 +135,8 @@ export class FileService {
       sharedWith: [],
     });
 
+    const userBasic = await this.getUserBasic(userId);
+
     return {
       id: file._id.toString(),
       name: originalName,
@@ -120,7 +145,7 @@ export class FileService {
       mimeType: file.mimeType,
       size: file.size,
       folder: file.folder.toString(),
-      user: userId,
+      user: userBasic,
       isStarred: file.isStarred,
       isTrashed: file.isTrashed,
       trashedAt: file.trashedAt,
@@ -422,5 +447,152 @@ export class FileService {
       fileName: file.originalName,
       size: file.size,
     };
+  }
+
+  async getStarredFiles(userId: string): Promise<IFilePublic[]> {
+    const userObjectId = new mongoose.Types.ObjectId(userId);
+
+    const [files, userBasic] = await Promise.all([
+      File.find({
+        user: userObjectId,
+        isStarred: true,
+        isTrashed: false,
+      }).sort({ updatedAt: -1 }),
+      this.getUserBasic(userId),
+    ]);
+
+    return files.map((file) => ({
+      id: file.id,
+      name: file.name,
+      originalName: file.originalName,
+      extension: file.extension,
+      mimeType: file.mimeType,
+      size: file.size,
+      folder: file.folder ? file.folder.toString() : null,
+      user: userBasic,
+      isStarred: file.isStarred,
+      isTrashed: file.isTrashed,
+      trashedAt: file.trashedAt,
+      isPublic: file.isPublic,
+      sharedWith: file.sharedWith.map((share) => ({
+        userId: share.user.toString(),
+        role: share.role,
+      })),
+      createdAt: file.createdAt,
+      updatedAt: file.updatedAt,
+    }));
+  }
+
+  async getTrashedFiles(userId: string): Promise<IFilePublic[]> {
+    const userObjectId = new mongoose.Types.ObjectId(userId);
+
+    const [files, userBasic] = await Promise.all([
+      File.find({
+        user: userObjectId,
+        isTrashed: true,
+      }).sort({ trashedAt: -1 }),
+      this.getUserBasic(userId),
+    ]);
+
+    return files.map((file) => ({
+      id: file.id,
+      name: file.name,
+      originalName: file.originalName,
+      extension: file.extension,
+      mimeType: file.mimeType,
+      size: file.size,
+      folder: file.folder ? file.folder.toString() : null,
+      user: userBasic,
+      isStarred: file.isStarred,
+      isTrashed: file.isTrashed,
+      trashedAt: file.trashedAt,
+      isPublic: file.isPublic,
+      sharedWith: file.sharedWith.map((share) => ({
+        userId: share.user.toString(),
+        role: share.role,
+      })),
+      createdAt: file.createdAt,
+      updatedAt: file.updatedAt,
+    }));
+  }
+
+  async getRecentFiles(
+    userId: string,
+    limit: number = 20
+  ): Promise<IFilePublic[]> {
+    const userObjectId = new mongoose.Types.ObjectId(userId);
+
+    const [files, userBasic] = await Promise.all([
+      File.find({
+        user: userObjectId,
+        isTrashed: false,
+      })
+        .sort({ updatedAt: -1 })
+        .limit(limit),
+      this.getUserBasic(userId),
+    ]);
+
+    return files.map((file) => ({
+      id: file.id,
+      name: file.name,
+      originalName: file.originalName,
+      extension: file.extension,
+      mimeType: file.mimeType,
+      size: file.size,
+      folder: file.folder ? file.folder.toString() : null,
+      user: userBasic,
+      isStarred: file.isStarred,
+      isTrashed: file.isTrashed,
+      trashedAt: file.trashedAt,
+      isPublic: file.isPublic,
+      sharedWith: file.sharedWith.map((share) => ({
+        userId: share.user.toString(),
+        role: share.role,
+      })),
+      createdAt: file.createdAt,
+      updatedAt: file.updatedAt,
+    }));
+  }
+
+  async getAllUserFiles(userId: string): Promise<IFilePublic[]> {
+    const userObjectId = new mongoose.Types.ObjectId(userId);
+
+    const [files, user] = await Promise.all([
+      File.find({
+        user: userObjectId,
+        isTrashed: false,
+      }).sort({ name: 1 }),
+      User.findById(userObjectId).select("name email avatar"),
+    ]);
+
+    const userBasic = {
+      id: userId,
+      name: user?.name || "",
+      email: user?.email || "",
+      avatar: {
+        thumbnail: user?.avatar?.thumbnail || "",
+      },
+    };
+
+    return files.map((file) => ({
+      id: file.id,
+      name: file.name,
+      originalName: file.originalName,
+      extension: file.extension,
+      mimeType: file.mimeType,
+      size: file.size,
+      folder: file.folder ? file.folder.toString() : null,
+      user: userBasic,
+      isStarred: file.isStarred,
+      isTrashed: file.isTrashed,
+      trashedAt: file.trashedAt,
+      isPublic: file.isPublic,
+      sharedWith: file.sharedWith.map((share) => ({
+        userId: share.user.toString(),
+        role: share.role,
+      })),
+      createdAt: file.createdAt,
+      updatedAt: file.updatedAt,
+    }));
   }
 }

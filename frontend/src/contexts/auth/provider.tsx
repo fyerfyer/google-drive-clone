@@ -14,6 +14,7 @@ import {
 import { authService } from "@/services/auth.service";
 import { userService } from "@/services/user.service";
 import type { User } from "@/types/user.types";
+import { toast } from "sonner";
 
 type AuthAction =
   | { type: "AUTH_START" }
@@ -128,12 +129,14 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         type: "AUTH_SUCCESS",
         payload: { user: response.user, token: response.token },
       });
+      toast.success("Logged in successfully");
     } catch (error) {
       let errorMessage = "Login error";
       if (error instanceof Error) {
         errorMessage = error.message;
       }
       dispatch({ type: "AUTH_FAILURE", payload: errorMessage });
+      toast.error(errorMessage);
       throw error;
     }
   }, []);
@@ -146,12 +149,14 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         type: "AUTH_SUCCESS",
         payload: { user: response.user, token: response.token },
       });
+      toast.success("Registered successfully");
     } catch (error) {
-      let errorMessage = "Login error";
+      let errorMessage = "Registration error";
       if (error instanceof Error) {
         errorMessage = error.message;
       }
       dispatch({ type: "AUTH_FAILURE", payload: errorMessage });
+      toast.error(errorMessage);
       throw error;
     }
   }, []);

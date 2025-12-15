@@ -82,7 +82,7 @@ export class FolderController {
       );
     }
 
-    await this.folderService.renameFolder(folderId, newName, userId);
+    await this.folderService.renameFolder(folderId, userId, newName);
     return ResponseHelper.message(res, "Folder renamed successfully");
   }
 
@@ -157,5 +157,53 @@ export class FolderController {
     const result = await this.folderService.getFolderContent(folderId, userId);
 
     return ResponseHelper.ok<FolderContentResponse>(res, result);
+  }
+
+  async getStarredFolders(req: Request, res: Response, next: NextFunction) {
+    if (!req.user) {
+      throw new AppError(StatusCodes.UNAUTHORIZED, "User not authenticated");
+    }
+
+    const userId = req.user.id;
+    const folders = await this.folderService.getStarredFolders(userId);
+    return ResponseHelper.ok(res, folders);
+  }
+
+  async getTrashedFolders(req: Request, res: Response, next: NextFunction) {
+    if (!req.user) {
+      throw new AppError(StatusCodes.UNAUTHORIZED, "User not authenticated");
+    }
+
+    const userId = req.user.id;
+    const folders = await this.folderService.getTrashedFolders(userId);
+    return ResponseHelper.ok(res, folders);
+  }
+
+  async getRecentFolders(req: Request, res: Response, next: NextFunction) {
+    if (!req.user) {
+      throw new AppError(StatusCodes.UNAUTHORIZED, "User not authenticated");
+    }
+
+    const userId = req.user.id;
+    const limit = req.query.limit ? parseInt(req.query.limit as string) : 20;
+    const folders = await this.folderService.getRecentFolders(userId, limit);
+    return ResponseHelper.ok(res, folders);
+  }
+
+  async getFolderPath(req: Request, res: Response, next: NextFunction) {
+    if (!req.user) {
+      throw new AppError(StatusCodes.UNAUTHORIZED, "User not authenticated");
+    }
+
+    const userId = req.user.id;
+    const { folderId } = req.params;
+    if (!folderId) {
+      throw new AppError(StatusCodes.BAD_REQUEST, "Folder ID is required");
+    }
+    const breadcrumbs = await this.folderService.getFolderPath(
+      folderId,
+      userId
+    );
+    return ResponseHelper.ok(res, { breadcrumbs });
   }
 }

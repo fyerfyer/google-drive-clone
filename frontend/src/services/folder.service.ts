@@ -3,6 +3,7 @@ import type {
   FolderCreateResponse,
   FolderContentResponse,
   CreateFolderRequest,
+  BreadcrumbItem,
 } from "@/types/folder.types";
 import { api } from "@/services/api";
 
@@ -152,6 +153,71 @@ export const folderService = {
     } catch (error) {
       throw new Error(
         error instanceof Error ? error.message : "Failed to unstar folder"
+      );
+    }
+  },
+
+  getStarredFolders: async (): Promise<Folder[]> => {
+    try {
+      const response = await api.get<Folder[]>(
+        `${FOLDER_API_BASE}/view/starred`
+      );
+      if (response.success && response.data) {
+        return response.data;
+      }
+      throw new Error(response.message || "Failed to get starred folders");
+    } catch (error) {
+      throw new Error(
+        error instanceof Error ? error.message : "Failed to get starred folders"
+      );
+    }
+  },
+
+  getTrashedFolders: async (): Promise<Folder[]> => {
+    try {
+      const response = await api.get<Folder[]>(
+        `${FOLDER_API_BASE}/view/trashed`
+      );
+      if (response.success && response.data) {
+        return response.data;
+      }
+      throw new Error(response.message || "Failed to get trashed folders");
+    } catch (error) {
+      throw new Error(
+        error instanceof Error ? error.message : "Failed to get trashed folders"
+      );
+    }
+  },
+
+  getRecentFolders: async (limit?: number): Promise<Folder[]> => {
+    try {
+      const url = limit
+        ? `${FOLDER_API_BASE}/view/recent?limit=${limit}`
+        : `${FOLDER_API_BASE}/view/recent`;
+      const response = await api.get<Folder[]>(url);
+      if (response.success && response.data) {
+        return response.data;
+      }
+      throw new Error(response.message || "Failed to get recent folders");
+    } catch (error) {
+      throw new Error(
+        error instanceof Error ? error.message : "Failed to get recent folders"
+      );
+    }
+  },
+
+  getFolderPath: async (folderId: string): Promise<BreadcrumbItem[]> => {
+    try {
+      const response = await api.get<{ breadcrumbs: BreadcrumbItem[] }>(
+        `${FOLDER_API_BASE}/${folderId}/path`
+      );
+      if (response.success && response.data) {
+        return response.data.breadcrumbs;
+      }
+      throw new Error(response.message || "Failed to get folder path");
+    } catch (error) {
+      throw new Error(
+        error instanceof Error ? error.message : "Failed to get folder path"
       );
     }
   },

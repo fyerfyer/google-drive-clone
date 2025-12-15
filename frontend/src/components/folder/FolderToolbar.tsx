@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { CreateFolderDialog } from "./CreateFolderDialog";
 import { FileUploadDialog } from "./FileUploadDialog";
+import { DeleteConfirmDialog } from "./DeleteConfirmDialog";
 
 export const FolderToolbar = () => {
   const {
@@ -34,6 +35,7 @@ export const FolderToolbar = () => {
   const { batchTrash, batchStar } = useBatchOperations();
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showUploadDialog, setShowUploadDialog] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
 
   const hasSelection = selectedItems.size > 0;
 
@@ -46,13 +48,7 @@ export const FolderToolbar = () => {
   };
 
   const handleBatchTrash = async () => {
-    if (
-      confirm(
-        `Are you sure you want to move ${selectedItems.size} item(s) to trash?`
-      )
-    ) {
-      await batchTrash();
-    }
+    await batchTrash();
   };
 
   const handleBatchStar = async () => {
@@ -76,7 +72,7 @@ export const FolderToolbar = () => {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={handleBatchTrash}
+                onClick={() => setShowDeleteDialog(true)}
                 className="text-destructive hover:text-destructive"
               >
                 <Trash2 className="size-4" />
@@ -139,6 +135,13 @@ export const FolderToolbar = () => {
         open={showUploadDialog}
         onOpenChange={setShowUploadDialog}
         folderId={currentFolder?.id || "root"}
+      />
+      <DeleteConfirmDialog
+        open={showDeleteDialog}
+        onOpenChange={setShowDeleteDialog}
+        onConfirm={handleBatchTrash}
+        itemName=""
+        itemCount={selectedItems.size}
       />
     </>
   );

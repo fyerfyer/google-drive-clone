@@ -76,10 +76,8 @@ services:
       - PORT=${PORT}
       - MONGODB_URI=${MONGODB_URI}
       - MINIO_ENDPOINT=${MINIO_ENDPOINT}
-      - MINIO_PORT=${MINIO_PORT}
       - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
       - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
-      - MINIO_USE_SSL=${MINIO_USE_SSL}
     depends_on:
       - mongo
       - minio

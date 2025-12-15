@@ -1,6 +1,6 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { useFolder } from "@/hooks/folder/useFolder";
-import { fileService } from "@/services/file.service";
+import { useFileUpload as useFileUploadPresigned } from "@/hooks/useFileUpload";
 import {
   Dialog,
   DialogContent,
@@ -13,7 +13,6 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Upload, X, FileIcon, CheckCircle2, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
-import type { UploadFileProgress } from "@/types/file.types";
 
 interface FileUploadDialogProps {
   open: boolean;
@@ -27,11 +26,14 @@ export const FileUploadDialog = ({
   folderId,
 }: FileUploadDialogProps) => {
   const [files, setFiles] = useState<File[]>([]);
-  const [uploadProgress, setUploadProgress] = useState<
-    Map<string, UploadFileProgress>
-  >(new Map());
-  const [isUploading, setIsUploading] = useState(false);
   const { refreshContent } = useFolder();
+  const { uploads, uploadFiles, clearCompleted } = useFileUploadPresigned();
+
+  const isUploading = useMemo(() => {
+    return Array.from(uploads.values()).some(
+      (upload) => upload.status === "uploading" || upload.status === "pending"
+    );
+  }, [uploads]);
 
   const handleFileSelect = useCallback(
     (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -51,26 +53,17 @@ export const FileUploadDialog = ({
       return;
     }
 
-    setIsUploading(true);
-    const progressMap = new Map<string, UploadFileProgress>();
-
     try {
-      await fileService.uploadFiles(files, folderId, (progress) => {
-        progressMap.set(progress.fileId, progress);
-        setUploadProgress(new Map(progressMap));
-      });
-
+      await uploadFiles(files, folderId);
       toast.success("Files uploaded successfully");
-      refreshContent();
+      await refreshContent();
+      clearCompleted();
       onOpenChange(false);
       setFiles([]);
-      setUploadProgress(new Map());
     } catch (error) {
       toast.error(
         error instanceof Error ? error.message : "Failed to upload files"
       );
-    } finally {
-      setIsUploading(false);
     }
   };
 
@@ -80,10 +73,10 @@ export const FileUploadDialog = ({
     return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
   };
 
-  const getFileProgress = (file: File) => {
-    for (const progress of uploadProgress.values()) {
-      if (progress.file.name === file.name) {
-        return progress;
+  const getFileProgress = (fileName: string) => {
+    for (const upload of uploads.values()) {
+      if (upload.fileName === fileName) {
+        return upload;
       }
     }
     return null;
@@ -131,7 +124,7 @@ export const FileUploadDialog = ({
           {files.length > 0 && (
             <div className="space-y-2 max-h-[300px] overflow-y-auto">
               {files.map((file, index) => {
-                const progress = getFileProgress(file);
+                const progress = getFileProgress(file.name);
                 return (
                   <div
                     key={`${file.name}-${index}`}
@@ -156,13 +149,14 @@ export const FileUploadDialog = ({
                               <AlertCircle className="size-3 text-destructive" />
                             )}
                             <span className="text-xs text-muted-foreground">
-                              {progress.status === "hashing" &&
-                                "Calculating hash..."}
+                              {progress.status === "pending" && "Pending..."}
                               {progress.status === "uploading" &&
                                 `Uploading... ${progress.progress}%`}
+                              {progress.status === "processing" &&
+                                "Processing..."}
                               {progress.status === "success" && "Uploaded"}
                               {progress.status === "error" &&
-                                (progress.message || "Upload failed")}
+                                (progress.error || "Upload failed")}
                             </span>
                           </div>
                         </div>

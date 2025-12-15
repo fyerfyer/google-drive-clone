@@ -150,7 +150,7 @@ export class FileController {
       throw new AppError(StatusCodes.BAD_REQUEST, "New file name is required");
     }
 
-    await this.fileService.renameFile(fileId, newName, userId);
+    await this.fileService.renameFile(fileId, userId, newName);
     return ResponseHelper.message(res, "File renamed successfully");
   }
 
@@ -172,7 +172,7 @@ export class FileController {
         "Destination folder id is required"
       );
     }
-    await this.fileService.moveFile(fileId, destinationId, userId);
+    await this.fileService.moveFile(fileId, userId, destinationId);
     return ResponseHelper.message(res, "File moved successfully");
   }
 
@@ -249,5 +249,46 @@ export class FileController {
     await this.fileService.starFile(fileId, userId, false);
 
     return ResponseHelper.message(res, "File unstarred successfully");
+  }
+
+  async getStarredFiles(req: Request, res: Response, next: NextFunction) {
+    if (!req.user) {
+      throw new AppError(StatusCodes.UNAUTHORIZED, "User not authenticated");
+    }
+
+    const userId = req.user.id;
+    const files = await this.fileService.getStarredFiles(userId);
+    return ResponseHelper.ok(res, files);
+  }
+
+  async getTrashedFiles(req: Request, res: Response, next: NextFunction) {
+    if (!req.user) {
+      throw new AppError(StatusCodes.UNAUTHORIZED, "User not authenticated");
+    }
+
+    const userId = req.user.id;
+    const files = await this.fileService.getTrashedFiles(userId);
+    return ResponseHelper.ok(res, files);
+  }
+
+  async getRecentFiles(req: Request, res: Response, next: NextFunction) {
+    if (!req.user) {
+      throw new AppError(StatusCodes.UNAUTHORIZED, "User not authenticated");
+    }
+
+    const userId = req.user.id;
+    const limit = req.query.limit ? parseInt(req.query.limit as string) : 20;
+    const files = await this.fileService.getRecentFiles(userId, limit);
+    return ResponseHelper.ok(res, files);
+  }
+
+  async getAllUserFiles(req: Request, res: Response, next: NextFunction) {
+    if (!req.user) {
+      throw new AppError(StatusCodes.UNAUTHORIZED, "User not authenticated");
+    }
+
+    const userId = req.user.id;
+    const files = await this.fileService.getAllUserFiles(userId);
+    return ResponseHelper.ok(res, files);
   }
 }

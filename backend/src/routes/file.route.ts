@@ -45,5 +45,20 @@ export function createFileRouter(fileController: FileController) {
     fileController.deleteFilePermanent.bind(fileController)
   );
 
+  // Special views
+  router.get(
+    "/view/starred",
+    fileController.getStarredFiles.bind(fileController)
+  );
+  router.get(
+    "/view/trashed",
+    fileController.getTrashedFiles.bind(fileController)
+  );
+  router.get(
+    "/view/recent",
+    fileController.getRecentFiles.bind(fileController)
+  );
+  router.get("/view/all", fileController.getAllUserFiles.bind(fileController));
+
   return router;
 }

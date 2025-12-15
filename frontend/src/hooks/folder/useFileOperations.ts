@@ -4,14 +4,14 @@ import { useCallback } from "react";
 import { toast } from "sonner";
 
 export const useFileOperations = () => {
-  const { refreshContent } = useFolder();
+  const { updateItem, refreshContent } = useFolder();
 
   const renameFile = useCallback(
     async (fileId: string, name: string) => {
       try {
         await fileService.renameFile(fileId, name);
+        updateItem(fileId, { name });
         toast.success("File renamed successfully");
-        await refreshContent();
       } catch (error) {
         const message =
           error instanceof Error ? error.message : "Failed to rename file";
@@ -19,7 +19,7 @@ export const useFileOperations = () => {
         throw error;
       }
     },
-    [refreshContent]
+    [updateItem]
   );
 
   const moveFile = useCallback(
@@ -87,11 +87,12 @@ export const useFileOperations = () => {
   );
 
   const starFile = useCallback(
+    // 这个用乐观更新，让用户立即看到UI变化
     async (fileId: string) => {
+      updateItem(fileId, { isStarred: true });
       try {
         await fileService.starFile(fileId);
         toast.success("File starred successfully");
-        await refreshContent();
       } catch (error) {
         const message =
           error instanceof Error ? error.message : "Failed to star file";
@@ -99,15 +100,15 @@ export const useFileOperations = () => {
         throw error;
       }
     },
-    [refreshContent]
+    [updateItem]
   );
 
   const unstarFile = useCallback(
     async (fileId: string) => {
+      updateItem(fileId, { isStarred: false });
       try {
         await fileService.unstarFile(fileId);
         toast.success("File unstarred successfully");
-        await refreshContent();
       } catch (error) {
         const message =
           error instanceof Error ? error.message : "Failed to unstar file";
@@ -115,7 +116,7 @@ export const useFileOperations = () => {
         throw error;
       }
     },
-    [refreshContent]
+    [updateItem]
   );
 
   return {

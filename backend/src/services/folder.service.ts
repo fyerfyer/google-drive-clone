@@ -73,7 +73,7 @@ export class FolderService {
     let ancestors: mongoose.Types.ObjectId[] = [];
     let parentId: mongoose.Types.ObjectId | null = null;
 
-    if (data.parentId) {
+    if (data.parentId && data.parentId !== "root") {
       parentId = new mongoose.Types.ObjectId(data.parentId);
       const parentFolder = await Folder.findOne({
         _id: parentId,
@@ -468,14 +468,23 @@ export class FolderService {
     userId: string
   ): Promise<IFolderContent> {
     const userObjectId = new mongoose.Types.ObjectId(userId);
-    const folderObjectId = new mongoose.Types.ObjectId(folderId);
-    const currentFolder = await Folder.findOne({
-      _id: folderId,
-      user: userObjectId,
-    });
 
-    if (!currentFolder) {
-      throw new AppError(StatusCodes.NOT_FOUND, "Folder not found");
+    // 前端定义了 root folder id
+    const isRoot = folderId === "root";
+    const folderObjectId = isRoot
+      ? null
+      : new mongoose.Types.ObjectId(folderId);
+
+    let currentFolder: IFolder | null = null;
+    if (!isRoot) {
+      currentFolder = await Folder.findOne({
+        _id: folderId,
+        user: userObjectId,
+      });
+
+      if (!currentFolder) {
+        throw new AppError(StatusCodes.NOT_FOUND, "Folder not found");
+      }
     }
 
     const [folders, files, user] = await Promise.all([
@@ -530,27 +539,53 @@ export class FolderService {
         .filter((item): item is IBreadcrumbItem => item !== null);
     }
 
-    const currentFolderPublic: IFolderPublic = {
-      id: currentFolder.id,
-      name: currentFolder.name,
-      parent: currentFolder.parent.toString(),
-      user: userBasic,
-      color: currentFolder.color,
-      description: currentFolder.description,
-      isStarred: currentFolder.isStarred,
-      isTrashed: currentFolder.isTrashed,
-      trashedAt: currentFolder.trashedAt,
-      isPublic: currentFolder.isPublic,
-      sharedWith: [],
-      createdAt: currentFolder.createdAt,
-      updatedAt: currentFolder.updatedAt,
-    };
+    // Add current folder to breadcrumbs if not root
+    if (currentFolder && !isRoot) {
+      breadcrumbs.push({
+        id: String(currentFolder._id),
+        name: currentFolder.name,
+      });
+    }
+
+    // For root folder, create a virtual folder object
+    const currentFolderPublic: IFolderPublic = isRoot
+      ? {
+          id: "root",
+          name: "My Drive",
+          parent: null,
+          user: userBasic,
+          color: "#5F6368",
+          description: "Root folder",
+          isStarred: false,
+          isTrashed: false,
+          isPublic: false,
+          sharedWith: [],
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        }
+      : {
+          id: currentFolder!.id,
+          name: currentFolder!.name,
+          parent: currentFolder!.parent
+            ? currentFolder!.parent.toString()
+            : null,
+          user: userBasic,
+          color: currentFolder!.color,
+          description: currentFolder!.description,
+          isStarred: currentFolder!.isStarred,
+          isTrashed: currentFolder!.isTrashed,
+          trashedAt: currentFolder!.trashedAt,
+          isPublic: currentFolder!.isPublic,
+          sharedWith: [],
+          createdAt: currentFolder!.createdAt,
+          updatedAt: currentFolder!.updatedAt,
+        };
 
     const foldersPublic: IFolderPublic[] = folders.map((folder) => {
       return {
         id: folder.id,
         name: folder.name,
-        parent: folder.parent.toString(),
+        parent: folder.parent ? folder.parent.toString() : null,
         user: userBasic,
         color: folder.color,
         description: folder.description,
@@ -572,8 +607,8 @@ export class FolderService {
         extension: file.extension,
         mimeType: file.mimeType,
         size: file.size,
-        folder: file.folder.toString(),
-        user: userId,
+        folder: file.folder ? file.folder.toString() : null,
+        user: userBasic,
         isStarred: file.isStarred,
         isTrashed: file.isTrashed,
         trashedAt: file.trashedAt,
@@ -614,5 +649,171 @@ export class FolderService {
     }
 
     logger.info({ folderId, userId, star }, "Folder star status updated");
+  }
+
+  async getStarredFolders(userId: string): Promise<IFolderPublic[]> {
+    const userObjectId = new mongoose.Types.ObjectId(userId);
+
+    const folders = await Folder.find({
+      user: userObjectId,
+      isStarred: true,
+      isTrashed: false,
+    }).sort({ updatedAt: -1 });
+
+    const user = await User.findById(userObjectId).select("name email avatar");
+    const userBasic = {
+      id: userId,
+      name: user?.name || "",
+      email: user?.email || "",
+      avatar: {
+        thumbnail: user?.avatar?.thumbnail || "",
+      },
+    };
+
+    return folders.map((folder) => ({
+      id: folder.id,
+      name: folder.name,
+      parent: folder.parent ? folder.parent.toString() : null,
+      user: userBasic,
+      color: folder.color,
+      description: folder.description,
+      isStarred: folder.isStarred,
+      isTrashed: folder.isTrashed,
+      trashedAt: folder.trashedAt,
+      isPublic: folder.isPublic,
+      sharedWith: [],
+      createdAt: folder.createdAt,
+      updatedAt: folder.updatedAt,
+    }));
+  }
+
+  async getTrashedFolders(userId: string): Promise<IFolderPublic[]> {
+    const userObjectId = new mongoose.Types.ObjectId(userId);
+
+    const folders = await Folder.find({
+      user: userObjectId,
+      isTrashed: true,
+    }).sort({ trashedAt: -1 });
+
+    const user = await User.findById(userObjectId).select("name email avatar");
+    const userBasic = {
+      id: userId,
+      name: user?.name || "",
+      email: user?.email || "",
+      avatar: {
+        thumbnail: user?.avatar?.thumbnail || "",
+      },
+    };
+
+    return folders.map((folder) => ({
+      id: folder.id,
+      name: folder.name,
+      parent: folder.parent ? folder.parent.toString() : null,
+      user: userBasic,
+      color: folder.color,
+      description: folder.description,
+      isStarred: folder.isStarred,
+      isTrashed: folder.isTrashed,
+      trashedAt: folder.trashedAt,
+      isPublic: folder.isPublic,
+      sharedWith: [],
+      createdAt: folder.createdAt,
+      updatedAt: folder.updatedAt,
+    }));
+  }
+
+  async getRecentFolders(
+    userId: string,
+    limit: number = 20
+  ): Promise<IFolderPublic[]> {
+    const userObjectId = new mongoose.Types.ObjectId(userId);
+
+    const folders = await Folder.find({
+      user: userObjectId,
+      isTrashed: false,
+    })
+      .sort({ updatedAt: -1 })
+      .limit(limit);
+
+    const user = await User.findById(userObjectId).select("name email avatar");
+    const userBasic = {
+      id: userId,
+      name: user?.name || "",
+      email: user?.email || "",
+      avatar: {
+        thumbnail: user?.avatar?.thumbnail || "",
+      },
+    };
+
+    return folders.map((folder) => ({
+      id: folder.id,
+      name: folder.name,
+      parent: folder.parent ? folder.parent.toString() : null,
+      user: userBasic,
+      color: folder.color,
+      description: folder.description,
+      isStarred: folder.isStarred,
+      isTrashed: folder.isTrashed,
+      trashedAt: folder.trashedAt,
+      isPublic: folder.isPublic,
+      sharedWith: [],
+      createdAt: folder.createdAt,
+      updatedAt: folder.updatedAt,
+    }));
+  }
+
+  async getFolderPath(
+    folderId: string,
+    userId: string
+  ): Promise<IBreadcrumbItem[]> {
+    const userObjectId = new mongoose.Types.ObjectId(userId);
+
+    // Handle root folder
+    if (folderId === "root") {
+      return [];
+    }
+
+    const folderObjectId = new mongoose.Types.ObjectId(folderId);
+    const folder = await Folder.findOne({
+      _id: folderObjectId,
+      user: userObjectId,
+    });
+
+    if (!folder) {
+      throw new AppError(StatusCodes.NOT_FOUND, "Folder not found");
+    }
+
+    let breadcrumbs: IBreadcrumbItem[] = [];
+    if (folder.ancestors.length > 0) {
+      const ancestorDocs = await Folder.find({
+        _id: { $in: folder.ancestors },
+        user: userObjectId,
+      }).select("name _id");
+
+      const ancestorMap = new Map(
+        ancestorDocs.map((doc) => [String(doc._id), doc])
+      );
+
+      breadcrumbs = folder.ancestors
+        .map((ancestorId) => {
+          const doc = ancestorMap.get(ancestorId.toString());
+          if (doc) {
+            return {
+              id: String(ancestorId),
+              name: doc.name,
+            };
+          }
+          return null;
+        })
+        .filter((item): item is IBreadcrumbItem => item !== null);
+    }
+
+    // Add current folder to breadcrumbs
+    breadcrumbs.push({
+      id: String(folder._id),
+      name: folder.name,
+    });
+
+    return breadcrumbs;
   }
 }

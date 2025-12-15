@@ -19,7 +19,6 @@ export const TEST_BUCKETS = {
   FILES: "files",
 };
 
-// Ensure MINIO endpoint env has protocol and port for AWS SDK S3Client
 if (process.env.MINIO_ENDPOINT) {
   const raw = process.env.MINIO_ENDPOINT;
   const port = process.env.MINIO_PORT ? `:${process.env.MINIO_PORT}` : "";

@@ -126,8 +126,28 @@ export const fileService = {
     link.click();
   },
 
-  getPreviewUrl: (fileId: string): string => {
-    return `${FILE_API_BASE}/${fileId}/preview`;
+  getPreviewUrl: async (fileId: string): Promise<string> => {
+    const response = await api.get<{ url: string }>(
+      `${FILE_API_BASE}/${fileId}/preview-url`
+    );
+
+    if (!response.success || !response.data) {
+      throw new Error(response.message || "Failed to get preview URL");
+    }
+
+    return response.data.url;
+  },
+
+  getDownloadUrl: async (fileId: string): Promise<string> => {
+    const response = await api.get<FileDownloadResponse>(
+      `${FILE_API_BASE}/${fileId}/download`
+    );
+
+    if (!response.success || !response.data) {
+      throw new Error(response.message || "Failed to get download URL");
+    }
+
+    return response.data.downloadUrl;
   },
 
   async renameFile(fileId: string, newName: string): Promise<void> {
@@ -202,6 +222,49 @@ export const fileService = {
     if (!response.success) {
       throw new Error(response.message || "Failed to unstar file");
     }
+  },
+
+  async getStarredFiles(): Promise<IFile[]> {
+    const response = await api.get<IFile[]>(`${FILE_API_BASE}/view/starred`);
+
+    if (!response.success || !response.data) {
+      throw new Error(response.message || "Failed to get starred files");
+    }
+
+    return response.data;
+  },
+
+  async getTrashedFiles(): Promise<IFile[]> {
+    const response = await api.get<IFile[]>(`${FILE_API_BASE}/view/trashed`);
+
+    if (!response.success || !response.data) {
+      throw new Error(response.message || "Failed to get trashed files");
+    }
+
+    return response.data;
+  },
+
+  async getRecentFiles(limit?: number): Promise<IFile[]> {
+    const url = limit
+      ? `${FILE_API_BASE}/view/recent?limit=${limit}`
+      : `${FILE_API_BASE}/view/recent`;
+    const response = await api.get<IFile[]>(url);
+
+    if (!response.success || !response.data) {
+      throw new Error(response.message || "Failed to get recent files");
+    }
+
+    return response.data;
+  },
+
+  async getAllUserFiles(): Promise<IFile[]> {
+    const response = await api.get<IFile[]>(`${FILE_API_BASE}/view/all`);
+
+    if (!response.success || !response.data) {
+      throw new Error(response.message || "Failed to get all files");
+    }
+
+    return response.data;
   },
 
   /**
