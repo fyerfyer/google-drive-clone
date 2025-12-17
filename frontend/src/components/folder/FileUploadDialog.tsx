@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useRef } from "react";
 import { useFolder } from "@/hooks/folder/useFolder";
 import { useFileUpload as useFileUploadPresigned } from "@/hooks/useFileUpload";
 import {
@@ -26,6 +26,8 @@ export const FileUploadDialog = ({
   folderId,
 }: FileUploadDialogProps) => {
   const [files, setFiles] = useState<File[]>([]);
+  const [isDragging, setIsDragging] = useState(false);
+  const dragCounterRef = useRef(0);
   const { refreshContent } = useFolder();
   const { uploads, uploadFiles, clearCompleted } = useFileUploadPresigned();
 
@@ -45,6 +47,47 @@ export const FileUploadDialog = ({
 
   const handleRemoveFile = useCallback((index: number) => {
     setFiles((prev) => prev.filter((_, i) => i !== index));
+  }, []);
+
+  const handleDragEnter = useCallback(
+    (e: React.DragEvent<HTMLLabelElement>) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dragCounterRef.current += 1;
+      if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
+        setIsDragging(true);
+      }
+    },
+    []
+  );
+
+  const handleDragLeave = useCallback(
+    (e: React.DragEvent<HTMLLabelElement>) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dragCounterRef.current -= 1;
+      if (dragCounterRef.current === 0) {
+        setIsDragging(false);
+      }
+    },
+    []
+  );
+
+  const handleDragOver = useCallback((e: React.DragEvent<HTMLLabelElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent<HTMLLabelElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    dragCounterRef.current = 0;
+
+    const droppedFiles = Array.from(e.dataTransfer.files);
+    if (droppedFiles.length > 0) {
+      setFiles((prev) => [...prev, ...droppedFiles]);
+    }
   }, []);
 
   const handleUpload = async () => {
@@ -97,10 +140,22 @@ export const FileUploadDialog = ({
           <div className="flex items-center justify-center w-full">
             <label
               htmlFor="file-upload"
-              className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-lg cursor-pointer hover:bg-muted/50 transition-colors"
+              className={`flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-lg cursor-pointer transition-colors ${
+                isDragging
+                  ? "border-primary bg-primary/10"
+                  : "border-border hover:bg-muted/50"
+              }`}
+              onDragEnter={handleDragEnter}
+              onDragLeave={handleDragLeave}
+              onDragOver={handleDragOver}
+              onDrop={handleDrop}
             >
               <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                <Upload className="size-10 mb-2 text-muted-foreground" />
+                <Upload
+                  className={`size-10 mb-2 ${
+                    isDragging ? "text-primary" : "text-muted-foreground"
+                  }`}
+                />
                 <p className="mb-2 text-sm text-muted-foreground">
                   <span className="font-semibold">Click to upload</span> or drag
                   and drop

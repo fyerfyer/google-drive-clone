@@ -24,11 +24,12 @@ import {
 } from "@/components/ui/table";
 import { ItemContextMenu } from "./ItemContextMenu";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useFileOperations } from "@/hooks/folder/useFileOperations";
-import { useFolderOperations } from "@/hooks/folder/useFolderOperations";
 import { toast } from "sonner";
 import { useFolder } from "@/hooks/folder/useFolder";
+import { batchService } from "@/services/batch.service";
 import type { ViewType } from "@/contexts/folder/context";
+import { formatFileSize } from "@/lib/format";
+import { useFileActions } from "@/hooks/folder/useFileActions";
 
 interface SpecialViewProps {
   viewType: Exclude<ViewType, "folder">;
@@ -50,12 +51,12 @@ export const SpecialView = ({ viewType }: SpecialViewProps) => {
     selectAll: contextSelectAll,
   } = useFolder();
 
+  const { navigateToFolder } = useFileActions();
+
   // 这些是本地 UI 表现层、使用本地 state
   const [filter, setFilter] = useState<ViewFilter>("all");
 
   const navigate = useNavigate();
-  const fileOps = useFileOperations();
-  const folderOps = useFolderOperations();
 
   // 初始化加载
   useEffect(() => {
@@ -125,83 +126,89 @@ export const SpecialView = ({ viewType }: SpecialViewProps) => {
     }
   };
 
-  const handleFolderClick = (folderId: string) => {
-    navigate(`/files?folder=${folderId}`);
-  };
-
-  const formatFileSize = (bytes: number) => {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(2)} KB`;
-    if (bytes < 1024 * 1024 * 1024)
-      return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
-    return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
-  };
-
   const handleBatchUnstar = async () => {
     try {
-      const selectedFolderIds = Array.from(selectedItems).filter((id) =>
-        folders.find((f) => f.id === id)
-      );
-      const selectedFileIds = Array.from(selectedItems).filter((id) =>
-        files.find((f) => f.id === id)
-      );
+      const items = Array.from(selectedItems).map((id) => ({
+        id,
+        type: (folders.find((f) => f.id === id) ? "folder" : "file") as
+          | "file"
+          | "folder",
+      }));
 
-      await Promise.all([
-        ...selectedFolderIds.map((id) => folderOps.unstarFolder(id)),
-        ...selectedFileIds.map((id) => fileOps.unstarFile(id)),
-      ]);
+      const result = await batchService.batchStar(items, false);
 
-      toast.success(`Unstarred ${selectedItems.size} item(s)`);
+      if (result.failureCount > 0) {
+        toast.warning(
+          `Unstarred ${result.successCount} item(s), ${result.failureCount} failed`
+        );
+      } else {
+        toast.success(`Unstarred ${selectedItems.size} item(s)`);
+      }
+
+      await loadSpecialView(viewType);
+      clearSelection();
     } catch (error) {
       toast.error(
         "Failed to unstar items: " +
-          (error instanceof Error ? error.message : "")
+          (error instanceof Error ? error.message : "Unknown error")
       );
     }
   };
 
   const handleBatchRestore = async () => {
     try {
-      const selectedFolderIds = Array.from(selectedItems).filter((id) =>
-        folders.find((f) => f.id === id)
-      );
-      const selectedFileIds = Array.from(selectedItems).filter((id) =>
-        files.find((f) => f.id === id)
-      );
+      const items = Array.from(selectedItems).map((id) => ({
+        id,
+        type: (folders.find((f) => f.id === id) ? "folder" : "file") as
+          | "file"
+          | "folder",
+      }));
 
-      await Promise.all([
-        ...selectedFolderIds.map((id) => folderOps.restoreFolder(id)),
-        ...selectedFileIds.map((id) => fileOps.restoreFile(id)),
-      ]);
+      const result = await batchService.batchRestore(items);
 
-      toast.success(`Restored ${selectedItems.size} item(s)`);
+      if (result.failureCount > 0) {
+        toast.warning(
+          `Restored ${result.successCount} item(s), ${result.failureCount} failed`
+        );
+      } else {
+        toast.success(`Restored ${selectedItems.size} item(s)`);
+      }
+
+      loadSpecialView(viewType);
+      clearSelection();
     } catch (error) {
       toast.error(
         "Failed to restore items: " +
-          (error instanceof Error ? error.message : "")
+          (error instanceof Error ? error.message : "Unknown error")
       );
     }
   };
 
   const handleBatchDelete = async () => {
     try {
-      const selectedFolderIds = Array.from(selectedItems).filter((id) =>
-        folders.find((f) => f.id === id)
-      );
-      const selectedFileIds = Array.from(selectedItems).filter((id) =>
-        files.find((f) => f.id === id)
-      );
+      const items = Array.from(selectedItems).map((id) => ({
+        id,
+        type: (folders.find((f) => f.id === id) ? "folder" : "file") as
+          | "file"
+          | "folder",
+      }));
 
-      await Promise.all([
-        ...selectedFolderIds.map((id) => folderOps.deleteFolder(id)),
-        ...selectedFileIds.map((id) => fileOps.deleteFile(id)),
-      ]);
+      const result = await batchService.batchDelete(items);
 
-      toast.success(`Permanently deleted ${selectedItems.size} item(s)`);
+      if (result.failureCount > 0) {
+        toast.warning(
+          `Permanently deleted ${result.successCount} item(s), ${result.failureCount} failed`
+        );
+      } else {
+        toast.success(`Permanently deleted ${selectedItems.size} item(s)`);
+      }
+
+      loadSpecialView(viewType);
+      clearSelection();
     } catch (error) {
       toast.error(
         "Failed to delete items: " +
-          (error instanceof Error ? error.message : "")
+          (error instanceof Error ? error.message : "Unknown error")
       );
     }
   };
@@ -356,7 +363,7 @@ export const SpecialView = ({ viewType }: SpecialViewProps) => {
                     className="cursor-pointer hover:bg-muted/50"
                     onClick={() => {
                       if (viewType !== "starred" && viewType !== "trash") {
-                        handleFolderClick(folder.id);
+                        navigateToFolder(folder.id);
                       }
                     }}
                   >
@@ -373,7 +380,7 @@ export const SpecialView = ({ viewType }: SpecialViewProps) => {
                       className="flex items-center gap-3"
                       onClick={() => {
                         if (viewType === "starred" || viewType === "trash") {
-                          handleFolderClick(folder.id);
+                          navigateToFolder(folder.id);
                         }
                       }}
                     >

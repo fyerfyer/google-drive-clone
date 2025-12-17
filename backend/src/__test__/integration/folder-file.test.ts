@@ -205,7 +205,7 @@ describe("Folder-File Integration Test", () => {
     expect(movedFolder?.ancestors[0].toString()).toBe(folder2.id.toString());
 
     const fileInDb = await File.findById(String(file.id));
-    expect(fileInDb?.folder.toString()).toBe(subFolder.id.toString());
+    expect(fileInDb?.folder?.toString()).toBe(subFolder.id.toString());
   });
 
   it("rename folder and file", async () => {

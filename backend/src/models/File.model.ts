@@ -18,7 +18,7 @@ export interface IFile extends Document {
   thumbnailKey: string;
 
   user: mongoose.Types.ObjectId;
-  folder: mongoose.Types.ObjectId;
+  folder: mongoose.Types.ObjectId | null;
 
   isStarred: boolean;
   isTrashed: boolean;
@@ -41,7 +41,7 @@ const fileSchema = new Schema<IFile>(
     },
 
     originalName: { type: String, required: true },
-    extension: { type: String, required: true },
+    extension: { type: String, required: false, default: "" },
 
     mimeType: { type: String, required: true },
     size: { type: Number, required: true, min: 0 },
@@ -60,7 +60,8 @@ const fileSchema = new Schema<IFile>(
     folder: {
       type: Schema.Types.ObjectId,
       ref: "Folder",
-      required: true,
+      required: false,
+      default: null,
       index: true,
     },
 

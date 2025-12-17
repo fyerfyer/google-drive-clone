@@ -19,6 +19,11 @@ export function createFileRouter(fileController: FileController) {
     fileController.previewFile.bind(fileController)
   );
 
+  router.get(
+    "/:fileId/preview-url",
+    fileController.getPreviewUrl.bind(fileController)
+  );
+
   router.patch(
     "/:fileId/rename",
     fileController.renameFile.bind(fileController)

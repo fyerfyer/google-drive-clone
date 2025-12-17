@@ -1,4 +1,3 @@
-import { useNavigate } from "react-router-dom";
 import { useFolder } from "@/hooks/folder/useFolder";
 import {
   Table,
@@ -8,144 +7,144 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Checkbox } from "@/components/ui/checkbox";
-import { FolderIcon, FileIcon, MoreVertical } from "lucide-react";
-import { formatDistanceToNow } from "date-fns";
-import type { Folder } from "@/types/folder.types";
+import { useFileActions } from "@/hooks/folder/useFileActions";
+import { FileTableRow } from "./FileTableRow";
+import { FilePreviewModal } from "./FilePreviewModal";
+import { RenameDialog } from "./RenameDialog";
+import { DeleteConfirmDialog } from "./DeleteConfirmDialog";
+import { MoveDialog } from "./MoveDialog";
+import { useFolderOperations } from "@/hooks/folder/useFolderOperations";
+import { useFileOperations } from "@/hooks/folder/useFileOperations";
 import type { IFile } from "@/types/file.types";
-import { ItemContextMenu } from "./ItemContextMenu";
+import type { Folder } from "@/types/folder.types";
 
 export const FolderListView = () => {
   const { folders, files, toggleSelection, selectedItems } = useFolder();
-  const navigate = useNavigate();
+  const { handleAction, navigateToFolder, modalState } = useFileActions();
+  const folderOps = useFolderOperations();
+  const fileOps = useFileOperations();
 
-  const handleFolderClick = (folderId: string) => {
-    navigate(`/files?folder=${folderId}`);
+  const handleRename = (newName: string) => {
+    const item = modalState.renamedItem;
+    if (!item) return;
+
+    if (item.type === "folder") {
+      folderOps.renameFolder(item.id, newName);
+    } else {
+      fileOps.renameFile(item.id, newName);
+    }
   };
 
-  const handleFileClick = (fileId: string) => {
-    // TODO: Implement file preview/download
-    console.log("File clicked:", fileId);
+  const handleMove = (destinationId: string) => {
+    const item = modalState.movedItem;
+    if (!item) return;
+
+    if (item.type === "folder") {
+      folderOps.moveFolder(item.id, destinationId);
+    } else {
+      fileOps.moveFile(item.id, destinationId);
+    }
   };
 
-  const formatFileSize = (bytes: number) => {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(2)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
-  };
+  const handleDelete = () => {
+    const item = modalState.deletedItem;
+    if (!item) return;
 
-  const renderFolderRow = (folder: Folder) => {
-    const isSelected = selectedItems.has(folder.id);
-
-    return (
-      <ItemContextMenu key={folder.id} item={folder} type="folder">
-        <TableRow
-          className="cursor-pointer"
-          onClick={() => handleFolderClick(folder.id)}
-        >
-          <TableCell className="w-12">
-            <Checkbox
-              checked={isSelected}
-              onCheckedChange={() => toggleSelection(folder.id)}
-              onClick={(e) => e.stopPropagation()}
-            />
-          </TableCell>
-          <TableCell>
-            <div className="flex items-center gap-3">
-              <FolderIcon
-                className="size-5 shrink-0"
-                style={{ color: folder.color || "#6366f1" }}
-                fill="currentColor"
-              />
-              <span className="font-medium">{folder.name}</span>
-            </div>
-          </TableCell>
-          <TableCell>{folder.user.name}</TableCell>
-          <TableCell>
-            {formatDistanceToNow(new Date(folder.updatedAt), {
-              addSuffix: true,
-            })}
-          </TableCell>
-          <TableCell>—</TableCell>
-          <TableCell className="w-12">
-            <button
-              className="p-1 hover:bg-muted rounded"
-              onClick={(e) => {
-                e.stopPropagation();
-                toggleSelection(folder.id);
-              }}
-            >
-              <MoreVertical className="size-4" />
-            </button>
-          </TableCell>
-        </TableRow>
-      </ItemContextMenu>
-    );
-  };
-
-  const renderFileRow = (file: IFile) => {
-    const isSelected = selectedItems.has(file.id);
-
-    return (
-      <ItemContextMenu key={file.id} item={file} type="file">
-        <TableRow
-          className="cursor-pointer"
-          onClick={() => handleFileClick(file.id)}
-        >
-          <TableCell className="w-12">
-            <Checkbox
-              checked={isSelected}
-              onCheckedChange={() => toggleSelection(file.id)}
-              onClick={(e) => e.stopPropagation()}
-            />
-          </TableCell>
-          <TableCell>
-            <div className="flex items-center gap-3">
-              <FileIcon className="size-5 shrink-0 text-muted-foreground" />
-              <span className="font-medium">{file.name}</span>
-            </div>
-          </TableCell>
-          <TableCell>{file.user.name}</TableCell>
-          <TableCell>
-            {formatDistanceToNow(new Date(file.updatedAt), {
-              addSuffix: true,
-            })}
-          </TableCell>
-          <TableCell>{formatFileSize(file.size)}</TableCell>
-          <TableCell className="w-12">
-            <button
-              className="p-1 hover:bg-muted rounded"
-              onClick={(e) => {
-                e.stopPropagation();
-                toggleSelection(file.id);
-              }}
-            >
-              <MoreVertical className="size-4" />
-            </button>
-          </TableCell>
-        </TableRow>
-      </ItemContextMenu>
-    );
+    if (item.type === "folder") {
+      folderOps.trashFolder(item.id);
+    } else {
+      fileOps.trashFile(item.id);
+    }
   };
 
   return (
-    <div className="rounded-lg border">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead className="w-12"></TableHead>
-            <TableHead>Name</TableHead>
-            <TableHead>Owner</TableHead>
-            <TableHead>Last Modified</TableHead>
-            <TableHead>Size</TableHead>
-            <TableHead className="w-12"></TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {folders.map(renderFolderRow)}
-          {files.map(renderFileRow)}
-        </TableBody>
-      </Table>
-    </div>
+    <>
+      <div className="rounded-lg border bg-card text-card-foreground shadow-sm">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-12">
+                {/* TODO: Select All Checkbox*/}
+              </TableHead>
+              <TableHead>Name</TableHead>
+              <TableHead>Owner</TableHead>
+              <TableHead>Last Modified</TableHead>
+              <TableHead>Size</TableHead>
+              <TableHead className="w-12"></TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {/* 渲染文件夹 */}
+            {folders.map((folder) => (
+              <FileTableRow
+                key={folder.id}
+                item={folder}
+                isSelected={selectedItems.has(folder.id)}
+                onSelect={toggleSelection}
+                onNavigate={navigateToFolder}
+                onAction={handleAction}
+              />
+            ))}
+
+            {/* 渲染文件 */}
+            {files.map((file) => (
+              <FileTableRow
+                key={file.id}
+                item={file}
+                isSelected={selectedItems.has(file.id)}
+                onSelect={toggleSelection}
+                onNavigate={navigateToFolder}
+                onAction={handleAction}
+              />
+            ))}
+
+            {folders.length === 0 && files.length === 0 && (
+              <TableRow>
+                <TableCell
+                  colSpan={6}
+                  className="h-24 text-center text-muted-foreground"
+                >
+                  No files or folders found.
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </div>
+
+      {/* Modals */}
+      <FilePreviewModal
+        isOpen={!!modalState.previewedFile}
+        onClose={() => modalState.setPreviewedFile(null)}
+        file={modalState.previewedFile}
+      />
+
+      <RenameDialog
+        open={!!modalState.renamedItem}
+        onOpenChange={(open) => !open && modalState.setRenamedItem(null)}
+        currentName={modalState.renamedItem?.name || ""}
+        onRename={handleRename}
+        type={modalState.renamedItem?.type || "file"}
+      />
+
+      <DeleteConfirmDialog
+        open={!!modalState.deletedItem}
+        onOpenChange={(open) => !open && modalState.setDeletedItem(null)}
+        onConfirm={handleDelete}
+        itemName={modalState.deletedItem?.name || ""}
+      />
+
+      <MoveDialog
+        open={!!modalState.movedItem}
+        onOpenChange={(open) => !open && modalState.setMovedItem(null)}
+        onMove={handleMove}
+        itemType={modalState.movedItem?.type || "file"}
+        currentFolderId={
+          (modalState.movedItem as Folder)?.parent ||
+          (modalState.movedItem as IFile)?.folder ||
+          undefined
+        }
+      />
+    </>
   );
 };

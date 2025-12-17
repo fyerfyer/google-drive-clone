@@ -6,6 +6,11 @@ import type {
   BreadcrumbItem,
 } from "@/types/folder.types";
 import { api } from "@/services/api";
+import {
+  normalizeFolder,
+  normalizeFolders,
+  normalizeFiles,
+} from "@/lib/type-guards";
 
 const FOLDER_API_BASE = "/api/folders";
 
@@ -17,7 +22,7 @@ export const folderService = {
         CreateFolderRequest
       >(`${FOLDER_API_BASE}/create`, req);
       if (response.success && response.data) {
-        return response.data.folder;
+        return normalizeFolder(response.data.folder);
       }
       throw new Error(response.message || "Failed to create folder");
     } catch (error) {
@@ -35,7 +40,12 @@ export const folderService = {
         `${FOLDER_API_BASE}/${folderId}/content`
       );
       if (response.success && response.data) {
-        return response.data;
+        return {
+          ...response.data,
+          currentFolder: normalizeFolder(response.data.currentFolder),
+          folders: normalizeFolders(response.data.folders),
+          files: normalizeFiles(response.data.files),
+        };
       }
       throw new Error(response.message || "Failed to get folder content");
     } catch (error) {
@@ -163,7 +173,7 @@ export const folderService = {
         `${FOLDER_API_BASE}/view/starred`
       );
       if (response.success && response.data) {
-        return response.data;
+        return normalizeFolders(response.data);
       }
       throw new Error(response.message || "Failed to get starred folders");
     } catch (error) {
@@ -179,7 +189,7 @@ export const folderService = {
         `${FOLDER_API_BASE}/view/trashed`
       );
       if (response.success && response.data) {
-        return response.data;
+        return normalizeFolders(response.data);
       }
       throw new Error(response.message || "Failed to get trashed folders");
     } catch (error) {
@@ -196,7 +206,7 @@ export const folderService = {
         : `${FOLDER_API_BASE}/view/recent`;
       const response = await api.get<Folder[]>(url);
       if (response.success && response.data) {
-        return response.data;
+        return normalizeFolders(response.data);
       }
       throw new Error(response.message || "Failed to get recent folders");
     } catch (error) {

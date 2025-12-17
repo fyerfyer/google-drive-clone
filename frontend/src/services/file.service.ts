@@ -6,6 +6,7 @@ import type {
 } from "@/types/file.types";
 import { api, apiClient } from "@/services/api";
 import type { AxiosProgressEvent } from "axios";
+import { normalizeFile, normalizeFiles } from "@/lib/type-guards";
 
 const FILE_API_BASE = "/api/files";
 
@@ -64,7 +65,7 @@ export const fileService = {
         progress: 100,
         status: "success",
       });
-      return response.data.data.file;
+      return normalizeFile(response.data.data.file);
     } catch (error) {
       let message = "An unknown error occurred during file upload.";
       if (error instanceof Error) {
@@ -94,36 +95,16 @@ export const fileService = {
     return results;
   },
 
-  downloadFile: async (fileId: string): Promise<void> => {
+  getDownloadInfo: async (
+    fileId: string
+  ): Promise<{ downloadUrl: string; fileName: string }> => {
     const response = await api.get<FileDownloadResponse>(
       `${FILE_API_BASE}/${fileId}/download`
     );
-
-    if (!response.success) {
-      throw new Error(response.message || "Failed to get download URL");
+    if (!response.success || !response.data) {
+      throw new Error(response.message || "Failed to get download info");
     }
-
-    if (!response.data) {
-      throw new Error("No download data received");
-    }
-
-    const { downloadUrl, fileName } = response.data;
-
-    // 使用预签名 URL 触发下载
-    const link = document.createElement("a");
-    link.href = downloadUrl;
-    link.download = fileName;
-    link.target = "_blank"; // 在新窗口打开，避免阻塞当前页面
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  },
-
-  triggerDownload: (url: string, fileName: string) => {
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = fileName;
-    link.click();
+    return response.data;
   },
 
   getPreviewUrl: async (fileId: string): Promise<string> => {
@@ -136,18 +117,6 @@ export const fileService = {
     }
 
     return response.data.url;
-  },
-
-  getDownloadUrl: async (fileId: string): Promise<string> => {
-    const response = await api.get<FileDownloadResponse>(
-      `${FILE_API_BASE}/${fileId}/download`
-    );
-
-    if (!response.success || !response.data) {
-      throw new Error(response.message || "Failed to get download URL");
-    }
-
-    return response.data.downloadUrl;
   },
 
   async renameFile(fileId: string, newName: string): Promise<void> {
@@ -231,7 +200,7 @@ export const fileService = {
       throw new Error(response.message || "Failed to get starred files");
     }
 
-    return response.data;
+    return normalizeFiles(response.data);
   },
 
   async getTrashedFiles(): Promise<IFile[]> {
@@ -241,7 +210,7 @@ export const fileService = {
       throw new Error(response.message || "Failed to get trashed files");
     }
 
-    return response.data;
+    return normalizeFiles(response.data);
   },
 
   async getRecentFiles(limit?: number): Promise<IFile[]> {
@@ -254,7 +223,7 @@ export const fileService = {
       throw new Error(response.message || "Failed to get recent files");
     }
 
-    return response.data;
+    return normalizeFiles(response.data);
   },
 
   async getAllUserFiles(): Promise<IFile[]> {
@@ -264,7 +233,7 @@ export const fileService = {
       throw new Error(response.message || "Failed to get all files");
     }
 
-    return response.data;
+    return normalizeFiles(response.data);
   },
 
   /**
@@ -288,6 +257,6 @@ export const fileService = {
       throw new Error(response.message || "Failed to create file record");
     }
 
-    return response.data.file;
+    return normalizeFile(response.data.file);
   },
 };

@@ -48,13 +48,11 @@ export class FileController {
       throw new AppError(StatusCodes.BAD_REQUEST, "Missing required fields");
     }
 
-    // Verify object exists in storage
     const exists = await StorageService.checkObjectExists(BUCKETS.FILES, key);
     if (!exists) {
       throw new AppError(StatusCodes.BAD_REQUEST, "File not found in storage");
     }
 
-    // Create file record in database
     const file = await this.fileService.createFileRecord({
       userId: req.user.id,
       folderId,
@@ -131,6 +129,32 @@ export class FileController {
         );
       }
     });
+  }
+
+  async getPreviewUrl(req: Request, res: Response, next: NextFunction) {
+    if (!req.user) {
+      throw new AppError(StatusCodes.UNAUTHORIZED, "User not authenticated");
+    }
+
+    const user = req.user;
+    const result = await this.fileService.getPreviewUrl({
+      userId: String(user._id),
+      fileId: req.params.fileId,
+      expirySeconds: 3600,
+    });
+
+    return ResponseHelper.success(
+      res,
+      {
+        url: result.url,
+        fileName: result.fileName,
+        mimeType: result.mimeType,
+        size: result.size,
+        expiresIn: result.expiresIn,
+      },
+      StatusCodes.OK,
+      "Preview URL generated successfully"
+    );
   }
 
   async renameFile(req: Request, res: Response, next: NextFunction) {

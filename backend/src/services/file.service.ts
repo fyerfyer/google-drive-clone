@@ -19,11 +19,6 @@ interface CreateFileRecordDTO {
   hash?: string;
 }
 
-interface DownloadLinkDTO {
-  userId: string;
-  fileId: string;
-}
-
 interface PreviewStreamDTO {
   userId: string;
   fileId: string;
@@ -88,7 +83,12 @@ export class FileService {
     const { userId, folderId, key, fileSize, mimeType, originalName, hash } =
       data;
     const userObjectId = new mongoose.Types.ObjectId(userId);
-    const folderObjectId = new mongoose.Types.ObjectId(folderId);
+
+    // Handle "root" folder ID (same as folder.service.ts)
+    const isRoot = folderId === "root";
+    const folderObjectId = isRoot
+      ? null
+      : new mongoose.Types.ObjectId(folderId);
 
     // 使用原子操作
     const updateUser = await User.findOneAndUpdate(
@@ -118,6 +118,9 @@ export class FileService {
       );
     }
 
+    // 推断文件扩展名
+    const extension = mimeTypes.extension(mimeType) || "";
+
     // 创建文件记录
     const file = await File.create({
       user: userObjectId,
@@ -127,7 +130,7 @@ export class FileService {
       mimeType,
       originalName,
       name: originalName,
-      extension: mimeTypes.extension(mimeType) || "",
+      extension,
       hash,
       isPublic: false,
       isStarred: false,
@@ -144,7 +147,7 @@ export class FileService {
       extension: mimeTypes.extension(file.mimeType) || "",
       mimeType: file.mimeType,
       size: file.size,
-      folder: file.folder.toString(),
+      folder: file.folder ? file.folder.toString() : null,
       user: userBasic,
       isStarred: file.isStarred,
       isTrashed: file.isTrashed,
@@ -323,7 +326,7 @@ export class FileService {
       throw new AppError(StatusCodes.NOT_FOUND, "Target folder not found");
     }
 
-    if (fileToMove.folder.equals(targetFolderObjectId)) {
+    if (fileToMove.folder?.equals(targetFolderObjectId)) {
       logger.info(
         { fileId, targetFolderId },
         "File is already in the target folder"
@@ -387,6 +390,46 @@ export class FileService {
     logger.info(
       { fileId: data.fileId, userId: data.userId, expirySeconds },
       "Generated presigned download URL"
+    );
+
+    return {
+      url: presignedUrl,
+      fileName: file.originalName,
+      mimeType: file.mimeType,
+      size: file.size,
+      expiresIn: expirySeconds,
+    };
+  }
+
+  async getPreviewUrl(data: PresignedUrlDTO) {
+    const fileObjectId = new mongoose.Types.ObjectId(data.fileId);
+    const userObjectId = new mongoose.Types.ObjectId(data.userId);
+
+    const file = await File.findOne({
+      _id: fileObjectId,
+      user: userObjectId,
+      isTrashed: false,
+    }).select("+key mimeType originalName size");
+
+    if (!file) {
+      logger.warn(
+        { fileId: data.fileId, userId: data.userId },
+        "File not found for preview"
+      );
+      throw new AppError(StatusCodes.NOT_FOUND, "File not found");
+    }
+
+    const expirySeconds = data.expirySeconds || 3600;
+    const presignedUrl = await StorageService.getDownloadUrl(
+      BUCKETS.FILES,
+      file.key,
+      expirySeconds,
+      "inline"
+    );
+
+    logger.info(
+      { fileId: data.fileId, userId: data.userId, expirySeconds },
+      "Generated presigned preview URL"
     );
 
     return {
