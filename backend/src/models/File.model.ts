@@ -1,10 +1,5 @@
 import mongoose, { Schema, Document, HydratedDocument } from "mongoose";
 
-export interface IFileShare {
-  user: mongoose.Types.ObjectId;
-  role: "viewer" | "editor";
-}
-
 export interface IFile extends Document {
   name: string;
   originalName: string; // 用于追溯原始信息
@@ -23,9 +18,7 @@ export interface IFile extends Document {
   isStarred: boolean;
   isTrashed: boolean;
   trashedAt?: Date;
-
-  isPublic: boolean;
-  sharedWith: IFileShare[];
+  accessLink: "none" | "viewer" | "editor";
 
   createdAt: Date;
   updatedAt: Date;
@@ -69,14 +62,11 @@ const fileSchema = new Schema<IFile>(
     isTrashed: { type: Boolean, required: true, index: true },
     trashedAt: { type: Date, default: null },
 
-    isPublic: { type: Boolean, default: false },
-    sharedWith: [
-      {
-        _id: false,
-        user: { type: Schema.Types.ObjectId, ref: "User" },
-        role: { type: String, enum: ["viewer", "editor"], default: "viewer" },
-      },
-    ],
+    accessLink: {
+      type: String,
+      enum: ["none", "viewer", "editor"],
+      default: "none",
+    },
   },
   {
     timestamps: true,
@@ -107,7 +97,17 @@ fileSchema.index({ user: 1, mimeType: 1 });
 // 快传索引
 fileSchema.index({ hash: 1 });
 
-fileSchema.set("autoIndex", false);
+// 删除钩子，文件被彻底删除时清理权限表
+fileSchema.post("findOneAndDelete", async function (doc: IFile) {
+  if (doc) {
+    try {
+      await mongoose.model("SharedAccess").deleteMany({ resource: doc._id });
+      console.log(`Cleaned up shares for file ${doc._id}`);
+    } catch (err) {
+      console.error("Error cleaning up file shares:", err);
+    }
+  }
+});
 
 const File = mongoose.model<IFile>("File", fileSchema);
 export default File;

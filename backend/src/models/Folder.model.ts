@@ -1,11 +1,5 @@
 import mongoose, { Schema, Document, HydratedDocument } from "mongoose";
 
-// 预留的用于文件协作的接口
-export interface IFolderShare {
-  user: mongoose.Types.ObjectId;
-  role: "viewer" | "editor";
-}
-
 export interface IFolder extends Document {
   name: string;
   user: mongoose.Types.ObjectId;
@@ -21,8 +15,8 @@ export interface IFolder extends Document {
   // 用于自动清理
   trashedAt?: Date;
 
-  isPublic: boolean;
-  sharedWith: IFolderShare[];
+  // 权限管理
+  linkAccess: "none" | "viewer" | "editor";
 
   createdAt: Date;
   updatedAt: Date;
@@ -71,17 +65,10 @@ const folderSchema = new Schema<IFolder>(
 
     trashedAt: { type: Date, default: null },
 
-    sharedWith: [
-      {
-        _id: false, // 这个不需要 id
-        user: { type: Schema.Types.ObjectId, ref: "User" },
-        role: { type: String, enum: ["viewer", "editor"], default: "viewer" },
-      },
-    ],
-
-    isPublic: {
-      type: Boolean,
-      default: false,
+    linkAccess: {
+      type: String,
+      enum: ["none", "viewer", "editor"],
+      default: "none",
     },
   },
   {
@@ -110,7 +97,19 @@ folderSchema.index({ user: 1, parent: 1, isTrashed: 1 });
 
 // 查询优化：搜索子树
 folderSchema.index({ ancestors: 1 });
-folderSchema.set("autoIndex", false);
+
+folderSchema.post("findOneAndDelete", async function (doc: IFolder) {
+  if (doc) {
+    // 删除钩子，文件夹被彻底删除时清理权限表
+    try {
+      await mongoose
+        .model("SharedAccess")
+        .deleteMany({ resourceType: "Folder", resource: doc._id });
+    } catch (err) {
+      console.error("Error cleaning up folder shares:", err);
+    }
+  }
+});
 
 const Folder = mongoose.model<IFolder>("Folder", folderSchema);
 export default Folder;
