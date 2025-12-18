@@ -1,7 +1,7 @@
 import {
   type BaseItem,
   type UserBasic,
-  type ShareInfo,
+  type LinkAccessStatus,
 } from "@/types/common.types";
 import z from "zod";
 
@@ -15,8 +15,7 @@ export interface IFile extends BaseItem {
   folder: string;
   extension: string;
   user: UserBasic;
-  isPublic: boolean;
-  sharedWith: ShareInfo[];
+  linkAccessStatus: LinkAccessStatus;
   trashedAt?: string;
 }
 

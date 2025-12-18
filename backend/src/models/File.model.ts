@@ -1,4 +1,5 @@
 import mongoose, { Schema, Document, HydratedDocument } from "mongoose";
+import { LinkAccessStatus } from "../types/model.types";
 
 export interface IFile extends Document {
   name: string;
@@ -15,10 +16,15 @@ export interface IFile extends Document {
   user: mongoose.Types.ObjectId;
   folder: mongoose.Types.ObjectId | null;
 
+  // 存储祖先 ID，方便查询与权限继承
+  ancestors: mongoose.Types.ObjectId[];
+
   isStarred: boolean;
   isTrashed: boolean;
   trashedAt?: Date;
-  accessLink: "none" | "viewer" | "editor";
+
+  // 权限管理
+  linkAccessStatus: LinkAccessStatus;
 
   createdAt: Date;
   updatedAt: Date;
@@ -58,13 +64,15 @@ const fileSchema = new Schema<IFile>(
       index: true,
     },
 
+    ancestors: [{ type: Schema.Types.ObjectId, ref: "Folder" }],
+
     isStarred: { type: Boolean, required: true, index: true },
     isTrashed: { type: Boolean, required: true, index: true },
     trashedAt: { type: Date, default: null },
 
-    accessLink: {
+    linkAccessStatus: {
       type: String,
-      enum: ["none", "viewer", "editor"],
+      enum: ["none", "viewer", "editor", "commenter", "owner"],
       default: "none",
     },
   },
@@ -76,6 +84,7 @@ const fileSchema = new Schema<IFile>(
         ret.id = ret._id;
         delete ret._id;
         delete ret.__v;
+        delete ret.ancestors;
         return ret;
       },
     },
@@ -90,6 +99,9 @@ fileSchema.index(
 
 // 搜索优化
 fileSchema.index({ user: 1, folder: 1, isTrashed: 1, createdAt: -1 });
+
+// 搜索子树（基于祖先）
+fileSchema.index({ ancestors: 1 });
 
 // 类型筛选
 fileSchema.index({ user: 1, mimeType: 1 });

@@ -715,13 +715,13 @@ export class BatchService {
 
       // 处理文件
       if (fileIds.length > 0) {
-        const fileResult = await File.updateMany(
+        await File.updateMany(
           {
             _id: { $in: fileIds },
             user: userObjectId,
             isTrashed: false,
           },
-          { folder: destinationObjectId },
+          { folder: destinationObjectId, ancestors: newAncestors },
           { session }
         );
 

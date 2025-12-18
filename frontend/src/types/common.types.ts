@@ -23,6 +23,9 @@ export interface ShareInfo {
   role: "viewer" | "editor";
 }
 
+export type AccessRole = "viewer" | "editor" | "commenter" | "owner";
+export type LinkAccessStatus = AccessRole | "none";
+
 export type ViewMode = "grid" | "list";
 export type SortField = "name" | "createdAt" | "updatedAt" | "size";
 export type SortOrder = "asc" | "desc";

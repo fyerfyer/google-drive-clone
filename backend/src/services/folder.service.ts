@@ -8,6 +8,7 @@ import { StorageService } from "./storage.service";
 import { BUCKETS } from "../config/s3";
 import { logger } from "../lib/logger";
 import { IFilePublic } from "./file.service";
+import { LinkAccessStatus } from "../types/model.types";
 
 interface CreateFolderDTO {
   userId: string;
@@ -31,12 +32,6 @@ interface IUserBasic {
   };
 }
 
-// 共享信息
-interface IShareInfo {
-  user: IUserBasic;
-  role: "viewer" | "editor";
-}
-
 // 返回给前端的脱敏文件夹信息
 export interface IFolderPublic {
   id: string;
@@ -48,8 +43,7 @@ export interface IFolderPublic {
   isStarred: boolean;
   isTrashed: boolean;
   trashedAt?: Date;
-  isPublic: boolean;
-  sharedWith: IShareInfo[];
+  linkAccessStatus: LinkAccessStatus;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -93,7 +87,6 @@ export class FolderService {
       user: userObjectId,
       parent: parentId,
       ancestors: ancestors,
-      isPublic: false,
       isTrashed: false,
       isStarred: false,
     });
@@ -117,8 +110,7 @@ export class FolderService {
       isStarred: folder.isStarred,
       isTrashed: folder.isTrashed,
       trashedAt: folder.trashedAt,
-      isPublic: folder.isPublic,
-      sharedWith: [],
+      linkAccessStatus: folder.linkAccessStatus,
       createdAt: folder.createdAt,
       updatedAt: folder.updatedAt,
     };
@@ -558,8 +550,7 @@ export class FolderService {
           description: "Root folder",
           isStarred: false,
           isTrashed: false,
-          isPublic: false,
-          sharedWith: [],
+          linkAccessStatus: "none",
           createdAt: new Date(),
           updatedAt: new Date(),
         }
@@ -575,8 +566,7 @@ export class FolderService {
           isStarred: currentFolder!.isStarred,
           isTrashed: currentFolder!.isTrashed,
           trashedAt: currentFolder!.trashedAt,
-          isPublic: currentFolder!.isPublic,
-          sharedWith: [],
+          linkAccessStatus: currentFolder!.linkAccessStatus,
           createdAt: currentFolder!.createdAt,
           updatedAt: currentFolder!.updatedAt,
         };
@@ -592,8 +582,7 @@ export class FolderService {
         isStarred: folder.isStarred,
         isTrashed: folder.isTrashed,
         trashedAt: folder.trashedAt,
-        isPublic: folder.isPublic,
-        sharedWith: [],
+        linkAccessStatus: folder.linkAccessStatus,
         createdAt: folder.createdAt,
         updatedAt: folder.updatedAt,
       };
@@ -612,11 +601,7 @@ export class FolderService {
         isStarred: file.isStarred,
         isTrashed: file.isTrashed,
         trashedAt: file.trashedAt,
-        isPublic: file.isPublic,
-        sharedWith: file.sharedWith.map((share) => ({
-          userId: share.user.toString(),
-          role: share.role,
-        })),
+        linkAccessStatus: file.linkAccessStatus,
         createdAt: file.createdAt,
         updatedAt: file.updatedAt,
       };
@@ -680,8 +665,7 @@ export class FolderService {
       isStarred: folder.isStarred,
       isTrashed: folder.isTrashed,
       trashedAt: folder.trashedAt,
-      isPublic: folder.isPublic,
-      sharedWith: [],
+      linkAccessStatus: folder.linkAccessStatus,
       createdAt: folder.createdAt,
       updatedAt: folder.updatedAt,
     }));
@@ -715,8 +699,7 @@ export class FolderService {
       isStarred: folder.isStarred,
       isTrashed: folder.isTrashed,
       trashedAt: folder.trashedAt,
-      isPublic: folder.isPublic,
-      sharedWith: [],
+      linkAccessStatus: folder.linkAccessStatus,
       createdAt: folder.createdAt,
       updatedAt: folder.updatedAt,
     }));
@@ -755,8 +738,7 @@ export class FolderService {
       isStarred: folder.isStarred,
       isTrashed: folder.isTrashed,
       trashedAt: folder.trashedAt,
-      isPublic: folder.isPublic,
-      sharedWith: [],
+      linkAccessStatus: folder.linkAccessStatus,
       createdAt: folder.createdAt,
       updatedAt: folder.updatedAt,
     }));

@@ -1,4 +1,5 @@
 import mongoose, { Schema, Document, HydratedDocument } from "mongoose";
+import { LinkAccessStatus } from "../types/model.types";
 
 export interface IFolder extends Document {
   name: string;
@@ -16,7 +17,7 @@ export interface IFolder extends Document {
   trashedAt?: Date;
 
   // 权限管理
-  linkAccess: "none" | "viewer" | "editor";
+  linkAccessStatus: LinkAccessStatus;
 
   createdAt: Date;
   updatedAt: Date;
@@ -65,9 +66,9 @@ const folderSchema = new Schema<IFolder>(
 
     trashedAt: { type: Date, default: null },
 
-    linkAccess: {
+    linkAccessStatus: {
       type: String,
-      enum: ["none", "viewer", "editor"],
+      enum: ["none", "viewer", "editor", "commenter", "owner"],
       default: "none",
     },
   },

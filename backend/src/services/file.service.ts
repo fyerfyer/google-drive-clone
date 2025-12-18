@@ -8,6 +8,7 @@ import { BUCKETS } from "../config/s3";
 import mimeTypes from "mime-types";
 import User from "../models/User.model";
 import { logger } from "../lib/logger";
+import { LinkAccessStatus } from "../types/model.types";
 
 interface CreateFileRecordDTO {
   userId: string;
@@ -40,12 +41,6 @@ interface IUserBasic {
   };
 }
 
-// 共享信息
-interface IShareInfo {
-  userId: string;
-  role: "viewer" | "editor";
-}
-
 // 返回给前端的脱敏文件信息
 export interface IFilePublic {
   id: string;
@@ -59,8 +54,7 @@ export interface IFilePublic {
   isStarred: boolean;
   isTrashed: boolean;
   trashedAt?: Date;
-  isPublic: boolean;
-  sharedWith: IShareInfo[];
+  linkAccessStatus: LinkAccessStatus;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -89,6 +83,19 @@ export class FileService {
     const folderObjectId = isRoot
       ? null
       : new mongoose.Types.ObjectId(folderId);
+
+    // 计算文件 ancestors（用于后续权限传递与查询优化）
+    let ancestors: mongoose.Types.ObjectId[] = [];
+    if (folderObjectId) {
+      const parentFolder = await Folder.findOne({
+        _id: folderObjectId,
+        user: userObjectId,
+      });
+      if (!parentFolder) {
+        throw new AppError(StatusCodes.NOT_FOUND, "Parent folder not found");
+      }
+      ancestors = [...parentFolder.ancestors, folderObjectId];
+    }
 
     // 使用原子操作
     const updateUser = await User.findOneAndUpdate(
@@ -125,6 +132,7 @@ export class FileService {
     const file = await File.create({
       user: userObjectId,
       folder: folderObjectId,
+      ancestors,
       key,
       size: fileSize,
       mimeType,
@@ -132,10 +140,8 @@ export class FileService {
       name: originalName,
       extension,
       hash,
-      isPublic: false,
       isStarred: false,
       isTrashed: false,
-      sharedWith: [],
     });
 
     const userBasic = await this.getUserBasic(userId);
@@ -152,11 +158,7 @@ export class FileService {
       isStarred: file.isStarred,
       isTrashed: file.isTrashed,
       trashedAt: file.trashedAt,
-      isPublic: file.isPublic,
-      sharedWith: file.sharedWith.map((share) => ({
-        userId: share.user.toString(),
-        role: share.role,
-      })),
+      linkAccessStatus: file.linkAccessStatus,
       createdAt: file.createdAt,
       updatedAt: file.updatedAt,
     };
@@ -334,7 +336,9 @@ export class FileService {
       return;
     }
 
+    // 更新文件夹与祖先路径
     fileToMove.folder = targetFolderObjectId;
+    fileToMove.ancestors = [...targetFolder.ancestors, targetFolderObjectId];
     await fileToMove.save();
 
     logger.info({ fileId, targetFolderId, userId }, "File moved successfully");
@@ -516,11 +520,7 @@ export class FileService {
       isStarred: file.isStarred,
       isTrashed: file.isTrashed,
       trashedAt: file.trashedAt,
-      isPublic: file.isPublic,
-      sharedWith: file.sharedWith.map((share) => ({
-        userId: share.user.toString(),
-        role: share.role,
-      })),
+      linkAccessStatus: file.linkAccessStatus,
       createdAt: file.createdAt,
       updatedAt: file.updatedAt,
     }));
@@ -549,11 +549,7 @@ export class FileService {
       isStarred: file.isStarred,
       isTrashed: file.isTrashed,
       trashedAt: file.trashedAt,
-      isPublic: file.isPublic,
-      sharedWith: file.sharedWith.map((share) => ({
-        userId: share.user.toString(),
-        role: share.role,
-      })),
+      linkAccessStatus: file.linkAccessStatus,
       createdAt: file.createdAt,
       updatedAt: file.updatedAt,
     }));
@@ -587,11 +583,7 @@ export class FileService {
       isStarred: file.isStarred,
       isTrashed: file.isTrashed,
       trashedAt: file.trashedAt,
-      isPublic: file.isPublic,
-      sharedWith: file.sharedWith.map((share) => ({
-        userId: share.user.toString(),
-        role: share.role,
-      })),
+      linkAccessStatus: file.linkAccessStatus,
       createdAt: file.createdAt,
       updatedAt: file.updatedAt,
     }));
@@ -629,11 +621,7 @@ export class FileService {
       isStarred: file.isStarred,
       isTrashed: file.isTrashed,
       trashedAt: file.trashedAt,
-      isPublic: file.isPublic,
-      sharedWith: file.sharedWith.map((share) => ({
-        userId: share.user.toString(),
-        role: share.role,
-      })),
+      linkAccessStatus: file.linkAccessStatus,
       createdAt: file.createdAt,
       updatedAt: file.updatedAt,
     }));

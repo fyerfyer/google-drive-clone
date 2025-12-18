@@ -1,11 +1,12 @@
-import mongoose from "mongoose";
+import mongoose, { Document } from "mongoose";
+import { AccessRole } from "../types/model.types";
 
-export interface ISharedAccess {
+export interface ISharedAccess extends Document {
   resourceType: "Folder" | "File";
   resource: mongoose.Types.ObjectId;
   sharedBy: mongoose.Types.ObjectId;
   sharedWith: mongoose.Types.ObjectId;
-  role: "viewer" | "editor";
+  role: AccessRole;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -37,7 +38,7 @@ const sharedAccessSchema = new mongoose.Schema<ISharedAccess>(
 
     role: {
       type: String,
-      enum: ["viewer", "editor"],
+      enum: ["viewer", "editor", "commenter", "owner"],
     },
   },
   {
