@@ -1,5 +1,8 @@
 import jwt from "jsonwebtoken";
 import { config } from "../config/env";
+import { AppError } from "../middlewares/errorHandler";
+import { StatusCodes } from "http-status-codes";
+import { logError } from "../lib/logger";
 
 interface JwtPayload {
   id: string;
@@ -8,8 +11,8 @@ interface JwtPayload {
 
 export const generateToken = (payload: JwtPayload): string => {
   const secret: string = config.jwtSecret;
-  return jwt.sign(payload, secret, { 
-    expiresIn: config.jwtExpire 
+  return jwt.sign(payload, secret, {
+    expiresIn: config.jwtExpire,
   } as jwt.SignOptions);
 };
 
@@ -20,11 +23,17 @@ export const verifyToken = (token: string): JwtPayload => {
     return decode as JwtPayload;
   } catch (error) {
     if (error instanceof jwt.TokenExpiredError) {
-      throw new Error("Token expired");
+      const msg = "Token expired";
+      logError(error, msg);
+      throw new AppError(StatusCodes.UNAUTHORIZED, msg);
     }
     if (error instanceof jwt.JsonWebTokenError) {
-      throw new Error("Invalid token");
+      const msg = "Invalid token";
+      logError(error, msg);
+      throw new AppError(StatusCodes.UNAUTHORIZED, msg);
     }
-    throw new Error("Failed to verify token");
+    const msg = "Failed to verify token";
+    logError(error, msg);
+    throw new AppError(StatusCodes.INTERNAL_SERVER_ERROR, msg);
   }
 };

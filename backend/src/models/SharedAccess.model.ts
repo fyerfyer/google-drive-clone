@@ -7,6 +7,7 @@ export interface ISharedAccess extends Document {
   sharedBy: mongoose.Types.ObjectId;
   sharedWith: mongoose.Types.ObjectId;
   role: AccessRole;
+  expiresAt: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -35,10 +36,15 @@ const sharedAccessSchema = new mongoose.Schema<ISharedAccess>(
       ref: "User",
       required: true,
     },
-
     role: {
       type: String,
       enum: ["viewer", "editor", "commenter", "owner"],
+      default: "viewer",
+    },
+    expiresAt: {
+      type: Date,
+      default: null,
+      index: true,
     },
   },
   {

@@ -1,5 +1,9 @@
 import mongoose, { Schema, Document, HydratedDocument } from "mongoose";
 import { LinkAccessStatus } from "../types/model.types";
+import {
+  ILinkShareConfig,
+  linkShareConfigSchema,
+} from "./LinkShareConfig.schema";
 
 export interface IFile extends Document {
   name: string;
@@ -24,7 +28,7 @@ export interface IFile extends Document {
   trashedAt?: Date;
 
   // 权限管理
-  linkAccessStatus: LinkAccessStatus;
+  linkShare: ILinkShareConfig;
 
   createdAt: Date;
   updatedAt: Date;
@@ -70,11 +74,7 @@ const fileSchema = new Schema<IFile>(
     isTrashed: { type: Boolean, required: true, index: true },
     trashedAt: { type: Date, default: null },
 
-    linkAccessStatus: {
-      type: String,
-      enum: ["none", "viewer", "editor", "commenter", "owner"],
-      default: "none",
-    },
+    linkShare: linkShareConfigSchema,
   },
   {
     timestamps: true,

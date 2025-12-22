@@ -1,6 +1,6 @@
 import { StatusCodes } from "http-status-codes";
 import { AppError } from "../middlewares/errorHandler";
-import File from "../models/File.model";
+import File, { IFile } from "../models/File.model";
 import Folder from "../models/Folder.model";
 import mongoose from "mongoose";
 import { StorageService } from "./storage.service";
@@ -70,6 +70,32 @@ export class FileService {
       avatar: {
         thumbnail: user?.avatar?.thumbnail || "",
       },
+    };
+  }
+
+  private getLinkAccessStatus(file: IFile): LinkAccessStatus {
+    if (!file.linkShare?.enableLinkSharing) {
+      return "none";
+    }
+    return file.linkShare.role;
+  }
+
+  private toFilePublic(file: IFile, userBasic: IUserBasic): IFilePublic {
+    return {
+      id: file.id,
+      name: file.name,
+      originalName: file.originalName,
+      extension: file.extension,
+      mimeType: file.mimeType,
+      size: file.size,
+      folder: file.folder ? file.folder.toString() : null,
+      user: userBasic,
+      isStarred: file.isStarred,
+      isTrashed: file.isTrashed,
+      trashedAt: file.trashedAt,
+      linkAccessStatus: this.getLinkAccessStatus(file),
+      createdAt: file.createdAt,
+      updatedAt: file.updatedAt,
     };
   }
 
@@ -146,22 +172,7 @@ export class FileService {
 
     const userBasic = await this.getUserBasic(userId);
 
-    return {
-      id: file._id.toString(),
-      name: originalName,
-      originalName: file.originalName,
-      extension: mimeTypes.extension(file.mimeType) || "",
-      mimeType: file.mimeType,
-      size: file.size,
-      folder: file.folder ? file.folder.toString() : null,
-      user: userBasic,
-      isStarred: file.isStarred,
-      isTrashed: file.isTrashed,
-      trashedAt: file.trashedAt,
-      linkAccessStatus: file.linkAccessStatus,
-      createdAt: file.createdAt,
-      updatedAt: file.updatedAt,
-    };
+    return this.toFilePublic(file, userBasic);
   }
 
   async trashFile(fileId: string, userId: string) {
@@ -508,22 +519,7 @@ export class FileService {
       this.getUserBasic(userId),
     ]);
 
-    return files.map((file) => ({
-      id: file.id,
-      name: file.name,
-      originalName: file.originalName,
-      extension: file.extension,
-      mimeType: file.mimeType,
-      size: file.size,
-      folder: file.folder ? file.folder.toString() : null,
-      user: userBasic,
-      isStarred: file.isStarred,
-      isTrashed: file.isTrashed,
-      trashedAt: file.trashedAt,
-      linkAccessStatus: file.linkAccessStatus,
-      createdAt: file.createdAt,
-      updatedAt: file.updatedAt,
-    }));
+    return files.map((file) => this.toFilePublic(file, userBasic));
   }
 
   async getTrashedFiles(userId: string): Promise<IFilePublic[]> {
@@ -537,22 +533,7 @@ export class FileService {
       this.getUserBasic(userId),
     ]);
 
-    return files.map((file) => ({
-      id: file.id,
-      name: file.name,
-      originalName: file.originalName,
-      extension: file.extension,
-      mimeType: file.mimeType,
-      size: file.size,
-      folder: file.folder ? file.folder.toString() : null,
-      user: userBasic,
-      isStarred: file.isStarred,
-      isTrashed: file.isTrashed,
-      trashedAt: file.trashedAt,
-      linkAccessStatus: file.linkAccessStatus,
-      createdAt: file.createdAt,
-      updatedAt: file.updatedAt,
-    }));
+    return files.map((file) => this.toFilePublic(file, userBasic));
   }
 
   async getRecentFiles(
@@ -571,22 +552,7 @@ export class FileService {
       this.getUserBasic(userId),
     ]);
 
-    return files.map((file) => ({
-      id: file.id,
-      name: file.name,
-      originalName: file.originalName,
-      extension: file.extension,
-      mimeType: file.mimeType,
-      size: file.size,
-      folder: file.folder ? file.folder.toString() : null,
-      user: userBasic,
-      isStarred: file.isStarred,
-      isTrashed: file.isTrashed,
-      trashedAt: file.trashedAt,
-      linkAccessStatus: file.linkAccessStatus,
-      createdAt: file.createdAt,
-      updatedAt: file.updatedAt,
-    }));
+    return files.map((file) => this.toFilePublic(file, userBasic));
   }
 
   async getAllUserFiles(userId: string): Promise<IFilePublic[]> {
@@ -609,21 +575,6 @@ export class FileService {
       },
     };
 
-    return files.map((file) => ({
-      id: file.id,
-      name: file.name,
-      originalName: file.originalName,
-      extension: file.extension,
-      mimeType: file.mimeType,
-      size: file.size,
-      folder: file.folder ? file.folder.toString() : null,
-      user: userBasic,
-      isStarred: file.isStarred,
-      isTrashed: file.isTrashed,
-      trashedAt: file.trashedAt,
-      linkAccessStatus: file.linkAccessStatus,
-      createdAt: file.createdAt,
-      updatedAt: file.updatedAt,
-    }));
+    return files.map((file) => this.toFilePublic(file, userBasic));
   }
 }

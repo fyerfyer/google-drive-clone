@@ -63,6 +63,72 @@ export interface IFolderContent {
 }
 
 export class FolderService {
+  private async getUserBasic(userId: string): Promise<IUserBasic> {
+    const userObjectId = new mongoose.Types.ObjectId(userId);
+    const user = await User.findById(userObjectId).select("name email avatar");
+    return {
+      id: userId,
+      name: user?.name || "",
+      email: user?.email || "",
+      avatar: {
+        thumbnail: user?.avatar?.thumbnail || "",
+      },
+    };
+  }
+
+  private getLinkAccessStatus(folder: IFolder): LinkAccessStatus {
+    if (!folder.linkShare?.enableLinkSharing) {
+      return "none";
+    }
+    return folder.linkShare.role;
+  }
+
+  private toFolderPublic(
+    folder: IFolder,
+    userBasic: IUserBasic
+  ): IFolderPublic {
+    return {
+      id: folder.id,
+      name: folder.name,
+      parent: folder.parent ? folder.parent.toString() : null,
+      user: userBasic,
+      color: folder.color,
+      description: folder.description,
+      isStarred: folder.isStarred,
+      isTrashed: folder.isTrashed,
+      trashedAt: folder.trashedAt,
+      linkAccessStatus: this.getLinkAccessStatus(folder),
+      createdAt: folder.createdAt,
+      updatedAt: folder.updatedAt,
+    };
+  }
+
+  private getFileLinkAccessStatus(file: IFile): LinkAccessStatus {
+    if (!file.linkShare?.enableLinkSharing) {
+      return "none";
+    }
+    return file.linkShare.role;
+  }
+
+  private toFilePublic(file: IFile, userBasic: IUserBasic): IFilePublic {
+    return {
+      id: file.id,
+      name: file.name,
+      originalName: file.originalName,
+      extension: file.extension,
+      mimeType: file.mimeType,
+      size: file.size,
+      folder: file.folder ? file.folder.toString() : null,
+      user: userBasic,
+      isStarred: file.isStarred,
+      isTrashed: file.isTrashed,
+      trashedAt: file.trashedAt,
+      linkAccessStatus: this.getFileLinkAccessStatus(file),
+      createdAt: file.createdAt,
+      updatedAt: file.updatedAt,
+    };
+  }
+
   async createFolder(data: CreateFolderDTO): Promise<IFolderPublic> {
     let ancestors: mongoose.Types.ObjectId[] = [];
     let parentId: mongoose.Types.ObjectId | null = null;
@@ -92,28 +158,8 @@ export class FolderService {
     });
 
     // 获取用户信息
-    const user = await User.findById(userObjectId);
-    return {
-      id: folder.id,
-      name: folder.name,
-      parent: folder.parent ? folder.parent.toString() : null,
-      user: {
-        id: data.userId,
-        name: user?.name || "Unknown",
-        email: user?.email || "",
-        avatar: {
-          thumbnail: user?.avatar?.thumbnail || "",
-        },
-      },
-      color: folder.color,
-      description: folder.description,
-      isStarred: folder.isStarred,
-      isTrashed: folder.isTrashed,
-      trashedAt: folder.trashedAt,
-      linkAccessStatus: folder.linkAccessStatus,
-      createdAt: folder.createdAt,
-      updatedAt: folder.updatedAt,
-    };
+    const userBasic = await this.getUserBasic(data.userId);
+    return this.toFolderPublic(folder, userBasic);
   }
 
   async trashFolder(folderId: string, userId: string) {
@@ -554,58 +600,15 @@ export class FolderService {
           createdAt: new Date(),
           updatedAt: new Date(),
         }
-      : {
-          id: currentFolder!.id,
-          name: currentFolder!.name,
-          parent: currentFolder!.parent
-            ? currentFolder!.parent.toString()
-            : null,
-          user: userBasic,
-          color: currentFolder!.color,
-          description: currentFolder!.description,
-          isStarred: currentFolder!.isStarred,
-          isTrashed: currentFolder!.isTrashed,
-          trashedAt: currentFolder!.trashedAt,
-          linkAccessStatus: currentFolder!.linkAccessStatus,
-          createdAt: currentFolder!.createdAt,
-          updatedAt: currentFolder!.updatedAt,
-        };
+      : this.toFolderPublic(currentFolder!, userBasic);
 
-    const foldersPublic: IFolderPublic[] = folders.map((folder) => {
-      return {
-        id: folder.id,
-        name: folder.name,
-        parent: folder.parent ? folder.parent.toString() : null,
-        user: userBasic,
-        color: folder.color,
-        description: folder.description,
-        isStarred: folder.isStarred,
-        isTrashed: folder.isTrashed,
-        trashedAt: folder.trashedAt,
-        linkAccessStatus: folder.linkAccessStatus,
-        createdAt: folder.createdAt,
-        updatedAt: folder.updatedAt,
-      };
-    });
+    const foldersPublic: IFolderPublic[] = folders.map((folder) =>
+      this.toFolderPublic(folder, userBasic)
+    );
 
-    const filesPublic: IFilePublic[] = files.map((file) => {
-      return {
-        id: file.id,
-        name: file.name,
-        originalName: file.originalName,
-        extension: file.extension,
-        mimeType: file.mimeType,
-        size: file.size,
-        folder: file.folder ? file.folder.toString() : null,
-        user: userBasic,
-        isStarred: file.isStarred,
-        isTrashed: file.isTrashed,
-        trashedAt: file.trashedAt,
-        linkAccessStatus: file.linkAccessStatus,
-        createdAt: file.createdAt,
-        updatedAt: file.updatedAt,
-      };
-    });
+    const filesPublic: IFilePublic[] = files.map((file) =>
+      this.toFilePublic(file, userBasic)
+    );
 
     return {
       currentFolder: currentFolderPublic,
@@ -639,70 +642,30 @@ export class FolderService {
   async getStarredFolders(userId: string): Promise<IFolderPublic[]> {
     const userObjectId = new mongoose.Types.ObjectId(userId);
 
-    const folders = await Folder.find({
-      user: userObjectId,
-      isStarred: true,
-      isTrashed: false,
-    }).sort({ updatedAt: -1 });
+    const [folders, userBasic] = await Promise.all([
+      Folder.find({
+        user: userObjectId,
+        isStarred: true,
+        isTrashed: false,
+      }).sort({ updatedAt: -1 }),
+      this.getUserBasic(userId),
+    ]);
 
-    const user = await User.findById(userObjectId).select("name email avatar");
-    const userBasic = {
-      id: userId,
-      name: user?.name || "",
-      email: user?.email || "",
-      avatar: {
-        thumbnail: user?.avatar?.thumbnail || "",
-      },
-    };
-
-    return folders.map((folder) => ({
-      id: folder.id,
-      name: folder.name,
-      parent: folder.parent ? folder.parent.toString() : null,
-      user: userBasic,
-      color: folder.color,
-      description: folder.description,
-      isStarred: folder.isStarred,
-      isTrashed: folder.isTrashed,
-      trashedAt: folder.trashedAt,
-      linkAccessStatus: folder.linkAccessStatus,
-      createdAt: folder.createdAt,
-      updatedAt: folder.updatedAt,
-    }));
+    return folders.map((folder) => this.toFolderPublic(folder, userBasic));
   }
 
   async getTrashedFolders(userId: string): Promise<IFolderPublic[]> {
     const userObjectId = new mongoose.Types.ObjectId(userId);
 
-    const folders = await Folder.find({
-      user: userObjectId,
-      isTrashed: true,
-    }).sort({ trashedAt: -1 });
+    const [folders, userBasic] = await Promise.all([
+      Folder.find({
+        user: userObjectId,
+        isTrashed: true,
+      }).sort({ trashedAt: -1 }),
+      this.getUserBasic(userId),
+    ]);
 
-    const user = await User.findById(userObjectId).select("name email avatar");
-    const userBasic = {
-      id: userId,
-      name: user?.name || "",
-      email: user?.email || "",
-      avatar: {
-        thumbnail: user?.avatar?.thumbnail || "",
-      },
-    };
-
-    return folders.map((folder) => ({
-      id: folder.id,
-      name: folder.name,
-      parent: folder.parent ? folder.parent.toString() : null,
-      user: userBasic,
-      color: folder.color,
-      description: folder.description,
-      isStarred: folder.isStarred,
-      isTrashed: folder.isTrashed,
-      trashedAt: folder.trashedAt,
-      linkAccessStatus: folder.linkAccessStatus,
-      createdAt: folder.createdAt,
-      updatedAt: folder.updatedAt,
-    }));
+    return folders.map((folder) => this.toFolderPublic(folder, userBasic));
   }
 
   async getRecentFolders(
@@ -711,37 +674,17 @@ export class FolderService {
   ): Promise<IFolderPublic[]> {
     const userObjectId = new mongoose.Types.ObjectId(userId);
 
-    const folders = await Folder.find({
-      user: userObjectId,
-      isTrashed: false,
-    })
-      .sort({ updatedAt: -1 })
-      .limit(limit);
+    const [folders, userBasic] = await Promise.all([
+      Folder.find({
+        user: userObjectId,
+        isTrashed: false,
+      })
+        .sort({ updatedAt: -1 })
+        .limit(limit),
+      this.getUserBasic(userId),
+    ]);
 
-    const user = await User.findById(userObjectId).select("name email avatar");
-    const userBasic = {
-      id: userId,
-      name: user?.name || "",
-      email: user?.email || "",
-      avatar: {
-        thumbnail: user?.avatar?.thumbnail || "",
-      },
-    };
-
-    return folders.map((folder) => ({
-      id: folder.id,
-      name: folder.name,
-      parent: folder.parent ? folder.parent.toString() : null,
-      user: userBasic,
-      color: folder.color,
-      description: folder.description,
-      isStarred: folder.isStarred,
-      isTrashed: folder.isTrashed,
-      trashedAt: folder.trashedAt,
-      linkAccessStatus: folder.linkAccessStatus,
-      createdAt: folder.createdAt,
-      updatedAt: folder.updatedAt,
-    }));
+    return folders.map((folder) => this.toFolderPublic(folder, userBasic));
   }
 
   async getFolderPath(

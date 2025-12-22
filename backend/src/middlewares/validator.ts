@@ -54,13 +54,19 @@ export const registerValidator = [
     .custom((value) => {
       const dataUrlPattern = /^data:image\/(png|jpe?g|webp);base64,/i;
       if (!dataUrlPattern.test(value)) {
-        throw new Error("Avatar must be a valid data URL (PNG, JPG, or WEBP)");
+        throw new AppError(
+          StatusCodes.BAD_REQUEST,
+          "Avatar must be a valid data URL (PNG, JPG, or WEBP)"
+        );
       }
 
       const base64String = value.split(",")[1];
       const bufferLength = Buffer.from(base64String, "base64").length;
       if (bufferLength > 5 * 1024 * 1024) {
-        throw new Error("Avatar must be smaller than 5MB");
+        throw new AppError(
+          StatusCodes.BAD_REQUEST,
+          "Avatar must be smaller than 5MB"
+        );
       }
 
       return true;
@@ -106,13 +112,19 @@ export const updateValidator = [
     .custom((value) => {
       const dataUrlPattern = /^data:image\/(png|jpe?g|webp);base64,/i;
       if (!dataUrlPattern.test(value)) {
-        throw new Error("Avatar must be a valid data URL (PNG, JPG, or WEBP)");
+        throw new AppError(
+          StatusCodes.BAD_REQUEST,
+          "Avatar must be a valid data URL (PNG, JPG, or WEBP)"
+        );
       }
 
       const base64String = value.split(",")[1];
       const bufferLength = Buffer.from(base64String, "base64").length;
       if (bufferLength > 5 * 1024 * 1024) {
-        throw new Error("Avatar must be smaller than 5MB");
+        throw new AppError(
+          StatusCodes.BAD_REQUEST,
+          "Avatar must be smaller than 5MB"
+        );
       }
 
       return true;
@@ -126,7 +138,10 @@ export const updateValidator = [
         !req.body.avatarDataUrl &&
         !req.file
       ) {
-        throw new Error("Please provide at least one field to update");
+        throw new AppError(
+          StatusCodes.BAD_REQUEST,
+          "Please provide at least one field to update"
+        );
       }
       return true;
     })
