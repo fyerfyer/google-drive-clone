@@ -1,4 +1,9 @@
-import { AccessRole, ResourceType } from "../types/model.types";
+import {
+  AccessRole,
+  NOTIFICATION_TYPES,
+  QUEUE_TASKS,
+  ResourceType,
+} from "../types/model.types";
 import File, { IFile } from "../models/File.model";
 import Folder, { IFolder } from "../models/Folder.model";
 import User from "../models/User.model";
@@ -9,6 +14,7 @@ import { AppError } from "../middlewares/errorHandler";
 import { StatusCodes } from "http-status-codes";
 import { logError } from "../lib/logger";
 import { nanoid } from "nanoid";
+import { notificationQueue } from "../lib/queue/queue";
 
 interface checkPermissionRequest {
   userId: string | null; // 未登录用户可以访问公开链接
@@ -45,6 +51,7 @@ interface shareResourceRequest {
   requesterId: string;
   resourceId: string;
   resourceType: ResourceType;
+  resourceName: string;
   targetUserIds: string[];
   role: AccessRole;
   expiresAt?: Date;
@@ -236,7 +243,17 @@ export class PermissionService {
 
     await Promise.all(sharePromises);
 
-    // TODO: 发送通知给被分享用户
+    usersToShare.forEach((user) => {
+      notificationQueue.add(QUEUE_TASKS.SEND_SHARE, {
+        recipientId: user._id.toString(),
+        senderId: data.requesterId,
+        type: NOTIFICATION_TYPES.FILE_SHARED,
+        resourceType: data.resourceType,
+        resourceId: data.resourceId,
+        resourceName: data.resourceName,
+      });
+    });
+
     return true;
   }
 

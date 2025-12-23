@@ -13,10 +13,13 @@ interface EnvConfig {
   jwtExpire: string;
   corsOrigin: string;
   trashRetentionDays: number;
-  MINIO_ENDPOINT: string;
-  MINIO_ACCESS_KEY: string;
-  MINIO_SECRET_KEY: string;
-  MINIO_PUBLIC_URL: string;
+  minioEndpoint: string;
+  minioAccessKey: string;
+  minioSecretKey: string;
+  minioPublicUrl: string;
+
+  redisUrl: string;
+  frontendUrl: string;
 }
 
 export const config: EnvConfig = {
@@ -27,12 +30,14 @@ export const config: EnvConfig = {
   jwtExpire: process.env.JWT_EXPIRE || "7d",
   corsOrigin: process.env.CORS_ORIGIN || "http://localhost:5173",
   trashRetentionDays: parseInt(process.env.TRASH_RETENTION_DAYS || "30", 10),
-  MINIO_ENDPOINT: process.env.MINIO_ENDPOINT || "http://localhost:9000",
-  MINIO_ACCESS_KEY: process.env.MINIO_ACCESS_KEY || "minioadmin",
-  MINIO_SECRET_KEY: process.env.MINIO_SECRET_KEY || "minioadmin123",
-  MINIO_PUBLIC_URL:
+  minioEndpoint: process.env.MINIO_ENDPOINT || "http://localhost:9000",
+  minioAccessKey: process.env.MINIO_ACCESS_KEY || "minioadmin",
+  minioSecretKey: process.env.MINIO_SECRET_KEY || "minioadmin123",
+  minioPublicUrl:
     process.env.MINIO_PUBLIC_URL ||
     `http://localhost:${process.env.MINIO_PORT || "9000"}`,
+  redisUrl: process.env.REDIS_URL || "redis://localhost:6379",
+  frontendUrl: process.env.FRONTEND_URL || "http://localhost:5173",
 };
 
 const requiredEnvVars = ["MONGODB_URI", "JWT_SECRET"];

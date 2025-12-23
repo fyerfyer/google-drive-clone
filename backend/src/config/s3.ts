@@ -6,26 +6,27 @@ import {
   PutBucketCorsCommand,
 } from "@aws-sdk/client-s3";
 import logger from "../lib/logger";
+import { config } from "./env";
 
 // S3 client for backend operations (uses internal endpoint)
 export const s3Client = new S3Client({
   region: "us-east-1",
-  endpoint: process.env.MINIO_ENDPOINT || "http://localhost:9000",
+  endpoint: config.minioEndpoint,
   forcePathStyle: true,
   credentials: {
-    accessKeyId: process.env.MINIO_ACCESS_KEY || "minioadmin",
-    secretAccessKey: process.env.MINIO_SECRET_KEY || "minioadmin123",
+    accessKeyId: config.minioAccessKey,
+    secretAccessKey: config.minioSecretKey,
   },
 });
 
 // S3 client for presigned URL generation (uses public endpoint)
 export const s3ClientForPresign = new S3Client({
   region: "us-east-1",
-  endpoint: process.env.MINIO_PUBLIC_URL || "http://localhost:9000",
+  endpoint: config.minioPublicUrl,
   forcePathStyle: true,
   credentials: {
-    accessKeyId: process.env.MINIO_ACCESS_KEY || "minioadmin",
-    secretAccessKey: process.env.MINIO_SECRET_KEY || "minioadmin123",
+    accessKeyId: config.minioAccessKey,
+    secretAccessKey: config.minioSecretKey,
   },
 });
 

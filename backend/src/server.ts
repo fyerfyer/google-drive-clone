@@ -3,16 +3,20 @@ import { config } from "./config/env";
 import { connectDB } from "./config/database";
 import { initializeBuckets } from "./config/s3";
 import { logger } from "./lib/logger";
+import { initScheduledJobs } from "./lib/cron";
 
 const startServer = async () => {
   try {
     await connectDB();
-    // Ensure required MinIO buckets exist before serving requests
+
     try {
       await initializeBuckets();
     } catch (e) {
       logger.warn({ err: e }, "Failed to initialize MinIO buckets");
     }
+
+    // 初始化定时任务
+    await initScheduledJobs();
 
     app.listen(config.port, () => {
       logger.info(
