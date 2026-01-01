@@ -10,33 +10,10 @@ import {
   PutObjectCommand,
   UploadPartCommand,
 } from "@aws-sdk/client-s3";
-import logger from "../lib/logger";
 import { BucketsType, s3Client, s3ClientForPresign } from "../config/s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 export class StorageService {
-  // URL 替换
-  // 解决 Docker 内部 endpoint 与外部访问地址 localhost 不一致问题
-  private static replaceHostUrl(originalUrl: string): string {
-    try {
-      if (!process.env.MINIO_PUBLIC_URL) return originalUrl;
-
-      const publicUrl = new URL(process.env.MINIO_PUBLIC_URL);
-      const urlObj = new URL(originalUrl);
-
-      // 把原始 URL 的 Protocol 和 Host 替换掉
-      urlObj.protocol = publicUrl.protocol;
-      urlObj.host = publicUrl.host;
-      return urlObj.toString();
-    } catch (error) {
-      logger.error(
-        { err: error, originalUrl },
-        "Failed to replace host in MinIO URL"
-      );
-      return originalUrl;
-    }
-  }
-
   // 分片上传
   static async createMultipartUpload(
     bucketName: BucketsType,

@@ -1,7 +1,8 @@
 import { getReasonPhrase, StatusCodes } from "http-status-codes";
 import { AppError } from "../middlewares/errorHandler";
 import User, { IUser } from "../models/User.model";
-import { AvatarService } from "./avatar.service";
+import { ImageService, ImageType, ImageResource } from "./image.service";
+import { BUCKETS } from "../config/s3";
 
 interface CreateUserDTO {
   email: string;
@@ -9,17 +10,12 @@ interface CreateUserDTO {
   name: string;
 }
 
-interface IUserAvatarDTO {
-  url: string;
-  thumbnail: string;
-}
-
 // 返回给前端的脱敏用户信息
 export interface IUserPublic {
   id: string;
   email: string;
   name: string;
-  avatar: IUserAvatarDTO;
+  avatar: ImageResource;
   storageUsage: number;
   storageQuota: number;
   createdAt: Date;
@@ -27,8 +23,6 @@ export interface IUserPublic {
 }
 
 export class UserService {
-  constructor(private avatarService: AvatarService) {}
-
   async createUser(data: CreateUserDTO): Promise<IUser> {
     const existingUser = await User.findOne({ email: data.email });
     if (existingUser) {
@@ -97,20 +91,21 @@ export class UserService {
     }
 
     // Process and update avatar
-    const newAvatar = await this.avatarService.processUploadAvatar(
+    const newAvatar = await ImageService.processImageWithPreset(
       userId,
-      avatarKey
+      avatarKey,
+      ImageType.AVATAR,
+      BUCKETS.AVATARS
     );
 
     // Delete old avatar if exists
     if (user.avatar?.publicId) {
-      await this.avatarService.deleteAvatar(user.avatar.publicId);
+      await ImageService.deleteImage(user.avatar.publicId, BUCKETS.AVATARS);
     }
 
     user.avatar = {
       publicId: newAvatar.publicId,
       thumbnailId: newAvatar.thumbnailId,
-      url: newAvatar.url,
       thumbnail: newAvatar.thumbnail,
       createdAt: new Date(),
     };

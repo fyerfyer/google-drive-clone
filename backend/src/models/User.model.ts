@@ -1,17 +1,10 @@
 import mongoose, { Schema, Document, HydratedDocument, Model } from "mongoose";
 import bcrypt from "bcryptjs";
+import { IAvatar, avatarSchema } from "./Avatar.schema";
 
 export interface IUserMethod {
   comparePassword(inputPassword: string): Promise<boolean>;
   checkStorageQuota(fileSize: number): boolean;
-}
-
-export interface IAvatar {
-  publicId: string;
-  thumbnailId: string;
-  url: string; // TODO: 这个东西要不要删掉？貌似没有用
-  thumbnail: string;
-  createdAt: Date;
 }
 
 export interface IUser extends Document, IUserMethod {
@@ -53,24 +46,7 @@ const userSchema = new Schema<IUser>(
       maxLength: 50,
     },
 
-    avatar: {
-      publicId: {
-        type: String,
-        default: null,
-      },
-      thumbnailId: {
-        type: String,
-        default: null,
-      },
-      url: {
-        type: String,
-        default: null,
-      },
-      thumbnail: {
-        type: String,
-        default: null,
-      },
-    },
+    avatar: avatarSchema,
 
     storageUsage: {
       type: Number,

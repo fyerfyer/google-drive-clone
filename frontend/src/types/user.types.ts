@@ -3,7 +3,6 @@ import z from "zod";
 export interface Avatar {
   publicId: string;
   thumbnailId: string;
-  url: string;
   thumbnail: string;
 }
 

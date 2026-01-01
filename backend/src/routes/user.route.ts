@@ -1,7 +1,7 @@
 import { Router } from "express";
-import { jwtAuth } from "../middlewares/auth.middleware.js";
-import { updateValidator } from "../middlewares/validator.js";
-import { UserController } from "../controllers/user.controller.js";
+import { jwtAuth } from "../middlewares/auth.middleware";
+import { updateValidator } from "../middlewares/validator";
+import { UserController } from "../controllers/user.controller";
 
 export function createUserRouter(userController: UserController) {
   const userRouter = Router();

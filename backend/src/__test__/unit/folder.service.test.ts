@@ -164,4 +164,218 @@ describe("Test file service", () => {
     const remainingFolders = await Folder.find({});
     expect(remainingFolders).toHaveLength(0);
   });
+
+  it("Folder restore handling", async () => {
+    const folder = await folderService.createFolder({
+      userId: String(mockUser._id),
+      parentId: String(parentFolder._id),
+      name: "RestoreFolder",
+    });
+
+    await folderService.trashFolder(String(folder.id), String(mockUser._id));
+    let folderInDb = await Folder.findById(String(folder.id));
+    expect(folderInDb?.isTrashed).toBe(true);
+    expect(folderInDb?.trashedAt).toBeDefined();
+
+    await folderService.restoreFolder(String(folder.id), String(mockUser._id));
+    folderInDb = await Folder.findById(String(folder.id));
+    expect(folderInDb?.isTrashed).toBe(false);
+    expect(folderInDb?.trashedAt).toBeNull();
+  });
+
+  it("Folder star handling", async () => {
+    const folder = await folderService.createFolder({
+      userId: String(mockUser._id),
+      parentId: String(parentFolder._id),
+      name: "StarFolder",
+    });
+
+    let folderInDb = await Folder.findById(String(folder.id));
+    expect(folderInDb?.isStarred).toBe(false);
+
+    await folderService.starFolder(
+      String(folder.id),
+      String(mockUser._id),
+      true
+    );
+    folderInDb = await Folder.findById(String(folder.id));
+    expect(folderInDb?.isStarred).toBe(true);
+
+    await folderService.starFolder(
+      String(folder.id),
+      String(mockUser._id),
+      false
+    );
+    folderInDb = await Folder.findById(String(folder.id));
+    expect(folderInDb?.isStarred).toBe(false);
+  });
+
+  it("Folder rename handling", async () => {
+    const folder = await folderService.createFolder({
+      userId: String(mockUser._id),
+      parentId: String(parentFolder._id),
+      name: "OriginalName",
+    });
+
+    await folderService.renameFolder(
+      String(folder.id),
+      String(mockUser._id),
+      "RenamedFolder"
+    );
+    const folderInDb = await Folder.findById(String(folder.id));
+    expect(folderInDb?.name).toBe("RenamedFolder");
+  });
+
+  it("Folder move handling", async () => {
+    const targetFolder = await Folder.create({
+      name: "TargetFolder",
+      user: mockUser._id,
+      parent: null,
+      ancestors: [],
+      isTrashed: false,
+    });
+
+    const movableFolder = await folderService.createFolder({
+      userId: String(mockUser._id),
+      parentId: String(parentFolder._id),
+      name: "MovableFolder",
+    });
+
+    let folderInDb = await Folder.findById(String(movableFolder.id));
+    expect(folderInDb?.parent?.toString()).toBe(parentFolder._id.toString());
+
+    await folderService.moveFolder({
+      folderId: String(movableFolder.id),
+      destinationId: String(targetFolder._id),
+      userId: String(mockUser._id),
+    });
+
+    folderInDb = await Folder.findById(String(movableFolder.id));
+    expect(folderInDb?.parent?.toString()).toBe(targetFolder._id.toString());
+    expect(folderInDb?.ancestors).toHaveLength(1);
+    expect(folderInDb?.ancestors[0].toString()).toBe(
+      targetFolder._id.toString()
+    );
+  });
+
+  it("Get starred folders", async () => {
+    const folder1 = await folderService.createFolder({
+      userId: String(mockUser._id),
+      parentId: String(parentFolder._id),
+      name: "StarredFolder1",
+    });
+
+    const folder2 = await folderService.createFolder({
+      userId: String(mockUser._id),
+      parentId: String(parentFolder._id),
+      name: "StarredFolder2",
+    });
+
+    await folderService.createFolder({
+      userId: String(mockUser._id),
+      parentId: String(parentFolder._id),
+      name: "NotStarredFolder",
+    });
+
+    await folderService.starFolder(
+      String(folder1.id),
+      String(mockUser._id),
+      true
+    );
+    await folderService.starFolder(
+      String(folder2.id),
+      String(mockUser._id),
+      true
+    );
+
+    const starredFolders = await folderService.getStarredFolders(
+      String(mockUser._id)
+    );
+    expect(starredFolders).toHaveLength(2);
+    expect(starredFolders.map((f) => f.id)).toContain(String(folder1.id));
+    expect(starredFolders.map((f) => f.id)).toContain(String(folder2.id));
+  });
+
+  it("Get trashed folders", async () => {
+    const folder1 = await folderService.createFolder({
+      userId: String(mockUser._id),
+      parentId: String(parentFolder._id),
+      name: "TrashedFolder1",
+    });
+
+    const folder2 = await folderService.createFolder({
+      userId: String(mockUser._id),
+      parentId: String(parentFolder._id),
+      name: "TrashedFolder2",
+    });
+
+    await folderService.createFolder({
+      userId: String(mockUser._id),
+      parentId: String(parentFolder._id),
+      name: "NotTrashedFolder",
+    });
+
+    await folderService.trashFolder(String(folder1.id), String(mockUser._id));
+    await folderService.trashFolder(String(folder2.id), String(mockUser._id));
+
+    const trashedFolders = await folderService.getTrashedFolders(
+      String(mockUser._id)
+    );
+    expect(trashedFolders).toHaveLength(2);
+    expect(trashedFolders.map((f) => f.id)).toContain(String(folder1.id));
+    expect(trashedFolders.map((f) => f.id)).toContain(String(folder2.id));
+  });
+
+  it("Get recent folders", async () => {
+    await folderService.createFolder({
+      userId: String(mockUser._id),
+      parentId: String(parentFolder._id),
+      name: "RecentFolder1",
+    });
+
+    await folderService.createFolder({
+      userId: String(mockUser._id),
+      parentId: String(parentFolder._id),
+      name: "RecentFolder2",
+    });
+
+    const recentFolders = await folderService.getRecentFolders(
+      String(mockUser._id),
+      10
+    );
+    expect(recentFolders.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("Get folder content", async () => {
+    const folder = await folderService.createFolder({
+      userId: String(mockUser._id),
+      parentId: String(parentFolder._id),
+      name: "ContentFolder",
+    });
+
+    await folderService.createFolder({
+      userId: String(mockUser._id),
+      parentId: String(folder.id),
+      name: "SubFolder",
+    });
+
+    await uploadTestFile(
+      fileService,
+      String(mockUser._id),
+      String(folder.id),
+      "file.txt",
+      "test content",
+      "content-hash"
+    );
+
+    const content = await folderService.getFolderContent(
+      String(folder.id),
+      String(mockUser._id)
+    );
+
+    expect(content.currentFolder.id).toBe(String(folder.id));
+    expect(content.folders).toHaveLength(1);
+    expect(content.files).toHaveLength(1);
+    expect(content.breadcrumbs.length).toBeGreaterThanOrEqual(1);
+  });
 });

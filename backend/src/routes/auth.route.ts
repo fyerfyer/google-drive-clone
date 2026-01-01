@@ -1,11 +1,11 @@
 import { Router } from "express";
-import { jwtAuth } from "../middlewares/auth.middleware.js";
+import { jwtAuth } from "../middlewares/auth.middleware";
 import {
   loginValidator,
   registerValidator,
   updateValidator,
-} from "../middlewares/validator.js";
-import { AuthController } from "../controllers/auth.controller.js";
+} from "../middlewares/validator";
+import { AuthController } from "../controllers/auth.controller";
 
 export function createAuthRouter(authController: AuthController) {
   const authRouter = Router();
