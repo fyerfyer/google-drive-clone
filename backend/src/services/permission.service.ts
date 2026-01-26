@@ -213,7 +213,7 @@ export class PermissionService {
       owner: {
         name: ownerUser.name,
         email: ownerUser.email,
-        avatar: ownerUser.avatar.thumbnail,
+        avatar: ownerUser.avatar?.thumbnail,
       },
       permissions: permissionResults,
       linkShare: resource.linkShare,
@@ -538,12 +538,13 @@ export class PermissionService {
   private async checkInheritedPolicy(
     chainIds: mongoose.Types.ObjectId[],
     requireRole: AccessRole,
-    selfLinkShare: ILinkShareConfig,
+    selfLinkShare: ILinkShareConfig | undefined,
     token?: string,
   ): Promise<boolean> {
     // 如果提供了 token，优先检查 token 是否匹配当前资源
     if (
       token &&
+      selfLinkShare &&
       selfLinkShare.token &&
       this.validateLinkPolicy(selfLinkShare, requireRole) &&
       selfLinkShare.token === token
@@ -554,6 +555,7 @@ export class PermissionService {
     // 对当前资源的公开链接也做一次兜底检查（无需 token）
     if (
       !token &&
+      selfLinkShare &&
       selfLinkShare.scope === "anyone" &&
       !selfLinkShare.password &&
       this.validateLinkPolicy(selfLinkShare, requireRole)
