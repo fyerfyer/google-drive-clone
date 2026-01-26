@@ -3,20 +3,15 @@ import { StatusCodes } from "http-status-codes";
 import { AppError } from "../middlewares/errorHandler";
 import { StorageService } from "./storage.service";
 import { BucketsType } from "../config/s3";
+import { IMAGE_PRESETS } from "../types/image-presets";
 import logger from "../lib/logger";
 
-/**
- * 图片资源响应接口
- */
 export interface ImageResource {
   publicId: string;
   thumbnailId: string;
   thumbnail: string;
 }
 
-/**
- * 图片处理配置选项
- */
 export interface ImageProcessingOptions {
   bucket: BucketsType;
   thumbnailSize?: { width: number; height: number };
@@ -25,41 +20,22 @@ export interface ImageProcessingOptions {
   logContext?: string;
 }
 
-/**
- * 图片类型枚举
- */
 export enum ImageType {
   AVATAR = "avatar",
   ICON = "icon",
 }
 
-/**
- * 统一的图片处理服务
- * 支持 Avatar、Icon 等各种图片资源的处理
- */
-export class ImageService {
-  // 预设配置
-  private static readonly PRESETS: Record<
-    ImageType,
-    Required<Omit<ImageProcessingOptions, "bucket">>
-  > = {
-    [ImageType.AVATAR]: {
-      thumbnailSize: { width: 200, height: 200 },
-      thumbnailQuality: 90,
-      thumbnailExtension: "-thumb.png",
-      logContext: "avatar",
-    },
-    [ImageType.ICON]: {
-      thumbnailSize: { width: 128, height: 128 },
-      thumbnailQuality: 95,
-      thumbnailExtension: "-thumb.png",
-      logContext: "icon",
-    },
-  };
+export interface ImagePreset {
+  thumbnailSize: { width: number; height: number };
+  thumbnailQuality: number;
+  thumbnailExtension: string;
+  logContext: string;
+}
 
-  /**
-   * 处理上传的图片：验证、生成缩略图、上传
-   */
+export class ImageService {
+  private static readonly PRESETS: Record<ImageType, ImagePreset> =
+    IMAGE_PRESETS;
+
   static async processImage(
     userId: string,
     tempKey: string,
@@ -152,9 +128,6 @@ export class ImageService {
     }
   }
 
-  /**
-   * 使用预设配置处理图片
-   */
   static async processImageWithPreset(
     userId: string,
     tempKey: string,
@@ -165,9 +138,6 @@ export class ImageService {
     return this.processImage(userId, tempKey, { ...preset, bucket });
   }
 
-  /**
-   * 删除图片及其缩略图
-   */
   static async deleteImage(
     key: string,
     bucket: BucketsType,
@@ -201,25 +171,19 @@ export class ImageService {
     }
   }
 
-  /**
-   * 获取原图的公开 URL
-   */
   static getImageUrl(bucket: BucketsType, publicId: string): string {
     return StorageService.getPublicUrl(bucket, publicId);
   }
 
-  /**
-   * 合并默认配置
-   */
   private static mergeWithDefaults(
     options: ImageProcessingOptions
   ): Required<ImageProcessingOptions> {
     return {
       bucket: options.bucket,
-      thumbnailSize: options.thumbnailSize || { width: 200, height: 200 },
-      thumbnailQuality: options.thumbnailQuality || 90,
-      thumbnailExtension: options.thumbnailExtension || "-thumb.png",
-      logContext: options.logContext || "image",
+      thumbnailSize: options.thumbnailSize ?? { width: 200, height: 200 },
+      thumbnailQuality: options.thumbnailQuality ?? 90,
+      thumbnailExtension: options.thumbnailExtension ?? "-thumb.png",
+      logContext: options.logContext ?? "image",
     };
   }
 }

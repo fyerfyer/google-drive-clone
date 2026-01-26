@@ -1,8 +1,13 @@
 import { Router } from "express";
 import { jwtAuth } from "../middlewares/auth.middleware";
 import { FileController } from "../controllers/file.controller";
+import { requireAccess } from "../middlewares/permission.middleware";
+import { PermissionService } from "../services/permission.service";
 
-export function createFileRouter(fileController: FileController) {
+export function createFileRouter(
+  fileController: FileController,
+  permissionService: PermissionService,
+) {
   const router = Router();
   router.use(jwtAuth);
 
@@ -11,57 +16,76 @@ export function createFileRouter(fileController: FileController) {
 
   router.get(
     "/:fileId/download",
-    fileController.downloadFile.bind(fileController)
+    requireAccess(permissionService, "viewer", { resourceType: "File" }),
+    fileController.downloadFile.bind(fileController),
   );
 
   router.get(
     "/:fileId/preview",
-    fileController.previewFile.bind(fileController)
+    requireAccess(permissionService, "viewer", { resourceType: "File" }),
+    fileController.previewFile.bind(fileController),
   );
 
   router.get(
     "/:fileId/preview-url",
-    fileController.getPreviewUrl.bind(fileController)
+    requireAccess(permissionService, "viewer", { resourceType: "File" }),
+    fileController.getPreviewUrl.bind(fileController),
   );
 
   router.patch(
     "/:fileId/rename",
-    fileController.renameFile.bind(fileController)
+    requireAccess(permissionService, "editor", { resourceType: "File" }),
+    fileController.renameFile.bind(fileController),
   );
 
-  router.patch("/:fileId/move", fileController.moveFile.bind(fileController));
+  router.patch(
+    "/:fileId/move",
+    requireAccess(permissionService, "editor", { resourceType: "File" }),
+    fileController.moveFile.bind(fileController),
+  );
 
-  router.patch("/:fileId/star", fileController.starFile.bind(fileController));
+  router.patch(
+    "/:fileId/star",
+    requireAccess(permissionService, "viewer", { resourceType: "File" }),
+    fileController.starFile.bind(fileController),
+  );
 
   router.patch(
     "/:fileId/unstar",
-    fileController.unstarFile.bind(fileController)
+    requireAccess(permissionService, "viewer", { resourceType: "File" }),
+    fileController.unstarFile.bind(fileController),
   );
 
-  router.post("/:fileId/trash", fileController.trashFile.bind(fileController));
+  router.post(
+    "/:fileId/trash",
+    requireAccess(permissionService, "editor", { resourceType: "File" }),
+    fileController.trashFile.bind(fileController),
+  );
 
   router.post(
     "/:fileId/restore",
-    fileController.restoreFile.bind(fileController)
+    requireAccess(permissionService, "editor", { resourceType: "File" }),
+    fileController.restoreFile.bind(fileController),
   );
 
   router.delete(
     "/:fileId",
-    fileController.deleteFilePermanent.bind(fileController)
+    requireAccess(permissionService, "owner", { resourceType: "File" }),
+    fileController.deleteFilePermanent.bind(fileController),
   );
 
   // Special views
   router.get(
     "/view/starred",
-    fileController.getStarredFiles.bind(fileController)
+    fileController.getStarredFiles.bind(fileController),
   );
   router.get(
     "/view/trashed",
-    fileController.getTrashedFiles.bind(fileController)
+    fileController.getTrashedFiles.bind(fileController),
   );
   router.get(
     "/view/recent",
-    fileController.getRecentFiles.bind(fileController)
+    fileController.getRecentFiles.bind(fileController),
   );
   router.get("/view/all", fileController.getAllUserFiles.bind(fileController));
 

@@ -11,33 +11,6 @@ import { BUCKETS } from "../config/s3";
 export class FileController {
   constructor(private fileService: FileService) {}
 
-  // async uploadFile(req: Request, res: Response, next: NextFunction) {
-  //   if (!req.file) {
-  //     throw new AppError(StatusCodes.BAD_REQUEST, "No file upload");
-  //   }
-
-  //   if (!req.user) {
-  //     throw new AppError(StatusCodes.UNAUTHORIZED, "User not authenticated");
-  //   }
-
-  //   const { folderId, hash } = req.body;
-  //   const file = await this.fileService.uploadFile({
-  //     userId: req.user.id,
-  //     folderId,
-  //     fileBuffer: req.file.buffer,
-  //     fileSize: req.file.size,
-  //     mimeType: req.file.mimetype,
-  //     originalName: req.file.originalname,
-  //     hash,
-  //   });
-
-  //   return ResponseHelper.created<FileUploadResponse>(
-  //     res,
-  //     { file },
-  //     "File uploaded successfully"
-  //   );
-  // }
-
   async createFile(req: Request, res: Response, next: NextFunction) {
     if (!req.user) {
       throw new AppError(StatusCodes.UNAUTHORIZED, "User not authenticated");
@@ -66,7 +39,7 @@ export class FileController {
     return ResponseHelper.created<FileUploadResponse>(
       res,
       { file },
-      "File created successfully"
+      "File created successfully",
     );
   }
 
@@ -93,7 +66,7 @@ export class FileController {
         expiresIn: result.expiresIn,
       },
       StatusCodes.OK,
-      "Download URL generated successfully"
+      "Download URL generated successfully",
     );
   }
 
@@ -113,7 +86,7 @@ export class FileController {
     res.setHeader("Content-Length", result.size);
     res.setHeader(
       "Content-Disposition",
-      `inline; filename="${encodeURIComponent(result.fileName)}"`
+      `inline; filename="${encodeURIComponent(result.fileName)}"`,
     );
 
     res.setHeader("Cache-Control", "private, max-age=3600");
@@ -125,7 +98,7 @@ export class FileController {
       if (!res.headersSent) {
         throw new AppError(
           StatusCodes.INTERNAL_SERVER_ERROR,
-          "Failed to stream file"
+          "Failed to stream file",
         );
       }
     });
@@ -153,7 +126,7 @@ export class FileController {
         expiresIn: result.expiresIn,
       },
       StatusCodes.OK,
-      "Preview URL generated successfully"
+      "Preview URL generated successfully",
     );
   }
 
@@ -193,7 +166,7 @@ export class FileController {
     if (!destinationId) {
       throw new AppError(
         StatusCodes.BAD_REQUEST,
-        "Destination folder id is required"
+        "Destination folder id is required",
       );
     }
     await this.fileService.moveFile(fileId, userId, destinationId);

@@ -3,7 +3,6 @@ import {
   CreateBucketCommand,
   HeadBucketCommand,
   PutBucketPolicyCommand,
-  PutBucketCorsCommand,
 } from "@aws-sdk/client-s3";
 import logger from "../lib/logger";
 import { config } from "./env";
@@ -50,18 +49,9 @@ const PUBLIC_READ_POLICY = (bucketName: string) => ({
   ],
 });
 
-// CORS 配置
-const CORS_CONFIGURATION = {
-  CORSRules: [
-    {
-      AllowedHeaders: ["*"],
-      AllowedMethods: ["GET", "PUT", "POST", "DELETE", "HEAD"],
-      AllowedOrigins: ["*"],
-      ExposeHeaders: ["ETag"],
-      MaxAgeSeconds: 3600,
-    },
-  ],
-};
+// 注意：CORS 配置已在 MinIO 服务级别通过环境变量配置
+// (MINIO_API_CORS_ALLOW_ORIGIN="*")
+// MinIO 不完全支持 S3 的 PutBucketCors API，因此我们不在代码中设置
 
 export async function initializeBuckets() {
   for (const bucketName of Object.values(BUCKETS)) {
@@ -71,21 +61,8 @@ export async function initializeBuckets() {
         await s3Client.send(new HeadBucketCommand({ Bucket: bucketName }));
         logger.info(`Bucket ${bucketName} already exists`);
 
-        // 设置 CORS 配置
-        try {
-          await s3Client.send(
-            new PutBucketCorsCommand({
-              Bucket: bucketName,
-              CORSConfiguration: CORS_CONFIGURATION,
-            })
-          );
-          logger.info(`Set CORS configuration for bucket: ${bucketName}`);
-        } catch (corsErr) {
-          logger.warn(
-            { err: corsErr, bucket: bucketName },
-            "Failed to set CORS configuration"
-          );
-        }
+        // 注意：CORS 配置已在 MinIO 服务级别配置 (MINIO_API_CORS_ALLOW_ORIGIN)
+        // 不需要在 bucket 级别重复配置，避免 MinIO 不支持某些 S3 CORS API
 
         // 确保 avatars bucket 有公开读权限
         if (bucketName === BUCKETS.AVATARS) {
@@ -94,13 +71,13 @@ export async function initializeBuckets() {
               new PutBucketPolicyCommand({
                 Bucket: bucketName,
                 Policy: JSON.stringify(PUBLIC_READ_POLICY(bucketName)),
-              })
+              }),
             );
             logger.info(`Set public read policy for bucket: ${bucketName}`);
           } catch (policyErr) {
             logger.warn(
               { err: policyErr, bucket: bucketName },
-              "Failed to set bucket policy (may already be set)"
+              "Failed to set bucket policy (may already be set)",
             );
           }
         }
@@ -110,18 +87,12 @@ export async function initializeBuckets() {
           await s3Client.send(
             new CreateBucketCommand({
               Bucket: bucketName,
-            })
+            }),
           );
           logger.info(`Successfully created bucket: ${bucketName}`);
 
-          // 设置 CORS 配置
-          await s3Client.send(
-            new PutBucketCorsCommand({
-              Bucket: bucketName,
-              CORSConfiguration: CORS_CONFIGURATION,
-            })
-          );
-          logger.info(`Set CORS configuration for bucket: ${bucketName}`);
+          // CORS 配置已在 MinIO 服务级别配置
+          // 不在 bucket 级别设置
 
           // 为 avatars bucket 设置公开读权限
           if (bucketName === BUCKETS.AVATARS) {
@@ -129,7 +100,7 @@ export async function initializeBuckets() {
               new PutBucketPolicyCommand({
                 Bucket: bucketName,
                 Policy: JSON.stringify(PUBLIC_READ_POLICY(bucketName)),
-              })
+              }),
             );
             logger.info(`Set public read policy for bucket: ${bucketName}`);
           }
@@ -140,7 +111,7 @@ export async function initializeBuckets() {
     } catch (error) {
       logger.error(
         { err: error, bucket: bucketName },
-        `Failed to initialize bucket: ${bucketName}`
+        `Failed to initialize bucket: ${bucketName}`,
       );
       throw error;
     }

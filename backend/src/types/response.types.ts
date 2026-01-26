@@ -1,6 +1,12 @@
 import { IUserPublic } from "../services/user.service";
 import { IFilePublic } from "../services/file.service";
 import { IFolderPublic, IFolderContent } from "../services/folder.service";
+import {
+  SharedWithMeItem,
+  ListSharedWithMeResponse as ServiceListSharedWithMeResponse,
+} from "../services/permission.service";
+import { ILinkShareConfig } from "../models/LinkShareConfig.schema";
+import { AccessRole } from "./model.types";
 
 export interface ApiResponse<T = any> {
   success: boolean;
@@ -78,4 +84,52 @@ export interface MessageResponse {
 
 export interface EmptyResponse {
   // Used for operations that don't return data
+}
+
+// ==================== Share & Permission Responses ====================
+export interface ShareResourceResponse {
+  message: string;
+}
+
+export interface ResourcePermission {
+  resourceId: string;
+  userId: string;
+  role: AccessRole;
+  isInherited: boolean;
+  inheritedFrom?: {
+    resourceId: string;
+    resourceName: string;
+  };
+}
+
+export interface ResourcePermissionsResponse {
+  owner: {
+    name: string;
+    email: string;
+    avatar?: string;
+  } | null;
+  permissions: ResourcePermission[];
+  linkShare: ILinkShareConfig;
+}
+
+export interface RemovePermissionResponse {
+  message: string;
+}
+
+export interface ChangePermissionResponse {
+  message: string;
+}
+
+export interface UpdateLinkShareResponse {
+  token: string | null;
+  linkShareConfig: ILinkShareConfig;
+}
+
+export interface SharedWithMeResponse extends ServiceListSharedWithMeResponse {}
+
+export interface PaginationMeta {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
 }

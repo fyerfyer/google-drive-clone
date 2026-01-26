@@ -22,6 +22,9 @@ import { UploadController } from "./controllers/upload.controller";
 import { createBatchRouter } from "./routes/batch.routes";
 import { BatchService } from "./services/batch.service";
 import { BatchController } from "./controllers/batch.controller";
+import { PermissionService } from "./services/permission.service";
+import { ShareController } from "./controllers/share.controller";
+import { createShareRouter } from "./routes/share.route";
 
 const userService = new UserService();
 const authService = new AuthService(userService);
@@ -35,6 +38,8 @@ const folderService = new FolderService();
 const folderController = new FolderController(folderService);
 const batchService = new BatchService();
 const batchController = new BatchController(batchService);
+const permissionService = new PermissionService();
+const shareController = new ShareController(permissionService);
 
 const app: Application = express();
 const bodyLimit = "10mb";
@@ -42,7 +47,7 @@ app.use(
   cors({
     origin: config.corsOrigin,
     credentials: true,
-  })
+  }),
 );
 app.use(helmet());
 app.use(requestLogger);
@@ -69,10 +74,14 @@ app.get("/api", (req, res) => {
 
 app.use("/api/auth", createAuthRouter(authController));
 app.use("/api/users", createUserRouter(userController));
-app.use("/api/files", createFileRouter(fileController));
-app.use("/api/folders", createFolderRouter(folderController));
+app.use("/api/files", createFileRouter(fileController, permissionService));
+app.use(
+  "/api/folders",
+  createFolderRouter(folderController, permissionService),
+);
 app.use("/api/upload", createUploadRouter(uploadController));
 app.use("/api/batch", createBatchRouter(batchController));
+app.use("/api/share", createShareRouter(shareController));
 
 app.use(notFound);
 app.use(errorHandler);

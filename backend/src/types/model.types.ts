@@ -1,3 +1,6 @@
+import { IFile } from "../models/File.model";
+import { IFolder } from "../models/Folder.model";
+
 export const ACCESS_ROLES = {
   VIEWER: "viewer",
   EDITOR: "editor",
@@ -17,6 +20,8 @@ export const RESOURCE_TYPES = {
 } as const;
 
 export type ResourceType = (typeof RESOURCE_TYPES)[keyof typeof RESOURCE_TYPES];
+
+export type ResourceItem = IFolder | IFile;
 
 export const NOTIFICATION_TYPES = {
   FILE_SHARED: "FILE_SHARED",

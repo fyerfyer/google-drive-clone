@@ -1,5 +1,4 @@
 import mongoose, { Schema, Document, HydratedDocument } from "mongoose";
-import { LinkAccessStatus } from "../types/model.types";
 import {
   ILinkShareConfig,
   linkShareConfigSchema,
