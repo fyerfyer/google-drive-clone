@@ -31,7 +31,6 @@ export function NavUser({
     name: string;
     email: string;
     avatar: {
-      url: string;
       thumbnail: string;
     };
   };

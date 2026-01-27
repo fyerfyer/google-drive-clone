@@ -1,4 +1,4 @@
-import { IconCirclePlusFilled, type Icon } from "@tabler/icons-react";
+import { type Icon } from "@tabler/icons-react";
 import { useNavigate, useLocation } from "react-router-dom";
 
 import {
@@ -11,7 +11,6 @@ import {
 
 export function NavMain({
   items,
-  hideQuickCreate,
 }: {
   items: {
     title: string;

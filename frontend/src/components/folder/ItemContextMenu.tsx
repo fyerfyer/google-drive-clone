@@ -74,12 +74,11 @@ export const ItemContextMenu = ({
     if (type === "file") {
       try {
         const file = item as IFile;
-        const url = await fileService.getDownloadUrl(file.id);
+        const downloadInfo = await fileService.getDownloadInfo(file.id);
 
-        // Create a temporary link and trigger download
         const link = document.createElement("a");
-        link.href = url;
-        link.download = file.name;
+        link.href = downloadInfo.downloadUrl;
+        link.download = downloadInfo.fileName;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);

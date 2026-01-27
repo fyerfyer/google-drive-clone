@@ -29,7 +29,7 @@ export interface BatchOperationResponse {
 export class BatchService {
   async batchTrash(
     userId: string,
-    items: BatchItemRequest[]
+    items: BatchItemRequest[],
   ): Promise<BatchOperationResponse> {
     const userObjectId = new mongoose.Types.ObjectId(userId);
     const results: BatchOperationResult[] = [];
@@ -53,7 +53,7 @@ export class BatchService {
           const folderResult = await Folder.updateOne(
             { _id: folderId, user: userObjectId, isTrashed: false },
             { isTrashed: true, trashedAt: new Date() },
-            { session }
+            { session },
           );
 
           if (folderResult.matchedCount === 0) {
@@ -80,7 +80,7 @@ export class BatchService {
             await Folder.updateMany(
               { _id: { $in: subFolderIds } },
               { isTrashed: true, trashedAt: new Date() },
-              { session }
+              { session },
             );
           }
 
@@ -91,7 +91,7 @@ export class BatchService {
               user: userObjectId,
             },
             { isTrashed: true, trashedAt: new Date() },
-            { session }
+            { session },
           );
 
           results.push({
@@ -103,7 +103,7 @@ export class BatchService {
         } catch (error) {
           logger.error(
             { err: error, folderId, userId },
-            "Failed to trash folder in batch"
+            "Failed to trash folder in batch",
           );
           results.push({
             id: folderId.toString(),
@@ -125,7 +125,7 @@ export class BatchService {
             isTrashed: false,
           },
           { isTrashed: true, trashedAt: new Date() },
-          { session }
+          { session },
         );
 
         // 检查每个文件是否成功
@@ -138,7 +138,7 @@ export class BatchService {
           .session(session);
 
         const updatedFileIds = new Set(
-          updatedFiles.map((f) => f._id.toString())
+          updatedFiles.map((f) => f._id.toString()),
         );
 
         for (const fileId of fileIds) {
@@ -165,14 +165,14 @@ export class BatchService {
       await session.commitTransaction();
       logger.info(
         { userId, successCount, failureCount },
-        "Batch trash operation completed"
+        "Batch trash operation completed",
       );
     } catch (error) {
       logger.error({ err: error, userId }, "Batch trash operation failed");
       await session.abortTransaction();
       throw new AppError(
         StatusCodes.INTERNAL_SERVER_ERROR,
-        "Batch trash operation failed"
+        "Batch trash operation failed",
       );
     } finally {
       session.endSession();
@@ -187,7 +187,7 @@ export class BatchService {
 
   async batchRestore(
     userId: string,
-    items: BatchItemRequest[]
+    items: BatchItemRequest[],
   ): Promise<BatchOperationResponse> {
     const userObjectId = new mongoose.Types.ObjectId(userId);
     const results: BatchOperationResult[] = [];
@@ -211,7 +211,7 @@ export class BatchService {
           const folderResult = await Folder.updateOne(
             { _id: folderId, user: userObjectId, isTrashed: true },
             { isTrashed: false, trashedAt: null },
-            { session }
+            { session },
           );
 
           if (folderResult.matchedCount === 0) {
@@ -238,7 +238,7 @@ export class BatchService {
             await Folder.updateMany(
               { _id: { $in: subFolderIds } },
               { isTrashed: false, trashedAt: null },
-              { session }
+              { session },
             );
           }
 
@@ -249,7 +249,7 @@ export class BatchService {
               user: userObjectId,
             },
             { isTrashed: false, trashedAt: null },
-            { session }
+            { session },
           );
 
           results.push({
@@ -261,7 +261,7 @@ export class BatchService {
         } catch (error) {
           logger.error(
             { err: error, folderId, userId },
-            "Failed to restore folder in batch"
+            "Failed to restore folder in batch",
           );
           results.push({
             id: folderId.toString(),
@@ -285,7 +285,7 @@ export class BatchService {
             isTrashed: true,
           },
           { isTrashed: false, trashedAt: null },
-          { session }
+          { session },
         );
 
         const updatedFiles = await File.find({
@@ -297,7 +297,7 @@ export class BatchService {
           .session(session);
 
         const updatedFileIds = new Set(
-          updatedFiles.map((f) => f._id.toString())
+          updatedFiles.map((f) => f._id.toString()),
         );
 
         for (const fileId of fileIds) {
@@ -324,14 +324,14 @@ export class BatchService {
       await session.commitTransaction();
       logger.info(
         { userId, successCount, failureCount },
-        "Batch restore operation completed"
+        "Batch restore operation completed",
       );
     } catch (error) {
       logger.error({ err: error, userId }, "Batch restore operation failed");
       await session.abortTransaction();
       throw new AppError(
         StatusCodes.INTERNAL_SERVER_ERROR,
-        "Batch restore operation failed"
+        "Batch restore operation failed",
       );
     } finally {
       session.endSession();
@@ -346,7 +346,7 @@ export class BatchService {
 
   async batchDeletePermanent(
     userId: string,
-    items: BatchItemRequest[]
+    items: BatchItemRequest[],
   ): Promise<BatchOperationResponse> {
     const userObjectId = new mongoose.Types.ObjectId(userId);
     const results: BatchOperationResult[] = [];
@@ -408,7 +408,7 @@ export class BatchService {
           const fileIdsToDelete = filesToDelete.map((f) => f._id);
           const folderStorageSize = filesToDelete.reduce(
             (sum, f) => sum + f.size,
-            0
+            0,
           );
 
           // 删除文件
@@ -418,7 +418,7 @@ export class BatchService {
                 _id: { $in: fileIdsToDelete },
                 user: userObjectId,
               },
-              { session }
+              { session },
             );
           }
 
@@ -428,7 +428,7 @@ export class BatchService {
               _id: { $in: subFolderIds },
               user: userObjectId,
             },
-            { session }
+            { session },
           );
 
           totalStorageFreed += folderStorageSize;
@@ -447,7 +447,7 @@ export class BatchService {
         } catch (error) {
           logger.error(
             { err: error, folderId, userId },
-            "Failed to delete folder permanently in batch"
+            "Failed to delete folder permanently in batch",
           );
           results.push({
             id: folderId.toString(),
@@ -475,7 +475,7 @@ export class BatchService {
         const validFileIds = filesToDelete.map((f) => f._id);
         const filesStorageSize = filesToDelete.reduce(
           (sum, f) => sum + f.size,
-          0
+          0,
         );
 
         if (validFileIds.length > 0) {
@@ -484,7 +484,7 @@ export class BatchService {
               _id: { $in: validFileIds },
               user: userObjectId,
             },
-            { session }
+            { session },
           );
 
           totalStorageFreed += filesStorageSize;
@@ -523,7 +523,7 @@ export class BatchService {
         await User.updateOne(
           { _id: userId },
           { $inc: { storageUsage: -totalStorageFreed } },
-          { session }
+          { session },
         );
       }
 
@@ -535,14 +535,14 @@ export class BatchService {
           failureCount,
           storageFreed: totalStorageFreed,
         },
-        "Batch delete operation completed"
+        "Batch delete operation completed",
       );
     } catch (error) {
       logger.error({ err: error, userId }, "Batch delete operation failed");
       await session.abortTransaction();
       throw new AppError(
         StatusCodes.INTERNAL_SERVER_ERROR,
-        "Batch delete operation failed"
+        "Batch delete operation failed",
       );
     } finally {
       session.endSession();
@@ -552,8 +552,8 @@ export class BatchService {
     if (minioCleanupTasks.length > 0) {
       Promise.all(
         minioCleanupTasks.map((task) =>
-          this.cleanupMinioObject(task.key, task.hash)
-        )
+          this.cleanupMinioObject(task.key, task.hash),
+        ),
       ).catch((err) => {
         logger.error({ err, userId }, "Failed to cleanup MinIO objects");
       });
@@ -569,11 +569,11 @@ export class BatchService {
   async batchMove(
     userId: string,
     items: BatchItemRequest[],
-    destinationFolderId: string
+    destinationFolderId: string,
   ): Promise<BatchOperationResponse> {
     const userObjectId = new mongoose.Types.ObjectId(userId);
     const destinationObjectId = new mongoose.Types.ObjectId(
-      destinationFolderId
+      destinationFolderId,
     );
     const results: BatchOperationResult[] = [];
     let successCount = 0;
@@ -600,7 +600,7 @@ export class BatchService {
       if (!destinationFolder) {
         throw new AppError(
           StatusCodes.NOT_FOUND,
-          "Destination folder not found"
+          "Destination folder not found",
         );
       }
 
@@ -643,7 +643,7 @@ export class BatchService {
 
           // 检查循环引用
           const isCircular = destinationFolder.ancestors.some((ancestorId) =>
-            ancestorId.equals(folderId)
+            ancestorId.equals(folderId),
           );
           if (isCircular) {
             results.push({
@@ -660,7 +660,7 @@ export class BatchService {
           await Folder.updateOne(
             { _id: folderId, user: userObjectId },
             { parent: destinationObjectId, ancestors: newAncestors },
-            { session }
+            { session },
           );
 
           // 更新所有子文件夹的ancestors
@@ -672,7 +672,7 @@ export class BatchService {
           if (subFolders.length > 0) {
             const bulkOps = subFolders.map((folder) => {
               const index = folder.ancestors.findIndex((id) =>
-                id.equals(folderId)
+                id.equals(folderId),
               );
               const relativePath = folder.ancestors.slice(index + 1);
               const updatedAncestors = [
@@ -700,7 +700,7 @@ export class BatchService {
         } catch (error) {
           logger.error(
             { err: error, folderId, userId },
-            "Failed to move folder in batch"
+            "Failed to move folder in batch",
           );
           results.push({
             id: folderId.toString(),
@@ -722,7 +722,7 @@ export class BatchService {
             isTrashed: false,
           },
           { folder: destinationObjectId, ancestors: newAncestors },
-          { session }
+          { session },
         );
 
         const updatedFiles = await File.find({
@@ -734,7 +734,7 @@ export class BatchService {
           .session(session);
 
         const updatedFileIds = new Set(
-          updatedFiles.map((f) => f._id.toString())
+          updatedFiles.map((f) => f._id.toString()),
         );
 
         for (const fileId of fileIds) {
@@ -761,14 +761,14 @@ export class BatchService {
       await session.commitTransaction();
       logger.info(
         { userId, destinationFolderId, successCount, failureCount },
-        "Batch move operation completed"
+        "Batch move operation completed",
       );
     } catch (error) {
       logger.error({ err: error, userId }, "Batch move operation failed");
       await session.abortTransaction();
       throw new AppError(
         StatusCodes.INTERNAL_SERVER_ERROR,
-        "Batch move operation failed"
+        "Batch move operation failed",
       );
     } finally {
       session.endSession();
@@ -784,7 +784,7 @@ export class BatchService {
   async batchStar(
     userId: string,
     items: BatchItemRequest[],
-    star: boolean
+    star: boolean,
   ): Promise<BatchOperationResponse> {
     const userObjectId = new mongoose.Types.ObjectId(userId);
     const results: BatchOperationResult[] = [];
@@ -810,7 +810,7 @@ export class BatchService {
             user: userObjectId,
           },
           { isStarred: star },
-          { session }
+          { session },
         );
 
         const updatedFolders = await Folder.find({
@@ -822,7 +822,7 @@ export class BatchService {
           .session(session);
 
         const updatedFolderIds = new Set(
-          updatedFolders.map((f) => f._id.toString())
+          updatedFolders.map((f) => f._id.toString()),
         );
 
         for (const folderId of folderIds) {
@@ -854,7 +854,7 @@ export class BatchService {
             user: userObjectId,
           },
           { isStarred: star },
-          { session }
+          { session },
         );
 
         const updatedFiles = await File.find({
@@ -866,7 +866,7 @@ export class BatchService {
           .session(session);
 
         const updatedFileIds = new Set(
-          updatedFiles.map((f) => f._id.toString())
+          updatedFiles.map((f) => f._id.toString()),
         );
 
         for (const fileId of fileIds) {
@@ -893,14 +893,14 @@ export class BatchService {
       await session.commitTransaction();
       logger.info(
         { userId, star, successCount, failureCount },
-        "Batch star operation completed"
+        "Batch star operation completed",
       );
     } catch (error) {
       logger.error({ err: error, userId }, "Batch star operation failed");
       await session.abortTransaction();
       throw new AppError(
         StatusCodes.INTERNAL_SERVER_ERROR,
-        "Batch star operation failed"
+        "Batch star operation failed",
       );
     } finally {
       session.endSession();
@@ -919,7 +919,7 @@ export class BatchService {
     if (count === 0) {
       logger.info(
         { key, hash },
-        "No file references remaining, deleting object from MinIO"
+        "No file references remaining, deleting object from MinIO",
       );
       await StorageService.deleteObject(BUCKETS.FILES, key).catch((err) => {
         logger.error({ err, key }, "Failed to delete object from MinIO");
@@ -927,7 +927,7 @@ export class BatchService {
     } else {
       logger.debug(
         { key, hash, referenceCount: count },
-        "Object still has file references, keeping in MinIO"
+        "Object still has file references, keeping in MinIO",
       );
     }
   }

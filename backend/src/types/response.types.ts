@@ -1,12 +1,9 @@
 import { IUserPublic } from "../services/user.service";
 import { IFilePublic } from "../services/file.service";
 import { IFolderPublic, IFolderContent } from "../services/folder.service";
-import {
-  SharedWithMeItem,
-  ListSharedWithMeResponse as ServiceListSharedWithMeResponse,
-} from "../services/permission.service";
 import { ILinkShareConfig } from "../models/LinkShareConfig.schema";
 import { AccessRole } from "./model.types";
+import { ListSharedWithMeResponse } from "./permission.types";
 
 export interface ApiResponse<T = any> {
   success: boolean;
@@ -125,7 +122,7 @@ export interface UpdateLinkShareResponse {
   linkShareConfig: ILinkShareConfig;
 }
 
-export interface SharedWithMeResponse extends ServiceListSharedWithMeResponse {}
+export interface SharedWithMeResponse extends ListSharedWithMeResponse {}
 
 export interface PaginationMeta {
   page: number;

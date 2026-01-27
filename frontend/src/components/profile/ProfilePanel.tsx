@@ -61,8 +61,8 @@ export const ProfilePanel = () => {
 
   const email = useMemo(() => user?.email ?? "", [user]);
   const avatarUrl = useMemo(
-    () => user?.avatar?.thumbnail || user?.avatar?.url || null,
-    [user]
+    () => user?.avatar?.thumbnail || user?.avatar?.thumbnailId || null,
+    [user],
   );
 
   if (!user) {
@@ -242,7 +242,7 @@ export const ProfilePanel = () => {
                   style={{
                     width: `${Math.min(
                       (user.storageUsage / user.storageQuota) * 100,
-                      100
+                      100,
                     )}%`,
                   }}
                 />
