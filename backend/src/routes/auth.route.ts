@@ -1,10 +1,6 @@
 import { Router } from "express";
 import { jwtAuth } from "../middlewares/auth.middleware";
-import {
-  loginValidator,
-  registerValidator,
-  updateValidator,
-} from "../middlewares/validator";
+import { loginValidator, registerValidator } from "../middlewares/validator";
 import { AuthController } from "../controllers/auth.controller";
 
 export function createAuthRouter(authController: AuthController) {
@@ -13,12 +9,12 @@ export function createAuthRouter(authController: AuthController) {
   authRouter.post(
     "/register",
     registerValidator,
-    authController.register.bind(authController)
+    authController.register.bind(authController),
   );
   authRouter.post(
     "/login",
     loginValidator,
-    authController.login.bind(authController)
+    authController.login.bind(authController),
   );
 
   authRouter.use(jwtAuth);

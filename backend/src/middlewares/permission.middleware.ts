@@ -51,6 +51,12 @@ export const requireAccess = (
       );
     }
 
+    // 特殊情况："root" 文件夹对已认证用户始终可访问
+    // 这是前端的特殊设计
+    if (resourceId === "root" && rawResourceType === "Folder") {
+      return next();
+    }
+
     const token = req.query.token as string;
 
     const hasAccess = await permissionService.checkPermission({

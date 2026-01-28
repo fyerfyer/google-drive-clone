@@ -35,6 +35,13 @@ export class PermissionService {
     resourceCache?: ResourceItem,
   ): Promise<boolean> {
     const { userId, resourceId, resourceType, requireRole, token } = data;
+
+    // 特殊情况："root" 文件夹对已认证用户始终可访问
+    // 这是之前前端部分设计的
+    if (resourceId === "root" && resourceType === "Folder") {
+      return true;
+    }
+
     let resource: any = resourceCache;
     if (!resource) {
       if (resourceType === "Folder") {

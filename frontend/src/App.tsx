@@ -1,16 +1,20 @@
 import { AppRouter } from "@/router";
-import { AuthProvider } from "@/contexts/auth/provider";
-import { FolderProvider } from "@/contexts/folder/provider";
 import { Toaster } from "sonner";
+import { useAuthStore } from "@/stores/useAuthStore";
+import { useEffect } from "react";
 
 function App() {
+  const initializeAuth = useAuthStore((state) => state.initializeAuth);
+
+  useEffect(() => {
+    initializeAuth();
+  }, [initializeAuth]);
+
   return (
-    <AuthProvider>
-      <FolderProvider>
-        <AppRouter />
-        <Toaster position="bottom-right" richColors expand={false} />
-      </FolderProvider>
-    </AuthProvider>
+    <>
+      <AppRouter />
+      <Toaster position="bottom-right" richColors expand={false} />
+    </>
   );
 }
 

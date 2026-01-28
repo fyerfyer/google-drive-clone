@@ -27,7 +27,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { useFolder } from "@/hooks/folder/useFolder";
 import { batchService } from "@/services/batch.service";
-import type { ViewType } from "@/contexts/folder/context";
+import type { ViewType } from "@/types/common.types";
 import { formatFileSize } from "@/lib/format";
 import { useFileActions } from "@/hooks/folder/useFileActions";
 
@@ -139,7 +139,7 @@ export const SpecialView = ({ viewType }: SpecialViewProps) => {
 
       if (result.failureCount > 0) {
         toast.warning(
-          `Unstarred ${result.successCount} item(s), ${result.failureCount} failed`
+          `Unstarred ${result.successCount} item(s), ${result.failureCount} failed`,
         );
       } else {
         toast.success(`Unstarred ${selectedItems.size} item(s)`);
@@ -150,7 +150,7 @@ export const SpecialView = ({ viewType }: SpecialViewProps) => {
     } catch (error) {
       toast.error(
         "Failed to unstar items: " +
-          (error instanceof Error ? error.message : "Unknown error")
+          (error instanceof Error ? error.message : "Unknown error"),
       );
     }
   };
@@ -168,7 +168,7 @@ export const SpecialView = ({ viewType }: SpecialViewProps) => {
 
       if (result.failureCount > 0) {
         toast.warning(
-          `Restored ${result.successCount} item(s), ${result.failureCount} failed`
+          `Restored ${result.successCount} item(s), ${result.failureCount} failed`,
         );
       } else {
         toast.success(`Restored ${selectedItems.size} item(s)`);
@@ -179,7 +179,7 @@ export const SpecialView = ({ viewType }: SpecialViewProps) => {
     } catch (error) {
       toast.error(
         "Failed to restore items: " +
-          (error instanceof Error ? error.message : "Unknown error")
+          (error instanceof Error ? error.message : "Unknown error"),
       );
     }
   };
@@ -197,7 +197,7 @@ export const SpecialView = ({ viewType }: SpecialViewProps) => {
 
       if (result.failureCount > 0) {
         toast.warning(
-          `Permanently deleted ${result.successCount} item(s), ${result.failureCount} failed`
+          `Permanently deleted ${result.successCount} item(s), ${result.failureCount} failed`,
         );
       } else {
         toast.success(`Permanently deleted ${selectedItems.size} item(s)`);
@@ -208,7 +208,7 @@ export const SpecialView = ({ viewType }: SpecialViewProps) => {
     } catch (error) {
       toast.error(
         "Failed to delete items: " +
-          (error instanceof Error ? error.message : "Unknown error")
+          (error instanceof Error ? error.message : "Unknown error"),
       );
     }
   };
@@ -355,8 +355,8 @@ export const SpecialView = ({ viewType }: SpecialViewProps) => {
                     viewType === "trash"
                       ? "trash"
                       : viewType === "starred"
-                      ? "starred"
-                      : "normal"
+                        ? "starred"
+                        : "normal"
                   }
                 >
                   <TableRow
@@ -416,8 +416,8 @@ export const SpecialView = ({ viewType }: SpecialViewProps) => {
                     viewType === "trash"
                       ? "trash"
                       : viewType === "starred"
-                      ? "starred"
-                      : "normal"
+                        ? "starred"
+                        : "normal"
                   }
                 >
                   <TableRow className="cursor-pointer hover:bg-muted/50">
@@ -478,7 +478,7 @@ export const SpecialView = ({ viewType }: SpecialViewProps) => {
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       navigate(
-                                        `/files?folder=${breadcrumb.id}`
+                                        `/files?folder=${breadcrumb.id}`,
                                       );
                                     }}
                                     className="hover:text-primary hover:underline max-w-[120px] truncate"

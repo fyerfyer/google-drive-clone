@@ -27,5 +27,6 @@ export type AccessRole = "viewer" | "editor" | "commenter" | "owner";
 export type LinkAccessStatus = AccessRole | "none";
 
 export type ViewMode = "grid" | "list";
+export type ViewType = "folder" | "recent" | "starred" | "trash" | "files";
 export type SortField = "name" | "createdAt" | "updatedAt" | "size";
 export type SortOrder = "asc" | "desc";
