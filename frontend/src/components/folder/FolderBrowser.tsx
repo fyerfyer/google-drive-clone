@@ -8,7 +8,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { useDragDrop } from "@/hooks/shared/useDragDrop";
 import { useFolderOperations } from "@/hooks/folder/useFolderOperations";
 import { useFileOperations } from "@/hooks/folder/useFileOperations";
-import { useFileUpload } from "@/hooks/folder/useFileUpload";
+import { useFileUpload } from "@/hooks/useFileUpload";
 import { Upload } from "lucide-react";
 
 interface FolderBrowserProps {

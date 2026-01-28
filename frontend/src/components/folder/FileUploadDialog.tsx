@@ -1,6 +1,5 @@
 import { useState, useCallback, useMemo, useRef } from "react";
-import { useFolder } from "@/hooks/folder/useFolder";
-import { useFileUpload as useFileUploadPresigned } from "@/hooks/useFileUpload";
+import { useFileUpload } from "@/hooks/useFileUpload";
 import {
   Dialog,
   DialogContent,
@@ -28,8 +27,7 @@ export const FileUploadDialog = ({
   const [files, setFiles] = useState<File[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const dragCounterRef = useRef(0);
-  const { refreshContent } = useFolder();
-  const { uploads, uploadFiles, clearCompleted } = useFileUploadPresigned();
+  const { uploads, uploadFiles, clearCompleted } = useFileUpload();
 
   const isUploading = useMemo(() => {
     return Array.from(uploads.values()).some(
@@ -98,15 +96,12 @@ export const FileUploadDialog = ({
 
     try {
       await uploadFiles(files, folderId);
-      toast.success("Files uploaded successfully");
-      await refreshContent();
+      // Note: Toast and cache invalidation are handled by useFileUpload hook
       clearCompleted();
       onOpenChange(false);
       setFiles([]);
-    } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Failed to upload files",
-      );
+    } catch {
+      // Error toast is handled by useFileUpload hook
     }
   };
 

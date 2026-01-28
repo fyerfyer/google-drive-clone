@@ -1,7 +1,11 @@
 import { useState, useCallback } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { uploadService } from "@/services/upload.service";
 import { fileService } from "@/services/file.service";
+import { queryKeys } from "@/lib/queryClient";
+import { useFolderUIStore } from "@/stores/useFolderUIStore";
 import type { IFile } from "@/types/file.types";
+import { toast } from "sonner";
 
 export interface FileUploadProgress {
   fileId: string;
@@ -22,22 +26,44 @@ export interface UseFileUploadReturn {
 const SMALL_FILE_THRESHOLD = 100 * 1024 * 1024; // 100MB
 const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB per part
 
-/**
- * Hook for uploading files using presigned URL flow
- *
- * Supports two modes:
- * - Small files (< 100MB): Simple presigned URL upload
- * - Large files (≥ 100MB): Multipart upload
- */
 export function useFileUpload(): UseFileUploadReturn {
+  const queryClient = useQueryClient();
+  const { currentFolderId, viewType } = useFolderUIStore();
+
   const [uploads, setUploads] = useState<Map<string, FileUploadProgress>>(
-    new Map()
+    new Map(),
+  );
+
+  // Invalidate relevant queries after successful upload
+  const invalidateQueries = useCallback(
+    (folderId: string) => {
+      // Invalidate the target folder content
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.folders.content(folderId),
+      });
+
+      // Also invalidate current view if different
+      if (viewType === "folder" && currentFolderId !== folderId) {
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.folders.content(currentFolderId),
+        });
+      }
+
+      // Invalidate special views that might show the new file
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.specialViews.recent(),
+      });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.specialViews.files(),
+      });
+    },
+    [queryClient, currentFolderId, viewType],
   );
 
   const updateUploadProgress = useCallback(
     (
       fileId: string,
-      updates: Partial<Omit<FileUploadProgress, "fileId" | "fileName">>
+      updates: Partial<Omit<FileUploadProgress, "fileId" | "fileName">>,
     ) => {
       setUploads((prev) => {
         const newMap = new Map(prev);
@@ -48,12 +74,9 @@ export function useFileUpload(): UseFileUploadReturn {
         return newMap;
       });
     },
-    []
+    [],
   );
 
-  /**
-   * Upload small file (< 100MB)
-   */
   const uploadSmallFile = useCallback(
     async (file: File, folderId: string, fileId: string): Promise<IFile> => {
       try {
@@ -78,7 +101,7 @@ export function useFileUpload(): UseFileUploadReturn {
             updateUploadProgress(fileId, {
               progress: Math.round(progress * 0.95),
             });
-          }
+          },
         );
 
         updateUploadProgress(fileId, {
@@ -86,7 +109,7 @@ export function useFileUpload(): UseFileUploadReturn {
           progress: 95,
         });
 
-        // Calculate hash for deduplication (optional)
+        // Calculate hash for deduplication
         const hash = await fileService.calculateHash(file);
 
         // Create file record in database
@@ -116,7 +139,7 @@ export function useFileUpload(): UseFileUploadReturn {
         throw error;
       }
     },
-    [updateUploadProgress]
+    [updateUploadProgress],
   );
 
   /**
@@ -156,7 +179,7 @@ export function useFileUpload(): UseFileUploadReturn {
           const partUrl = await uploadService.getPartSignedUrl(
             uploadId,
             key,
-            partNumber
+            partNumber,
           );
 
           // Upload part
@@ -225,14 +248,18 @@ export function useFileUpload(): UseFileUploadReturn {
         throw error;
       }
     },
-    [updateUploadProgress]
+    [updateUploadProgress],
   );
 
   /**
-   * Upload a single file
+   * Upload a single file with React Query cache invalidation
    */
   const uploadFile = useCallback(
-    async (file: File, folderId: string): Promise<IFile> => {
+    async (
+      file: File,
+      folderId: string,
+      options?: { skipInvalidation?: boolean },
+    ): Promise<IFile> => {
       const fileId = crypto.randomUUID();
 
       // Initialize upload state
@@ -248,24 +275,67 @@ export function useFileUpload(): UseFileUploadReturn {
       });
 
       // Choose upload strategy based on file size
+      let result: IFile;
       if (file.size < SMALL_FILE_THRESHOLD) {
-        return uploadSmallFile(file, folderId, fileId);
+        result = await uploadSmallFile(file, folderId, fileId);
       } else {
-        return uploadLargeFile(file, folderId, fileId);
+        result = await uploadLargeFile(file, folderId, fileId);
       }
+
+      // Invalidate queries unless explicitly skipped (for batch uploads)
+      if (!options?.skipInvalidation) {
+        invalidateQueries(folderId);
+      }
+
+      return result;
     },
-    [uploadSmallFile, uploadLargeFile]
+    [uploadSmallFile, uploadLargeFile, invalidateQueries],
   );
 
   /**
-   * Upload multiple files
+   * Upload multiple files with React Query cache invalidation
    */
   const uploadFiles = useCallback(
     async (files: File[], folderId: string): Promise<IFile[]> => {
-      const uploadPromises = files.map((file) => uploadFile(file, folderId));
-      return Promise.all(uploadPromises);
+      const results: IFile[] = [];
+      const errors: Error[] = [];
+
+      // Upload files sequentially to avoid overwhelming the server
+      // Skip individual invalidations, we'll do it once at the end
+      for (const file of files) {
+        try {
+          const result = await uploadFile(file, folderId, {
+            skipInvalidation: true,
+          });
+          results.push(result);
+        } catch (error) {
+          errors.push(
+            error instanceof Error ? error : new Error("Upload failed"),
+          );
+        }
+      }
+
+      // Invalidate queries after all uploads complete
+      if (results.length > 0) {
+        invalidateQueries(folderId);
+      }
+
+      // Show summary toast
+      if (errors.length === 0) {
+        toast.success(
+          `Successfully uploaded ${results.length} file${results.length > 1 ? "s" : ""}`,
+        );
+      } else if (results.length > 0) {
+        toast.warning(
+          `Uploaded ${results.length} file${results.length > 1 ? "s" : ""}, ${errors.length} failed`,
+        );
+      } else {
+        toast.error("All uploads failed");
+      }
+
+      return results;
     },
-    [uploadFile]
+    [uploadFile, invalidateQueries],
   );
 
   /**

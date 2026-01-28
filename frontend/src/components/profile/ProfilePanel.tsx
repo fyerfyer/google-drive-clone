@@ -9,9 +9,9 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { AvatarUploader } from "@/components/avatar/AvatarUploader";
-import { updateUserSchema, type User } from "@/types/user.types";
-import { userService } from "@/services/user.service";
+import { updateUserSchema } from "@/types/user.types";
 import { useAuth } from "@/hooks/auth/useAuth";
+import { useUpdateProfile } from "@/hooks/mutations/useUserMutations";
 import { ValidateAlert } from "@/components/auth/FormStatusAlert";
 import { Spinner } from "@/components/ui/spinner";
 import { Separator } from "@/components/ui/separator";
@@ -21,8 +21,10 @@ interface FieldErrors {
 }
 
 export const ProfilePanel = () => {
-  const { user, setUser } = useAuth();
-  const [name, setName] = useState(user?.name ?? "");
+  const { user } = useAuth();
+  const updateProfileMutation = useUpdateProfile();
+  // Initialize name state with current user name
+  const [name, setName] = useState(() => user?.name ?? "");
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [profileStatus, setProfileStatus] = useState<{
     type: "success" | "error";
@@ -32,13 +34,6 @@ export const ProfilePanel = () => {
     type: "success" | "error";
     message: string;
   } | null>(null);
-  const [isSaving, setIsSaving] = useState(false);
-
-  useEffect(() => {
-    if (user) {
-      setName(user.name);
-    }
-  }, [user]);
 
   // Auto-hide success messages
   useEffect(() => {
@@ -73,19 +68,12 @@ export const ProfilePanel = () => {
     );
   }
 
-  const handleAvatarUploadSuccess = (result: User | string | undefined) => {
-    if (result && typeof result !== "string") {
-      setUser(result);
-      setAvatarStatus({
-        type: "success",
-        message: "Avatar updated successfully",
-      });
-      return;
-    }
-
+  const handleAvatarUploadSuccess = () => {
+    // Note: useUpdateAvatar mutation automatically updates the auth store
+    // We only need to show UI feedback here
     setAvatarStatus({
       type: "success",
-      message: "Avatar uploaded successfully",
+      message: "Avatar updated successfully",
     });
   };
 
@@ -113,16 +101,12 @@ export const ProfilePanel = () => {
     }
 
     setFieldErrors({});
-    setIsSaving(true);
 
     try {
-      const response = await userService.updateUser({
-        name: result.data.name,
-      });
-      setUser(response.user);
+      await updateProfileMutation.mutateAsync({ name: result.data.name });
       setProfileStatus({
         type: "success",
-        message: response.message || "Profile updated successfully",
+        message: "Profile updated successfully",
       });
     } catch (error) {
       setProfileStatus({
@@ -130,8 +114,6 @@ export const ProfilePanel = () => {
         message:
           error instanceof Error ? error.message : "Failed to update profile",
       });
-    } finally {
-      setIsSaving(false);
     }
   };
 
@@ -188,7 +170,7 @@ export const ProfilePanel = () => {
                     setFieldErrors((prev) => ({ ...prev, name: undefined }));
                   }
                 }}
-                disabled={isSaving}
+                disabled={updateProfileMutation.isPending}
               />
               <FieldDescription>
                 This is your display name within the workspace.
@@ -207,8 +189,12 @@ export const ProfilePanel = () => {
             </Field>
 
             <Field>
-              <Button type="submit" disabled={isSaving} className="w-full">
-                {isSaving ? "Saving..." : "Save changes"}
+              <Button
+                type="submit"
+                disabled={updateProfileMutation.isPending}
+                className="w-full"
+              >
+                {updateProfileMutation.isPending ? "Saving..." : "Save changes"}
               </Button>
             </Field>
           </FieldGroup>

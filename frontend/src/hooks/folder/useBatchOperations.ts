@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import { toast } from "sonner";
 import { useFolderUIStore } from "@/stores/useFolderUIStore";
 import { useFolderContent } from "@/hooks/queries/useFolderQueries";
@@ -19,8 +19,10 @@ export const useBatchOperations = () => {
 
   // Data from React Query
   const { data } = useFolderContent(currentFolderId);
-  const folders = data?.folders ?? [];
-  const files = data?.files ?? [];
+
+  // Memoize to prevent dependency changes on every render
+  const folders = useMemo(() => data?.folders ?? [], [data?.folders]);
+  const files = useMemo(() => data?.files ?? [], [data?.files]);
 
   const refreshContent = useCallback(() => {
     if (viewType === "folder") {

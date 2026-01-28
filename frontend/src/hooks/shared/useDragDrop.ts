@@ -70,7 +70,7 @@ export const useDragDrop = ({
         delay: 250, // Long press on touch
         tolerance: 5,
       },
-    })
+    }),
   );
 
   // Handle drag start for items
@@ -103,7 +103,7 @@ export const useDragDrop = ({
       setActiveItem(null);
       setOverId(null);
     },
-    [onMove]
+    [onMove],
   );
 
   // Handle file drag from desktop - Enter
@@ -160,7 +160,7 @@ export const useDragDrop = ({
         files: [],
       });
     },
-    [currentFolderId, onFileUpload]
+    [currentFolderId, onFileUpload],
   );
 
   // Setup event listeners for file drag-drop from desktop
@@ -168,16 +168,21 @@ export const useDragDrop = ({
     const dropZone = dropZoneRef.current;
     if (!dropZone) return;
 
-    dropZone.addEventListener("dragenter", handleFileDragEnter as any);
-    dropZone.addEventListener("dragleave", handleFileDragLeave as any);
-    dropZone.addEventListener("dragover", handleFileDragOver as any);
-    dropZone.addEventListener("drop", handleFileDrop as any);
+    const dragEnterHandler = handleFileDragEnter as unknown as EventListener;
+    const dragLeaveHandler = handleFileDragLeave as unknown as EventListener;
+    const dragOverHandler = handleFileDragOver as unknown as EventListener;
+    const dropHandler = handleFileDrop as unknown as EventListener;
+
+    dropZone.addEventListener("dragenter", dragEnterHandler);
+    dropZone.addEventListener("dragleave", dragLeaveHandler);
+    dropZone.addEventListener("dragover", dragOverHandler);
+    dropZone.addEventListener("drop", dropHandler);
 
     return () => {
-      dropZone.removeEventListener("dragenter", handleFileDragEnter as any);
-      dropZone.removeEventListener("dragleave", handleFileDragLeave as any);
-      dropZone.removeEventListener("dragover", handleFileDragOver as any);
-      dropZone.removeEventListener("drop", handleFileDrop as any);
+      dropZone.removeEventListener("dragenter", dragEnterHandler);
+      dropZone.removeEventListener("dragleave", dragLeaveHandler);
+      dropZone.removeEventListener("dragover", dragOverHandler);
+      dropZone.removeEventListener("drop", dropHandler);
     };
   }, [
     handleFileDragEnter,

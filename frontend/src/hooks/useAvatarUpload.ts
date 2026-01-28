@@ -1,6 +1,6 @@
 import { useState, useCallback } from "react";
 import { uploadService } from "@/services/upload.service";
-import { userService } from "@/services/user.service";
+import { useUpdateAvatar } from "@/hooks/mutations/useUserMutations";
 import type { User } from "@/types/user.types";
 
 export interface AvatarUploadState {
@@ -27,18 +27,21 @@ export interface UseAvatarUploadOptions {
 
 /**
  * Hook for uploading avatar using presigned URL flow
+ * Now uses React Query mutation for the avatar update step
  *
  * Flow:
  * 1. Get presigned URL from backend
  * 2. Upload file directly to MinIO
- * 3. (Optional) Call backend to process avatar and update user
+ * 3. (Optional) Call backend to process avatar and update user via mutation
  *
  * @param options.autoUpdate - Whether to automatically update user profile after upload
  */
 export function useAvatarUpload(
-  options: UseAvatarUploadOptions = {}
+  options: UseAvatarUploadOptions = {},
 ): UseAvatarUploadReturn {
   const { autoUpdate = true } = options;
+  const updateAvatarMutation = useUpdateAvatar();
+
   const [uploadState, setUploadState] = useState<AvatarUploadState>({
     isUploading: false,
     progress: 0,
@@ -106,7 +109,7 @@ export function useAvatarUpload(
               ...prev,
               progress: Math.round(progress * 0.9), // Reserve 10% for backend processing
             }));
-          }
+          },
         );
 
         setUploadState((prev) => ({
@@ -115,10 +118,12 @@ export function useAvatarUpload(
         }));
 
         // Step 3: Update user avatar (backend will process and generate thumbnail)
-        // Only if autoUpdate is enabled
+        // Only if autoUpdate is enabled - now using React Query mutation
         let updatedUser: User | undefined;
         if (autoUpdate) {
-          const response = await userService.updateAvatar(presignedData.key);
+          const response = await updateAvatarMutation.mutateAsync(
+            presignedData.key,
+          );
           updatedUser = response.user;
         }
 
@@ -142,7 +147,7 @@ export function useAvatarUpload(
         throw error;
       }
     },
-    [autoUpdate]
+    [autoUpdate, updateAvatarMutation],
   );
 
   return {
