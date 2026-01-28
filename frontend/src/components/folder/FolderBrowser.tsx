@@ -1,5 +1,6 @@
 import { useEffect } from "react";
-import { useFolder } from "@/hooks/folder/useFolder";
+import { useFolderUIStore } from "@/stores/useFolderUIStore";
+import { useFolderContent } from "@/hooks/queries/useFolderQueries";
 import { FolderToolbar } from "./FolderToolbar";
 import { FolderBreadcrumb } from "./FolderBreadcrumb";
 import { FolderContent } from "./FolderContent";
@@ -15,7 +16,15 @@ interface FolderBrowserProps {
 }
 
 export const FolderBrowser = ({ initialFolderId }: FolderBrowserProps) => {
-  const { loadFolderContent, isLoading, error, folders, files } = useFolder();
+  const setCurrentFolderId = useFolderUIStore(
+    (state) => state.setCurrentFolderId,
+  );
+
+  // React Query for data fetching
+  const { data, isLoading, error } = useFolderContent(initialFolderId);
+  const folders = data?.folders ?? [];
+  const files = data?.files ?? [];
+
   const folderOps = useFolderOperations();
   const fileOps = useFileOperations();
   const { uploadFiles: uploadFilesService } = useFileUpload();
@@ -54,11 +63,12 @@ export const FolderBrowser = ({ initialFolderId }: FolderBrowserProps) => {
     currentFolderId: initialFolderId,
   });
 
+  // Sync URL folder ID with store
   useEffect(() => {
-    loadFolderContent(initialFolderId);
-  }, [initialFolderId, loadFolderContent]);
+    setCurrentFolderId(initialFolderId);
+  }, [initialFolderId, setCurrentFolderId]);
 
-  if (isLoading && !error) {
+  if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
         <Spinner className="size-8" />
@@ -92,7 +102,7 @@ export const FolderBrowser = ({ initialFolderId }: FolderBrowserProps) => {
         <FolderToolbar />
         {error && (
           <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
-            {error}
+            {error.message}
           </div>
         )}
         <FolderContent />

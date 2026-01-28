@@ -1,4 +1,5 @@
-import { useFolder } from "@/hooks/folder/useFolder";
+import { useFolderUIStore } from "@/stores/useFolderUIStore";
+import { useFolderContent } from "@/hooks/queries/useFolderQueries";
 import {
   Table,
   TableBody,
@@ -19,7 +20,15 @@ import type { IFile } from "@/types/file.types";
 import type { Folder } from "@/types/folder.types";
 
 export const FolderListView = () => {
-  const { folders, files, toggleSelection, selectedItems } = useFolder();
+  // UI state from Zustand
+  const { currentFolderId, selectedItems, toggleSelection } =
+    useFolderUIStore();
+
+  // Data from React Query
+  const { data } = useFolderContent(currentFolderId);
+  const folders = data?.folders ?? [];
+  const files = data?.files ?? [];
+
   const { handleAction, navigateToFolder, modalState } = useFileActions();
   const folderOps = useFolderOperations();
   const fileOps = useFileOperations();

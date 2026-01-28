@@ -25,9 +25,15 @@ import {
 import { ItemContextMenu } from "./ItemContextMenu";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import { useFolder } from "@/hooks/folder/useFolder";
+import { useFolderUIStore } from "@/stores/useFolderUIStore";
+import {
+  getSpecialViewQueryKey,
+  useSpecialView,
+} from "@/hooks/queries/useFolderQueries";
 import { batchService } from "@/services/batch.service";
+import { useQueryClient } from "@tanstack/react-query";
 import type { ViewType } from "@/types/common.types";
+import type { BreadcrumbItem } from "@/types/folder.types";
 import { formatFileSize } from "@/lib/format";
 import { useFileActions } from "@/hooks/folder/useFileActions";
 
@@ -38,18 +44,27 @@ interface SpecialViewProps {
 type ViewFilter = "all" | "folders" | "files";
 
 export const SpecialView = ({ viewType }: SpecialViewProps) => {
+  const queryClient = useQueryClient();
+
+  // UI state from Zustand
   const {
-    folders,
-    files,
-    isLoading,
-    filePaths,
-    error,
     selectedItems,
-    loadSpecialView,
     toggleSelection,
     clearSelection,
     selectAll: contextSelectAll,
-  } = useFolder();
+    setViewType,
+  } = useFolderUIStore();
+
+  // Data from React Query
+  const { data, isLoading, error } = useSpecialView(viewType);
+
+  // Memoize data to prevent unnecessary re-renders
+  const folders = useMemo(() => data?.folders ?? [], [data?.folders]);
+  const files = useMemo(() => data?.files ?? [], [data?.files]);
+  const filePaths = useMemo(
+    () => data?.filePaths ?? new Map(),
+    [data?.filePaths],
+  );
 
   const { navigateToFolder } = useFileActions();
 
@@ -58,10 +73,10 @@ export const SpecialView = ({ viewType }: SpecialViewProps) => {
 
   const navigate = useNavigate();
 
-  // 初始化加载
+  // Sync view type with store
   useEffect(() => {
-    loadSpecialView(viewType);
-  }, [loadSpecialView, viewType]);
+    setViewType(viewType);
+  }, [viewType, setViewType]);
 
   const filteredFolders = useMemo(() => {
     if (filter === "files") return [];
@@ -79,6 +94,12 @@ export const SpecialView = ({ viewType }: SpecialViewProps) => {
       ...filteredFiles.map((f) => f.id),
     ];
     contextSelectAll(allIds);
+  };
+
+  const refreshData = () => {
+    queryClient.invalidateQueries({
+      queryKey: getSpecialViewQueryKey(viewType),
+    });
   };
 
   const getTitle = () => {
@@ -145,7 +166,7 @@ export const SpecialView = ({ viewType }: SpecialViewProps) => {
         toast.success(`Unstarred ${selectedItems.size} item(s)`);
       }
 
-      await loadSpecialView(viewType);
+      refreshData();
       clearSelection();
     } catch (error) {
       toast.error(
@@ -174,7 +195,7 @@ export const SpecialView = ({ viewType }: SpecialViewProps) => {
         toast.success(`Restored ${selectedItems.size} item(s)`);
       }
 
-      loadSpecialView(viewType);
+      refreshData();
       clearSelection();
     } catch (error) {
       toast.error(
@@ -203,7 +224,7 @@ export const SpecialView = ({ viewType }: SpecialViewProps) => {
         toast.success(`Permanently deleted ${selectedItems.size} item(s)`);
       }
 
-      loadSpecialView(viewType);
+      refreshData();
       clearSelection();
     } catch (error) {
       toast.error(
@@ -287,7 +308,7 @@ export const SpecialView = ({ viewType }: SpecialViewProps) => {
 
       {error && (
         <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
-          {error}
+          {error.message}
         </div>
       )}
 
@@ -468,25 +489,27 @@ export const SpecialView = ({ viewType }: SpecialViewProps) => {
                               >
                                 My Drive
                               </button>
-                              {filePaths.get(file.id)?.map((breadcrumb) => (
-                                <div
-                                  key={breadcrumb.id}
-                                  className="flex items-center gap-1"
-                                >
-                                  <ChevronRight className="size-3 text-muted-foreground" />
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      navigate(
-                                        `/files?folder=${breadcrumb.id}`,
-                                      );
-                                    }}
-                                    className="hover:text-primary hover:underline max-w-[120px] truncate"
+                              {filePaths
+                                .get(file.id)
+                                ?.map((breadcrumb: BreadcrumbItem) => (
+                                  <div
+                                    key={breadcrumb.id}
+                                    className="flex items-center gap-1"
                                   >
-                                    {breadcrumb.name}
-                                  </button>
-                                </div>
-                              ))}
+                                    <ChevronRight className="size-3 text-muted-foreground" />
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        navigate(
+                                          `/files?folder=${breadcrumb.id}`,
+                                        );
+                                      }}
+                                      className="hover:text-primary hover:underline max-w-[120px] truncate"
+                                    >
+                                      {breadcrumb.name}
+                                    </button>
+                                  </div>
+                                ))}
                             </div>
                           ) : (
                             <span className="text-muted-foreground">

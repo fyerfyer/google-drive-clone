@@ -1,122 +1,74 @@
-import { fileService } from "@/services/file.service";
-import { useFolder } from "@/hooks/folder/useFolder";
+import {
+  useRenameFile,
+  useMoveFile,
+  useTrashFile,
+  useRestoreFile,
+  useDeleteFile,
+  useStarFile,
+  useUnstarFile,
+} from "@/hooks/mutations/useFileMutations";
 import { useCallback } from "react";
-import { toast } from "sonner";
 
+/**
+ * Hook providing file operations using React Query mutations
+ * This replaces the old manual dispatch-based approach
+ */
 export const useFileOperations = () => {
-  const { updateItem, refreshContent } = useFolder();
+  const renameFileMutation = useRenameFile();
+  const moveFileMutation = useMoveFile();
+  const trashFileMutation = useTrashFile();
+  const restoreFileMutation = useRestoreFile();
+  const deleteFileMutation = useDeleteFile();
+  const starFileMutation = useStarFile();
+  const unstarFileMutation = useUnstarFile();
 
   const renameFile = useCallback(
     async (fileId: string, name: string) => {
-      try {
-        await fileService.renameFile(fileId, name);
-        updateItem(fileId, { name });
-        toast.success("File renamed successfully");
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Failed to rename file";
-        toast.error(message);
-        throw error;
-      }
+      return renameFileMutation.mutateAsync({ fileId, newName: name });
     },
-    [updateItem]
+    [renameFileMutation],
   );
 
   const moveFile = useCallback(
-    async (fileId: string, newParentId: string) => {
-      try {
-        await fileService.moveFile(fileId, newParentId);
-        toast.success("File moved successfully");
-        await refreshContent();
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Failed to move file";
-        toast.error(message);
-        throw error;
-      }
+    async (fileId: string, destinationId: string) => {
+      return moveFileMutation.mutateAsync({ fileId, destinationId });
     },
-    [refreshContent]
+    [moveFileMutation],
   );
 
   const trashFile = useCallback(
     async (fileId: string) => {
-      try {
-        await fileService.trashFile(fileId);
-        toast.success("File moved to trash successfully");
-        await refreshContent();
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Failed to trash file";
-        toast.error(message);
-        throw error;
-      }
+      return trashFileMutation.mutateAsync(fileId);
     },
-    [refreshContent]
+    [trashFileMutation],
   );
 
   const restoreFile = useCallback(
     async (fileId: string) => {
-      try {
-        await fileService.restoreFile(fileId);
-        toast.success("File restored successfully");
-        await refreshContent();
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Failed to restore file";
-        toast.error(message);
-        throw error;
-      }
+      return restoreFileMutation.mutateAsync(fileId);
     },
-    [refreshContent]
+    [restoreFileMutation],
   );
 
   const deleteFile = useCallback(
     async (fileId: string) => {
-      try {
-        await fileService.deleteFile(fileId);
-        toast.success("File deleted successfully");
-        await refreshContent();
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Failed to delete file";
-        toast.error(message);
-        throw error;
-      }
+      return deleteFileMutation.mutateAsync(fileId);
     },
-    [refreshContent]
+    [deleteFileMutation],
   );
 
   const starFile = useCallback(
-    // 这个用乐观更新，让用户立即看到UI变化
     async (fileId: string) => {
-      updateItem(fileId, { isStarred: true });
-      try {
-        await fileService.starFile(fileId);
-        toast.success("File starred successfully");
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Failed to star file";
-        toast.error(message);
-        throw error;
-      }
+      return starFileMutation.mutateAsync(fileId);
     },
-    [updateItem]
+    [starFileMutation],
   );
 
   const unstarFile = useCallback(
     async (fileId: string) => {
-      updateItem(fileId, { isStarred: false });
-      try {
-        await fileService.unstarFile(fileId);
-        toast.success("File unstarred successfully");
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Failed to unstar file";
-        toast.error(message);
-        throw error;
-      }
+      return unstarFileMutation.mutateAsync(fileId);
     },
-    [updateItem]
+    [unstarFileMutation],
   );
 
   return {
@@ -127,5 +79,13 @@ export const useFileOperations = () => {
     deleteFile,
     starFile,
     unstarFile,
+    // Expose mutation states for loading indicators
+    isRenaming: renameFileMutation.isPending,
+    isMoving: moveFileMutation.isPending,
+    isTrashing: trashFileMutation.isPending,
+    isRestoring: restoreFileMutation.isPending,
+    isDeleting: deleteFileMutation.isPending,
+    isStarring: starFileMutation.isPending,
+    isUnstarring: unstarFileMutation.isPending,
   };
 };

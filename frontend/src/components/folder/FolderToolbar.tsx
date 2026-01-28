@@ -1,6 +1,9 @@
 import { useState } from "react";
-import { useFolder } from "@/hooks/folder/useFolder";
+import { useFolderUIStore } from "@/stores/useFolderUIStore";
+import { useFolderContent } from "@/hooks/queries/useFolderQueries";
 import { useBatchOperations } from "@/hooks/folder/useBatchOperations";
+import { useQueryClient } from "@tanstack/react-query";
+import { queryKeys } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -24,14 +27,21 @@ import { FileUploadDialog } from "./FileUploadDialog";
 import { DeleteConfirmDialog } from "./DeleteConfirmDialog";
 
 export const FolderToolbar = () => {
+  const queryClient = useQueryClient();
+
+  // UI state from Zustand
   const {
     viewMode,
     setViewMode,
-    refreshContent,
-    currentFolder,
+    currentFolderId,
     selectedItems,
     clearSelection,
-  } = useFolder();
+  } = useFolderUIStore();
+
+  // Data from React Query
+  const { data } = useFolderContent(currentFolderId);
+  const currentFolder = data?.currentFolder ?? null;
+
   const { batchTrash, batchStar } = useBatchOperations();
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showUploadDialog, setShowUploadDialog] = useState(false);
@@ -53,6 +63,12 @@ export const FolderToolbar = () => {
 
   const handleBatchStar = async () => {
     await batchStar(true);
+  };
+
+  const handleRefresh = () => {
+    queryClient.invalidateQueries({
+      queryKey: queryKeys.folders.content(currentFolderId),
+    });
   };
 
   return (
@@ -101,7 +117,7 @@ export const FolderToolbar = () => {
                 </DropdownMenuContent>
               </DropdownMenu>
 
-              <Button variant="outline" size="icon" onClick={refreshContent}>
+              <Button variant="outline" size="icon" onClick={handleRefresh}>
                 <RefreshCw className="size-4" />
               </Button>
             </>

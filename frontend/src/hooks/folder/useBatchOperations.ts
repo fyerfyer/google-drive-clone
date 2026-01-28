@@ -1,6 +1,9 @@
 import { useCallback } from "react";
 import { toast } from "sonner";
-import { useFolder } from "@/hooks/folder/useFolder";
+import { useFolderUIStore } from "@/stores/useFolderUIStore";
+import { useFolderContent } from "@/hooks/queries/useFolderQueries";
+import { useQueryClient } from "@tanstack/react-query";
+import { queryKeys } from "@/lib/queryClient";
 import {
   batchService,
   type BatchItemRequest,
@@ -8,8 +11,31 @@ import {
 } from "@/services/batch.service";
 
 export const useBatchOperations = () => {
-  const { refreshContent, selectedItems, folders, files, clearSelection } =
-    useFolder();
+  const queryClient = useQueryClient();
+
+  // UI state from Zustand
+  const { selectedItems, clearSelection, currentFolderId, viewType } =
+    useFolderUIStore();
+
+  // Data from React Query
+  const { data } = useFolderContent(currentFolderId);
+  const folders = data?.folders ?? [];
+  const files = data?.files ?? [];
+
+  const refreshContent = useCallback(() => {
+    if (viewType === "folder") {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.folders.content(currentFolderId),
+      });
+    } else {
+      queryClient.invalidateQueries({
+        queryKey:
+          queryKeys.specialViews[
+            viewType as Exclude<typeof viewType, "folder">
+          ](),
+      });
+    }
+  }, [queryClient, currentFolderId, viewType]);
 
   // 将选中的项目转换为 BatchItemRequest 格式
   const getSelectedItemsAsBatch = useCallback((): BatchItemRequest[] => {
@@ -37,17 +63,17 @@ export const useBatchOperations = () => {
     (result: BatchOperationResponse, operation: string) => {
       if (result.failureCount === 0) {
         toast.success(
-          `Successfully ${operation} ${result.successCount} item(s)`
+          `Successfully ${operation} ${result.successCount} item(s)`,
         );
       } else if (result.successCount === 0) {
         toast.error(`Failed to ${operation} all items`);
       } else {
         toast.warning(
-          `${operation}: ${result.successCount} succeeded, ${result.failureCount} failed`
+          `${operation}: ${result.successCount} succeeded, ${result.failureCount} failed`,
         );
       }
     },
-    []
+    [],
   );
 
   const batchTrash = useCallback(async () => {
@@ -61,7 +87,7 @@ export const useBatchOperations = () => {
     try {
       const result = await batchService.batchTrash(items);
       showBatchResult(result, "trashed");
-      await refreshContent();
+      refreshContent();
       clearSelection();
     } catch (error) {
       const message =
@@ -87,7 +113,7 @@ export const useBatchOperations = () => {
     try {
       const result = await batchService.batchRestore(items);
       showBatchResult(result, "restored");
-      await refreshContent();
+      refreshContent();
       clearSelection();
     } catch (error) {
       const message =
@@ -113,7 +139,7 @@ export const useBatchOperations = () => {
     try {
       const result = await batchService.batchDelete(items);
       showBatchResult(result, "deleted");
-      await refreshContent();
+      refreshContent();
       clearSelection();
     } catch (error) {
       const message =
@@ -140,7 +166,7 @@ export const useBatchOperations = () => {
       try {
         const result = await batchService.batchMove(items, destinationId);
         showBatchResult(result, "moved");
-        await refreshContent();
+        refreshContent();
         clearSelection();
       } catch (error) {
         const message =
@@ -149,7 +175,7 @@ export const useBatchOperations = () => {
         throw error;
       }
     },
-    [getSelectedItemsAsBatch, refreshContent, clearSelection, showBatchResult]
+    [getSelectedItemsAsBatch, refreshContent, clearSelection, showBatchResult],
   );
 
   const batchStar = useCallback(
@@ -164,7 +190,7 @@ export const useBatchOperations = () => {
       try {
         const result = await batchService.batchStar(items, star);
         showBatchResult(result, star ? "starred" : "unstarred");
-        await refreshContent();
+        refreshContent();
         clearSelection();
       } catch (error) {
         const message =
@@ -175,7 +201,7 @@ export const useBatchOperations = () => {
         throw error;
       }
     },
-    [getSelectedItemsAsBatch, refreshContent, clearSelection, showBatchResult]
+    [getSelectedItemsAsBatch, refreshContent, clearSelection, showBatchResult],
   );
 
   return {

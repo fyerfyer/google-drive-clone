@@ -1,15 +1,34 @@
-import { useFolder } from "@/hooks/folder/useFolder";
+import { useFolderUIStore } from "@/stores/useFolderUIStore";
+import { useQueryClient } from "@tanstack/react-query";
+import { queryKeys } from "@/lib/queryClient";
 import { fileService } from "@/services/file.service";
 import type { UploadFileProgress } from "@/types/file.types";
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
 
 export const useFileUpload = () => {
-  const { refreshContent } = useFolder();
+  const queryClient = useQueryClient();
+  const { currentFolderId, viewType } = useFolderUIStore();
+
   const [uploadProgress, setUploadProgress] = useState<
     Map<string, UploadFileProgress>
   >(new Map());
   const [isUploading, setIsUploading] = useState(false);
+
+  const refreshContent = useCallback(() => {
+    if (viewType === "folder") {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.folders.content(currentFolderId),
+      });
+    } else {
+      queryClient.invalidateQueries({
+        queryKey:
+          queryKeys.specialViews[
+            viewType as Exclude<typeof viewType, "folder">
+          ](),
+      });
+    }
+  }, [queryClient, currentFolderId, viewType]);
 
   const handleProgress = useCallback((progress: UploadFileProgress) => {
     setUploadProgress((prev) => {
@@ -29,7 +48,7 @@ export const useFileUpload = () => {
       try {
         await fileService.uploadFiles(files, folderId, handleProgress);
         toast.success("Files uploaded successfully");
-        await refreshContent();
+        refreshContent();
       } catch (error) {
         const message =
           error instanceof Error ? error.message : "Failed to upload files";
@@ -38,7 +57,7 @@ export const useFileUpload = () => {
         setIsUploading(false);
       }
     },
-    [handleProgress, refreshContent]
+    [handleProgress, refreshContent],
   );
 
   const clearUploadProgress = useCallback(() => {

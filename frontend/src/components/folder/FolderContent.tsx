@@ -1,11 +1,18 @@
-import { useFolder } from "@/hooks/folder/useFolder";
+import { useFolderUIStore } from "@/stores/useFolderUIStore";
+import { useFolderContent } from "@/hooks/queries/useFolderQueries";
 import { FolderGridView } from "./FolderGridView";
 import { FolderListView } from "./FolderListView";
 import { Empty } from "@/components/ui/empty";
 import { FolderOpen } from "lucide-react";
 
 export const FolderContent = () => {
-  const { folders, files, viewMode, isLoading } = useFolder();
+  // UI state from Zustand
+  const { viewMode, currentFolderId } = useFolderUIStore();
+
+  // Data from React Query
+  const { data, isLoading } = useFolderContent(currentFolderId);
+  const folders = data?.folders ?? [];
+  const files = data?.files ?? [];
 
   const isEmpty = folders.length === 0 && files.length === 0;
 

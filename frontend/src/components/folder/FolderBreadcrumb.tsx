@@ -1,5 +1,6 @@
 import { useNavigate } from "react-router-dom";
-import { useFolder } from "@/hooks/folder/useFolder";
+import { useFolderUIStore } from "@/stores/useFolderUIStore";
+import { useFolderContent } from "@/hooks/queries/useFolderQueries";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -11,7 +12,14 @@ import {
 import { ChevronRight, Home } from "lucide-react";
 
 export const FolderBreadcrumb = () => {
-  const { breadcrumbs, currentFolder } = useFolder();
+  // UI state from Zustand
+  const currentFolderId = useFolderUIStore((state) => state.currentFolderId);
+
+  // Data from React Query
+  const { data } = useFolderContent(currentFolderId);
+  const breadcrumbs = data?.breadcrumbs ?? [];
+  const currentFolder = data?.currentFolder ?? null;
+
   const navigate = useNavigate();
 
   const handleNavigate = (folderId: string) => {

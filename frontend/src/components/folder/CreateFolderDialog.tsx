@@ -1,6 +1,5 @@
 import { useState } from "react";
-import { useFolder } from "@/hooks/folder/useFolder";
-import { folderService } from "@/services/folder.service";
+import { useCreateFolder } from "@/hooks/mutations/useFolderMutations";
 import {
   Dialog,
   DialogContent,
@@ -28,8 +27,7 @@ export const CreateFolderDialog = ({
 }: CreateFolderDialogProps) => {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [isCreating, setIsCreating] = useState(false);
-  const { refreshContent } = useFolder();
+  const createFolderMutation = useCreateFolder();
 
   const handleCreate = async () => {
     if (!name.trim()) {
@@ -37,24 +35,17 @@ export const CreateFolderDialog = ({
       return;
     }
 
-    setIsCreating(true);
     try {
-      await folderService.createFolder({
+      await createFolderMutation.mutateAsync({
         name: name.trim(),
         description: description.trim() || undefined,
         parentId,
       });
-      toast.success("Folder created successfully");
       onOpenChange(false);
       setName("");
       setDescription("");
-      refreshContent();
-    } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Failed to create folder"
-      );
-    } finally {
-      setIsCreating(false);
+    } catch {
+      // Error is handled by the mutation
     }
   };
 
@@ -95,12 +86,15 @@ export const CreateFolderDialog = ({
           <Button
             variant="outline"
             onClick={() => onOpenChange(false)}
-            disabled={isCreating}
+            disabled={createFolderMutation.isPending}
           >
             Cancel
           </Button>
-          <Button onClick={handleCreate} disabled={isCreating}>
-            {isCreating ? "Creating..." : "Create"}
+          <Button
+            onClick={handleCreate}
+            disabled={createFolderMutation.isPending}
+          >
+            {createFolderMutation.isPending ? "Creating..." : "Create"}
           </Button>
         </DialogFooter>
       </DialogContent>

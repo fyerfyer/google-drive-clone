@@ -33,7 +33,7 @@ export const FileUploadDialog = ({
 
   const isUploading = useMemo(() => {
     return Array.from(uploads.values()).some(
-      (upload) => upload.status === "uploading" || upload.status === "pending"
+      (upload) => upload.status === "uploading" || upload.status === "pending",
     );
   }, [uploads]);
 
@@ -42,7 +42,7 @@ export const FileUploadDialog = ({
       const selectedFiles = Array.from(event.target.files || []);
       setFiles((prev) => [...prev, ...selectedFiles]);
     },
-    []
+    [],
   );
 
   const handleRemoveFile = useCallback((index: number) => {
@@ -58,7 +58,7 @@ export const FileUploadDialog = ({
         setIsDragging(true);
       }
     },
-    []
+    [],
   );
 
   const handleDragLeave = useCallback(
@@ -70,7 +70,7 @@ export const FileUploadDialog = ({
         setIsDragging(false);
       }
     },
-    []
+    [],
   );
 
   const handleDragOver = useCallback((e: React.DragEvent<HTMLLabelElement>) => {
@@ -105,7 +105,7 @@ export const FileUploadDialog = ({
       setFiles([]);
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : "Failed to upload files"
+        error instanceof Error ? error.message : "Failed to upload files",
       );
     }
   };

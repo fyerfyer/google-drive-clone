@@ -1,140 +1,83 @@
-import { useFolder } from "@/hooks/folder/useFolder";
-import { folderService } from "@/services/folder.service";
+import {
+  useCreateFolder,
+  useRenameFolder,
+  useMoveFolder,
+  useTrashFolder,
+  useRestoreFolder,
+  useDeleteFolder,
+  useStarFolder,
+  useUnstarFolder,
+} from "@/hooks/mutations/useFolderMutations";
 import { useCallback } from "react";
-import { toast } from "sonner";
 
+/**
+ * Hook providing folder operations using React Query mutations
+ * This replaces the old manual dispatch-based approach
+ */
 export const useFolderOperations = () => {
-  const { refreshContent, updateItem } = useFolder();
+  const createFolderMutation = useCreateFolder();
+  const renameFolderMutation = useRenameFolder();
+  const moveFolderMutation = useMoveFolder();
+  const trashFolderMutation = useTrashFolder();
+  const restoreFolderMutation = useRestoreFolder();
+  const deleteFolderMutation = useDeleteFolder();
+  const starFolderMutation = useStarFolder();
+  const unstarFolderMutation = useUnstarFolder();
 
   const createFolder = useCallback(
     async (parentId: string, name: string) => {
-      try {
-        const folder = await folderService.createFolder({ parentId, name });
-        toast.success("Folder created successfully");
-        await refreshContent();
-        return folder;
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Failed to create folder";
-        toast.error(message);
-        throw error;
-      }
+      return createFolderMutation.mutateAsync({ parentId, name });
     },
-    [refreshContent]
+    [createFolderMutation],
   );
 
   const renameFolder = useCallback(
     async (folderId: string, name: string) => {
-      try {
-        await folderService.renameFolder(folderId, name);
-        updateItem(folderId, { name });
-        toast.success("Folder renamed successfully");
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Failed to rename folder";
-        toast.error(message);
-        throw error;
-      }
+      return renameFolderMutation.mutateAsync({ folderId, newName: name });
     },
-    [updateItem]
+    [renameFolderMutation],
   );
 
   const moveFolder = useCallback(
-    async (folderId: string, newParentId: string) => {
-      try {
-        await folderService.moveFolder(folderId, newParentId);
-        toast.success("Folder moved successfully");
-        await refreshContent();
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Failed to move folder";
-        toast.error(message);
-        throw error;
-      }
+    async (folderId: string, destinationId: string) => {
+      return moveFolderMutation.mutateAsync({ folderId, destinationId });
     },
-    [refreshContent]
+    [moveFolderMutation],
   );
 
   const trashFolder = useCallback(
     async (folderId: string) => {
-      try {
-        await folderService.trashFolder(folderId);
-        toast.success("Folder moved to trash successfully");
-        await refreshContent();
-      } catch (error) {
-        const message =
-          error instanceof Error
-            ? error.message
-            : "Failed to move folder to trash";
-        toast.error(message);
-        throw error;
-      }
+      return trashFolderMutation.mutateAsync(folderId);
     },
-    [refreshContent]
+    [trashFolderMutation],
   );
 
   const restoreFolder = useCallback(
     async (folderId: string) => {
-      try {
-        await folderService.restoreFolder(folderId);
-        toast.success("Folder restored successfully");
-        await refreshContent();
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Failed to restore folder";
-        toast.error(message);
-        throw error;
-      }
+      return restoreFolderMutation.mutateAsync(folderId);
     },
-    [refreshContent]
+    [restoreFolderMutation],
   );
 
   const deleteFolder = useCallback(
     async (folderId: string) => {
-      try {
-        await folderService.deleteFolder(folderId);
-        toast.success("Folder deleted successfully");
-        await refreshContent();
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Failed to delete folder";
-        toast.error(message);
-        throw error;
-      }
+      return deleteFolderMutation.mutateAsync(folderId);
     },
-    [refreshContent]
+    [deleteFolderMutation],
   );
 
   const starFolder = useCallback(
     async (folderId: string) => {
-      updateItem(folderId, { isStarred: true });
-      try {
-        await folderService.starFolder(folderId);
-        toast.success("Folder starred successfully");
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Failed to star folder";
-        toast.error(message);
-        throw error;
-      }
+      return starFolderMutation.mutateAsync(folderId);
     },
-    [updateItem]
+    [starFolderMutation],
   );
 
   const unstarFolder = useCallback(
     async (folderId: string) => {
-      updateItem(folderId, { isStarred: false });
-      try {
-        await folderService.unstarFolder(folderId);
-        toast.success("Folder unstarred successfully");
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Failed to unstar folder";
-        toast.error(message);
-        throw error;
-      }
+      return unstarFolderMutation.mutateAsync(folderId);
     },
-    [updateItem]
+    [unstarFolderMutation],
   );
 
   return {
@@ -146,5 +89,14 @@ export const useFolderOperations = () => {
     deleteFolder,
     starFolder,
     unstarFolder,
+    // Expose mutation states for loading indicators
+    isCreating: createFolderMutation.isPending,
+    isRenaming: renameFolderMutation.isPending,
+    isMoving: moveFolderMutation.isPending,
+    isTrashing: trashFolderMutation.isPending,
+    isRestoring: restoreFolderMutation.isPending,
+    isDeleting: deleteFolderMutation.isPending,
+    isStarring: starFolderMutation.isPending,
+    isUnstarring: unstarFolderMutation.isPending,
   };
 };
