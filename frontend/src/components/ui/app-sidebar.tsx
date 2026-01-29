@@ -6,6 +6,7 @@ import {
   IconTrash,
   IconClock,
   IconCloudUp,
+  IconUsers,
 } from "@tabler/icons-react";
 
 import { NavMain } from "@/components/nav/nav-main";
@@ -40,6 +41,11 @@ const data = {
       title: "My Files",
       url: "/files?view=files",
       icon: IconFolder,
+    },
+    {
+      title: "Shared with me",
+      url: "/files?view=shared",
+      icon: IconUsers,
     },
     {
       title: "Recent",

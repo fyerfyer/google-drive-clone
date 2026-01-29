@@ -4,7 +4,7 @@ import {
   useSpecialView,
 } from "@/hooks/queries/useFolderQueries";
 import { useQueryClient } from "@tanstack/react-query";
-import { queryKeys } from "@/lib/queryClient";
+import { queryKeys, getSpecialViewQueryKey } from "@/lib/queryClient";
 import type { ViewType } from "@/types/common.types";
 import type { Folder, BreadcrumbItem } from "@/types/folder.types";
 import type { IFile } from "@/types/file.types";
@@ -77,20 +77,6 @@ export const useFolder = () => {
 
   const loadSpecialView = (view: Exclude<ViewType, "folder">) => {
     setViewType(view);
-  };
-
-  // Helper to get query key based on view type (handles "trash" -> "trashed" mapping)
-  const getSpecialViewQueryKey = (vt: Exclude<ViewType, "folder">) => {
-    const keyMap: Record<
-      Exclude<ViewType, "folder">,
-      () => readonly string[]
-    > = {
-      starred: queryKeys.specialViews.starred,
-      trash: queryKeys.specialViews.trash,
-      recent: queryKeys.specialViews.recent,
-      files: queryKeys.specialViews.files,
-    };
-    return keyMap[vt]();
   };
 
   const refreshContent = () => {

@@ -76,6 +76,9 @@ export const useAuthStore = create<AuthStore>()(
       login: async (req: LoginRequest) => {
         try {
           set({ isLoading: true, error: null }, false, "auth/login-start");
+          // Clear previous user's cache before login
+          const { queryClient } = await import("@/lib/queryClient");
+          queryClient.clear();
           const response = await authService.login(req);
           set(
             {
@@ -147,6 +150,10 @@ export const useAuthStore = create<AuthStore>()(
       // Logout
       logout: () => {
         authService.logout();
+        // Clear React Query cache to prevent showing previous user's data
+        import("@/lib/queryClient").then(({ queryClient }) => {
+          queryClient.clear();
+        });
         set(
           {
             user: null,

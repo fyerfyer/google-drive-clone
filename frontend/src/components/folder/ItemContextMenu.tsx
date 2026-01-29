@@ -1,6 +1,7 @@
 import { type ReactNode, useState } from "react";
 import { useFolderOperations } from "@/hooks/folder/useFolderOperations";
 import { useFileOperations } from "@/hooks/folder/useFileOperations";
+import { useShareDialogStore } from "@/stores/useShareDialogStore";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -42,6 +43,7 @@ export const ItemContextMenu = ({
 }: ItemContextMenuProps) => {
   const folderOps = useFolderOperations();
   const fileOps = useFileOperations();
+  const { openShareDialog } = useShareDialogStore();
   const [showRenameDialog, setShowRenameDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showMoveDialog, setShowMoveDialog] = useState(false);
@@ -109,8 +111,8 @@ export const ItemContextMenu = ({
   };
 
   const handleShare = () => {
-    // TODO: Implement share dialog
-    toast.info("Share functionality coming soon");
+    const resourceType = type === "folder" ? "Folder" : "File";
+    openShareDialog(item.id, resourceType, item.name);
   };
 
   const handleCopy = () => {

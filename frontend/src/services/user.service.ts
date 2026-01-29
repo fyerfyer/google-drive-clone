@@ -1,4 +1,8 @@
-import type { User, UserResponse } from "@/types/user.types";
+import type {
+  User,
+  UserResponse,
+  UsersSearchResponse,
+} from "@/types/user.types";
 import { api } from "./api";
 
 const USER_API_BASE = "/api/users";
@@ -14,7 +18,23 @@ export const userService = {
       throw new Error(response.message || "Failed to get user profile");
     } catch (error) {
       throw new Error(
-        error instanceof Error ? error.message : "Failed to get user profile"
+        error instanceof Error ? error.message : "Failed to get user profile",
+      );
+    }
+  },
+
+  searchUsers: async (email: string): Promise<User[]> => {
+    try {
+      const response = await api.get<UsersSearchResponse>(
+        `${USER_API_BASE}/search?email=${encodeURIComponent(email)}`,
+      );
+      if (response.success && response.data) {
+        return response.data.users;
+      }
+      throw new Error(response.message || "Failed to search users");
+    } catch (error) {
+      throw new Error(
+        error instanceof Error ? error.message : "Failed to search users",
       );
     }
   },
@@ -26,7 +46,7 @@ export const userService = {
     try {
       const response = await api.patch<UserResponse, typeof data>(
         `${USER_API_BASE}/profile`,
-        data
+        data,
       );
       if (response.success && response.data) {
         return {
@@ -38,7 +58,9 @@ export const userService = {
       throw new Error(response.message || "Failed to update user profile");
     } catch (error) {
       throw new Error(
-        error instanceof Error ? error.message : "Failed to update user profile"
+        error instanceof Error
+          ? error.message
+          : "Failed to update user profile",
       );
     }
   },
@@ -51,7 +73,7 @@ export const userService = {
     try {
       const response = await api.patch<UserResponse, { key: string }>(
         `${USER_API_BASE}/avatar`,
-        { key }
+        { key },
       );
       if (response.success && response.data) {
         return {
@@ -63,7 +85,7 @@ export const userService = {
       throw new Error(response.message || "Failed to update avatar");
     } catch (error) {
       throw new Error(
-        error instanceof Error ? error.message : "Failed to update avatar"
+        error instanceof Error ? error.message : "Failed to update avatar",
       );
     }
   },

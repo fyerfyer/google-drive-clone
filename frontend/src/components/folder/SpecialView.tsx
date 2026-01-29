@@ -26,10 +26,8 @@ import { ItemContextMenu } from "./ItemContextMenu";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { useFolderUIStore } from "@/stores/useFolderUIStore";
-import {
-  getSpecialViewQueryKey,
-  useSpecialView,
-} from "@/hooks/queries/useFolderQueries";
+import { useSpecialView } from "@/hooks/queries/useFolderQueries";
+import { getSpecialViewQueryKey } from "@/lib/queryClient";
 import { batchService } from "@/services/batch.service";
 import { useQueryClient } from "@tanstack/react-query";
 import type { ViewType } from "@/types/common.types";

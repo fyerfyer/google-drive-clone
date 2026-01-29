@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import { UserService, IUserPublic } from "../services/user.service";
 import { ResponseHelper } from "../utils/response.util";
-import { UserResponse } from "../types/response.types";
+import { UserResponse, UsersSearchResponse } from "../types/response.types";
 import { AppError } from "../middlewares/errorHandler";
 import { StatusCodes } from "http-status-codes";
 
@@ -11,6 +11,22 @@ export class UserController {
   getCurrentUser(req: Request, res: Response) {
     const user = req.user!.toJSON() as IUserPublic;
     return ResponseHelper.ok<UserResponse>(res, { user: user });
+  }
+
+  async searchUsers(req: Request, res: Response, next: NextFunction) {
+    const { email } = req.query;
+    const currentUserId = req.user!.id;
+
+    if (!email || typeof email !== "string") {
+      throw new AppError(StatusCodes.BAD_REQUEST, "Email query is required");
+    }
+
+    const users = await this.userService.searchUsersByEmail(
+      email,
+      currentUserId,
+    );
+    const publicUsers = users.map((u) => u.toJSON() as IUserPublic);
+    return ResponseHelper.ok<UsersSearchResponse>(res, { users: publicUsers });
   }
 
   async updateUser(req: Request, res: Response, next: NextFunction) {
@@ -39,7 +55,7 @@ export class UserController {
       res,
       { user: user },
       StatusCodes.OK,
-      "Avatar updated successfully"
+      "Avatar updated successfully",
     );
   }
 }

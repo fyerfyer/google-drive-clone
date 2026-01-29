@@ -28,7 +28,7 @@ export class UserService {
     if (existingUser) {
       throw new AppError(
         StatusCodes.BAD_REQUEST,
-        "User with email already exists"
+        "User with email already exists",
       );
     }
 
@@ -46,7 +46,7 @@ export class UserService {
     if (!user) {
       throw new AppError(
         StatusCodes.NOT_FOUND,
-        getReasonPhrase(StatusCodes.NOT_FOUND)
+        getReasonPhrase(StatusCodes.NOT_FOUND),
       );
     }
 
@@ -58,9 +58,30 @@ export class UserService {
     return user;
   }
 
+  async searchUsersByEmail(
+    email: string,
+    excludeUserId?: string,
+  ): Promise<IUser[]> {
+    const query: any = {
+      email: { $regex: email, $options: "i" },
+    };
+    if (excludeUserId) {
+      query._id = { $ne: excludeUserId };
+    }
+    const users = await User.find(query).limit(10);
+    return users;
+  }
+
+  async getUsersByEmails(emails: string[]): Promise<IUser[]> {
+    const users = await User.find({
+      email: { $in: emails.map((e) => e.toLowerCase()) },
+    });
+    return users;
+  }
+
   async updateUser(
     userId: string,
-    updates: Partial<Pick<IUser, "name" | "email">>
+    updates: Partial<Pick<IUser, "name" | "email">>,
   ): Promise<IUser> {
     if (updates.email) {
       const existingUser = await User.findOne({
@@ -75,7 +96,7 @@ export class UserService {
     const user = await User.findByIdAndUpdate(
       userId,
       { $set: updates },
-      { new: true, runValidators: true }
+      { new: true, runValidators: true },
     );
     if (!user) {
       throw new AppError(StatusCodes.NOT_FOUND, "User not found");
@@ -95,7 +116,7 @@ export class UserService {
       userId,
       avatarKey,
       ImageType.AVATAR,
-      BUCKETS.AVATARS
+      BUCKETS.AVATARS,
     );
 
     // Delete old avatar if exists

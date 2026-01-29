@@ -12,6 +12,7 @@ import RegisterPage from "@/pages/auth/RegisterPage";
 import DashboardPage from "@/pages/dashboard/DashboardPage";
 import ProfilePage from "@/pages/profile/ProfilePage";
 import FilesPage from "@/pages/files/FilesPage";
+import SharedAccessPage from "@/pages/share/SharedAccessPage";
 import NotFoundPage from "@/pages/NotFoundPage";
 
 const RootRedirector = () => {
@@ -57,6 +58,10 @@ export const AppRouter = () => {
                 <ProfilePage />
               </AuthRoute>
             }
+          ></Route>
+          <Route
+            path="/share/:type/:token"
+            element={<SharedAccessPage />}
           ></Route>
           <Route path="/" element={<RootRedirector />}></Route>
           <Route path="*" element={<NotFoundPage />}></Route>

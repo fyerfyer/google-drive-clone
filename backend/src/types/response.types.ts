@@ -31,6 +31,10 @@ export interface UserResponse {
   user: IUserPublic;
 }
 
+export interface UsersSearchResponse {
+  users: IUserPublic[];
+}
+
 // ==================== File Responses ====================
 export interface FileUploadResponse {
   file: IFilePublic;

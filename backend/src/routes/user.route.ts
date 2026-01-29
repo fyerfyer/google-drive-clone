@@ -11,13 +11,15 @@ export function createUserRouter(userController: UserController) {
 
   userRouter.get(
     "/profile",
-    userController.getCurrentUser.bind(userController)
+    userController.getCurrentUser.bind(userController),
   );
+
+  userRouter.get("/search", userController.searchUsers.bind(userController));
 
   userRouter.patch(
     "/profile",
     updateValidator,
-    userController.updateUser.bind(userController)
+    userController.updateUser.bind(userController),
   );
 
   userRouter.patch("/avatar", userController.updateAvatar.bind(userController));

@@ -17,6 +17,9 @@ export interface InheritedFromInfo {
 export interface PermissionDetail {
   resourceId: string;
   userId: string;
+  userName: string;
+  userEmail: string;
+  userAvatar?: string;
   role: AccessRole;
   isInherited: boolean;
   inheritedFrom?: InheritedFromInfo;

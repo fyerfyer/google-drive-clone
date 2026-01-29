@@ -200,10 +200,14 @@ export class PermissionService {
     const permissionResults = aclList.map((acl) => {
       const resourceIdStr = acl.resource.toString();
       const isInherited = resourceIdStr !== String(resourceId);
+      const sharedWithUser = acl.sharedWith as any;
 
       return {
         resourceId,
-        userId: (acl.sharedWith as any)._id || acl.sharedWith,
+        userId: sharedWithUser._id || sharedWithUser,
+        userName: sharedWithUser.name || "",
+        userEmail: sharedWithUser.email || "",
+        userAvatar: sharedWithUser.avatar?.thumbnail,
         role: acl.role,
         isInherited,
         inheritedFrom: isInherited
@@ -390,6 +394,62 @@ export class PermissionService {
     return {
       token: newToken,
       linkShareConfig: newConfig,
+    };
+  }
+
+  async getResourceByShareToken(
+    token: string,
+    resourceType: ResourceType,
+  ): Promise<{
+    resourceId: string;
+    resourceType: ResourceType;
+    name: string;
+    role: AccessRole;
+    allowDownload: boolean;
+  }> {
+    let resource: any = null;
+
+    if (resourceType === "Folder") {
+      resource = await Folder.findOne({ "linkShare.token": token })
+        .select("name linkShare")
+        .lean();
+    } else {
+      resource = await File.findOne({ "linkShare.token": token })
+        .select("name linkShare mimeType size extension")
+        .lean();
+    }
+
+    if (!resource) {
+      throw new AppError(
+        StatusCodes.NOT_FOUND,
+        "Shared resource not found or link has expired",
+      );
+    }
+
+    const linkShare = resource.linkShare;
+
+    // Validate link share config
+    if (!linkShare || !linkShare.enableLinkSharing) {
+      throw new AppError(
+        StatusCodes.FORBIDDEN,
+        "Link sharing is disabled for this resource",
+      );
+    }
+
+    if (linkShare.expiresAt && new Date() > linkShare.expiresAt) {
+      throw new AppError(StatusCodes.FORBIDDEN, "This share link has expired");
+    }
+
+    if (linkShare.scope === "none") {
+      throw new AppError(StatusCodes.FORBIDDEN, "Link sharing is restricted");
+    }
+
+    return {
+      resourceId: resource._id.toString(),
+      resourceType,
+      name: resource.name,
+      role: linkShare.role,
+      allowDownload: linkShare.allowDownload,
     };
   }
 

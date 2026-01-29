@@ -3,12 +3,13 @@ import { toast } from "sonner";
 import { useFolderUIStore } from "@/stores/useFolderUIStore";
 import { useFolderContent } from "@/hooks/queries/useFolderQueries";
 import { useQueryClient } from "@tanstack/react-query";
-import { queryKeys } from "@/lib/queryClient";
+import { queryKeys, getSpecialViewQueryKey } from "@/lib/queryClient";
 import {
   batchService,
   type BatchItemRequest,
   type BatchOperationResponse,
 } from "@/services/batch.service";
+import type { ViewType } from "@/types/common.types";
 
 export const useBatchOperations = () => {
   const queryClient = useQueryClient();
@@ -31,10 +32,9 @@ export const useBatchOperations = () => {
       });
     } else {
       queryClient.invalidateQueries({
-        queryKey:
-          queryKeys.specialViews[
-            viewType as Exclude<typeof viewType, "folder">
-          ](),
+        queryKey: getSpecialViewQueryKey(
+          viewType as Exclude<ViewType, "folder">,
+        ),
       });
     }
   }, [queryClient, currentFolderId, viewType]);

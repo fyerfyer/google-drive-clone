@@ -133,7 +133,7 @@ export class FileService {
         },
       },
       { $inc: { storageUsage: fileSize } },
-      { new: true }
+      { new: true },
     );
 
     if (!updateUser) {
@@ -141,13 +141,13 @@ export class FileService {
       await StorageService.deleteObject(BUCKETS.FILES, key).catch((err) => {
         logger.error(
           { err, userId, key },
-          "Failed to rollback MinIO object after quota exceeded"
+          "Failed to rollback MinIO object after quota exceeded",
         );
       });
 
       throw new AppError(
         StatusCodes.BAD_REQUEST,
-        "Storage quota exceeded or user not found"
+        "Storage quota exceeded or user not found",
       );
     }
 
@@ -186,7 +186,7 @@ export class FileService {
       {
         isTrashed: true,
         trashedAt: new Date(),
-      }
+      },
     );
 
     if (result.matchedCount === 0) {
@@ -205,7 +205,7 @@ export class FileService {
       {
         isTrashed: false,
         trashedAt: null,
-      }
+      },
     );
 
     if (result.matchedCount === 0) {
@@ -226,7 +226,7 @@ export class FileService {
     if (!fileToDelete) {
       throw new AppError(
         StatusCodes.NOT_FOUND,
-        "File not found or not trashed"
+        "File not found or not trashed",
       );
     }
 
@@ -238,7 +238,7 @@ export class FileService {
           _id: fileObjectId,
           user: userObjectId,
         },
-        { session }
+        { session },
       );
 
       await User.updateOne(
@@ -248,19 +248,19 @@ export class FileService {
         {
           $inc: { storageUsage: -fileToDelete.size },
         },
-        { session }
+        { session },
       );
 
       await session.commitTransaction();
     } catch (error) {
       logger.error(
         { err: error, fileId, userId },
-        "Failed to delete file permanently"
+        "Failed to delete file permanently",
       );
       await session.abortTransaction();
       throw new AppError(
         StatusCodes.INTERNAL_SERVER_ERROR,
-        "Failed to delete file permanently"
+        "Failed to delete file permanently",
       );
     } finally {
       await session.endSession();
@@ -281,7 +281,7 @@ export class FileService {
         user: userObjectId,
       },
       { isStarred: star },
-      { new: true }
+      { new: true },
     );
 
     if (!result) {
@@ -298,7 +298,7 @@ export class FileService {
     if (count === 0) {
       logger.info(
         { key, hash },
-        "No file references remaining, deleting object from MinIO"
+        "No file references remaining, deleting object from MinIO",
       );
       await StorageService.deleteObject(BUCKETS.FILES, key).catch((err) => {
         logger.error({ err, key }, "Failed to delete object from MinIO");
@@ -306,7 +306,7 @@ export class FileService {
     } else {
       logger.debug(
         { key, hash, referenceCount: count },
-        "Object still has file references, keeping in MinIO"
+        "Object still has file references, keeping in MinIO",
       );
     }
   }
@@ -342,7 +342,7 @@ export class FileService {
     if (fileToMove.folder?.equals(targetFolderObjectId)) {
       logger.info(
         { fileId, targetFolderId },
-        "File is already in the target folder"
+        "File is already in the target folder",
       );
       return;
     }
@@ -380,18 +380,40 @@ export class FileService {
     const fileObjectId = new mongoose.Types.ObjectId(data.fileId);
     const userObjectId = new mongoose.Types.ObjectId(data.userId);
 
+    // Find file without owner check
     const file = await File.findOne({
       _id: fileObjectId,
-      user: userObjectId,
       isTrashed: false,
-    }).select("+key mimeType originalName size");
+    }).select("+key mimeType originalName size user");
 
     if (!file) {
       logger.warn(
         { fileId: data.fileId, userId: data.userId },
-        "File not found for download"
+        "File not found for download",
       );
       throw new AppError(StatusCodes.NOT_FOUND, "File not found");
+    }
+
+    // Check if user has permission (owner or shared access)
+    const isOwner = file.user.toString() === data.userId;
+    if (!isOwner) {
+      // Check shared access via PermissionService
+      const { PermissionService } = await import("./permission.service");
+      const permissionService = new PermissionService();
+      const hasAccess = await permissionService.checkPermission({
+        userId: data.userId,
+        resourceId: data.fileId,
+        resourceType: "File",
+        requireRole: "viewer",
+      });
+
+      if (!hasAccess) {
+        logger.warn(
+          { fileId: data.fileId, userId: data.userId },
+          "User does not have permission to download file",
+        );
+        throw new AppError(StatusCodes.FORBIDDEN, "Access denied");
+      }
     }
 
     const expirySeconds = data.expirySeconds || 3600;
@@ -399,12 +421,12 @@ export class FileService {
       BUCKETS.FILES,
       file.key,
       expirySeconds,
-      "attachment"
+      "attachment",
     );
 
     logger.info(
       { fileId: data.fileId, userId: data.userId, expirySeconds },
-      "Generated presigned download URL"
+      "Generated presigned download URL",
     );
 
     return {
@@ -420,18 +442,40 @@ export class FileService {
     const fileObjectId = new mongoose.Types.ObjectId(data.fileId);
     const userObjectId = new mongoose.Types.ObjectId(data.userId);
 
+    // Find file without owner check
     const file = await File.findOne({
       _id: fileObjectId,
-      user: userObjectId,
       isTrashed: false,
-    }).select("+key mimeType originalName size");
+    }).select("+key mimeType originalName size user");
 
     if (!file) {
       logger.warn(
         { fileId: data.fileId, userId: data.userId },
-        "File not found for preview"
+        "File not found for preview",
       );
       throw new AppError(StatusCodes.NOT_FOUND, "File not found");
+    }
+
+    // Check if user has permission (owner or shared access)
+    const isOwner = file.user.toString() === data.userId;
+    if (!isOwner) {
+      // Check shared access via PermissionService
+      const { PermissionService } = await import("./permission.service");
+      const permissionService = new PermissionService();
+      const hasAccess = await permissionService.checkPermission({
+        userId: data.userId,
+        resourceId: data.fileId,
+        resourceType: "File",
+        requireRole: "viewer",
+      });
+
+      if (!hasAccess) {
+        logger.warn(
+          { fileId: data.fileId, userId: data.userId },
+          "User does not have permission to preview file",
+        );
+        throw new AppError(StatusCodes.FORBIDDEN, "Access denied");
+      }
     }
 
     const expirySeconds = data.expirySeconds || 3600;
@@ -439,12 +483,12 @@ export class FileService {
       BUCKETS.FILES,
       file.key,
       expirySeconds,
-      "inline"
+      "inline",
     );
 
     logger.info(
       { fileId: data.fileId, userId: data.userId, expirySeconds },
-      "Generated presigned preview URL"
+      "Generated presigned preview URL",
     );
 
     return {
@@ -460,19 +504,40 @@ export class FileService {
     const fileObjectId = new mongoose.Types.ObjectId(data.fileId);
     const userObjectId = new mongoose.Types.ObjectId(data.userId);
 
-    // 验证文件权限
+    // Find file without owner check
     const file = await File.findOne({
       _id: fileObjectId,
-      user: userObjectId,
       isTrashed: false,
-    }).select("+key mimeType originalName size");
+    }).select("+key mimeType originalName size user");
 
     if (!file) {
       logger.warn(
         { fileId: data.fileId, userId: data.userId },
-        "File not found for preview"
+        "File not found for preview",
       );
       throw new AppError(StatusCodes.NOT_FOUND, "File not found");
+    }
+
+    // Check if user has permission (owner or shared access)
+    const isOwner = file.user.toString() === data.userId;
+    if (!isOwner) {
+      // Check shared access via PermissionService
+      const { PermissionService } = await import("./permission.service");
+      const permissionService = new PermissionService();
+      const hasAccess = await permissionService.checkPermission({
+        userId: data.userId,
+        resourceId: data.fileId,
+        resourceType: "File",
+        requireRole: "viewer",
+      });
+
+      if (!hasAccess) {
+        logger.warn(
+          { fileId: data.fileId, userId: data.userId },
+          "User does not have permission to preview file",
+        );
+        throw new AppError(StatusCodes.FORBIDDEN, "Access denied");
+      }
     }
 
     // 避免代理超大文件（50MB 以内）
@@ -480,23 +545,23 @@ export class FileService {
     if (file.size > MAX_PREVIEW_SIZE) {
       logger.warn(
         { fileId: data.fileId, fileSize: file.size, maxSize: MAX_PREVIEW_SIZE },
-        "File too large for preview stream"
+        "File too large for preview stream",
       );
       throw new AppError(
         StatusCodes.BAD_REQUEST,
-        "File too large for preview. Please use download instead."
+        "File too large for preview. Please use download instead.",
       );
     }
 
     // 从 MinIO 获取文件流
     const stream = await StorageService.getObjectStream(
       BUCKETS.FILES,
-      file.key
+      file.key,
     );
 
     logger.info(
       { fileId: data.fileId, userId: data.userId, fileSize: file.size },
-      "Generated preview stream"
+      "Generated preview stream",
     );
 
     return {
@@ -538,7 +603,7 @@ export class FileService {
 
   async getRecentFiles(
     userId: string,
-    limit: number = 20
+    limit: number = 20,
   ): Promise<IFilePublic[]> {
     const userObjectId = new mongoose.Types.ObjectId(userId);
 

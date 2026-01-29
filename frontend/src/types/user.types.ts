@@ -22,6 +22,10 @@ export interface UserResponse {
   message?: string;
 }
 
+export interface UsersSearchResponse {
+  users: User[];
+}
+
 export const updateUserSchema = z.object({
   name: z
     .string()
