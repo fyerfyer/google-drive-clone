@@ -2,6 +2,7 @@ import Folder, { IFolder } from "../../models/Folder.model";
 import File from "../../models/File.model";
 import User, { IUser } from "../../models/User.model";
 import { FileService } from "../../services/file.service";
+import { PermissionService } from "../../services/permission.service";
 import { BUCKETS } from "../../config/s3";
 import { countObjectsInBucket, uploadTestFile } from "../utils/file.util";
 
@@ -12,7 +13,7 @@ describe("Test file service", () => {
   let sharedHash: string;
 
   beforeEach(async () => {
-    fileService = new FileService();
+    fileService = new FileService(new PermissionService());
 
     mockUser = await User.create({
       name: "testuser",
@@ -42,7 +43,7 @@ describe("Test file service", () => {
       "file1.txt",
       "test content",
       // pass hash to simulate duplicate content
-      sharedHash
+      sharedHash,
     );
     expect(file1).toBeDefined();
     const file1Doc = await File.findById(String(file1.id)).select("+hash +key");
@@ -54,7 +55,7 @@ describe("Test file service", () => {
       String(parentFolder._id),
       "file2.txt",
       "test content",
-      sharedHash
+      sharedHash,
     );
     expect(file2).toBeDefined();
     const file2Doc = await File.findById(String(file2.id)).select("+hash +key");
@@ -70,7 +71,7 @@ describe("Test file service", () => {
       String(parentFolder._id),
       "file3.txt",
       "test content",
-      "unique-hash"
+      "unique-hash",
     );
     expect(file3).toBeDefined();
     const file3Doc = await File.findById(String(file3.id)).select("+hash +key");
@@ -88,7 +89,7 @@ describe("Test file service", () => {
       String(parentFolder._id),
       "file1.txt",
       "test content",
-      sharedHash
+      sharedHash,
     );
     const file2 = await uploadTestFile(
       fileService,
@@ -96,7 +97,7 @@ describe("Test file service", () => {
       String(parentFolder._id),
       "file2.txt",
       "test content",
-      sharedHash
+      sharedHash,
     );
     const file3 = await uploadTestFile(
       fileService,
@@ -104,7 +105,7 @@ describe("Test file service", () => {
       String(parentFolder._id),
       "file3.txt",
       "test content",
-      "unique-hash"
+      "unique-hash",
     );
     await fileService.trashFile(String(file1.id), String(mockUser._id));
     let objectCount = await countObjectsInBucket(BUCKETS.FILES);
@@ -124,7 +125,7 @@ describe("Test file service", () => {
 
     await fileService.deleteFilePermanent(
       String(file1.id),
-      String(mockUser._id)
+      String(mockUser._id),
     );
     file1InDb = await File.findById(String(file1.id));
     expect(file1InDb).toBeNull();
@@ -133,14 +134,14 @@ describe("Test file service", () => {
 
     await fileService.deleteFilePermanent(
       String(file2.id),
-      String(mockUser._id)
+      String(mockUser._id),
     );
     objectCount = await countObjectsInBucket(BUCKETS.FILES);
     expect(objectCount).toBe(1);
 
     await fileService.deleteFilePermanent(
       String(file3.id),
-      String(mockUser._id)
+      String(mockUser._id),
     );
     objectCount = await countObjectsInBucket(BUCKETS.FILES);
     expect(objectCount).toBe(0);
@@ -153,7 +154,7 @@ describe("Test file service", () => {
       String(parentFolder._id),
       "file.txt",
       "test content",
-      "restore-hash"
+      "restore-hash",
     );
 
     await fileService.trashFile(String(file.id), String(mockUser._id));
@@ -174,7 +175,7 @@ describe("Test file service", () => {
       String(parentFolder._id),
       "star-file.txt",
       "test content",
-      "star-hash"
+      "star-hash",
     );
 
     let fileInDb = await File.findById(String(file.id));
@@ -196,13 +197,13 @@ describe("Test file service", () => {
       String(parentFolder._id),
       "original.txt",
       "test content",
-      "rename-hash"
+      "rename-hash",
     );
 
     await fileService.renameFile(
       String(file.id),
       String(mockUser._id),
-      "renamed.txt"
+      "renamed.txt",
     );
     const fileInDb = await File.findById(String(file.id));
     expect(fileInDb?.name).toBe("renamed.txt");
@@ -223,7 +224,7 @@ describe("Test file service", () => {
       String(parentFolder._id),
       "movable.txt",
       "test content",
-      "move-hash"
+      "move-hash",
     );
 
     let fileInDb = await File.findById(String(file.id));
@@ -232,7 +233,7 @@ describe("Test file service", () => {
     await fileService.moveFile(
       String(file.id),
       String(mockUser._id),
-      String(targetFolder._id)
+      String(targetFolder._id),
     );
 
     fileInDb = await File.findById(String(file.id));
@@ -248,7 +249,7 @@ describe("Test file service", () => {
       String(parentFolder._id),
       "starred1.txt",
       "test content",
-      "starred1-hash"
+      "starred1-hash",
     );
 
     const file2 = await uploadTestFile(
@@ -257,7 +258,7 @@ describe("Test file service", () => {
       String(parentFolder._id),
       "starred2.txt",
       "test content",
-      "starred2-hash"
+      "starred2-hash",
     );
 
     await uploadTestFile(
@@ -266,14 +267,14 @@ describe("Test file service", () => {
       String(parentFolder._id),
       "not-starred.txt",
       "test content",
-      "not-starred-hash"
+      "not-starred-hash",
     );
 
     await fileService.starFile(String(file1.id), String(mockUser._id), true);
     await fileService.starFile(String(file2.id), String(mockUser._id), true);
 
     const starredFiles = await fileService.getStarredFiles(
-      String(mockUser._id)
+      String(mockUser._id),
     );
     expect(starredFiles).toHaveLength(2);
     expect(starredFiles.map((f) => f.id)).toContain(String(file1.id));
@@ -287,7 +288,7 @@ describe("Test file service", () => {
       String(parentFolder._id),
       "trashed1.txt",
       "test content",
-      "trashed1-hash"
+      "trashed1-hash",
     );
 
     const file2 = await uploadTestFile(
@@ -296,7 +297,7 @@ describe("Test file service", () => {
       String(parentFolder._id),
       "trashed2.txt",
       "test content",
-      "trashed2-hash"
+      "trashed2-hash",
     );
 
     await uploadTestFile(
@@ -305,14 +306,14 @@ describe("Test file service", () => {
       String(parentFolder._id),
       "not-trashed.txt",
       "test content",
-      "not-trashed-hash"
+      "not-trashed-hash",
     );
 
     await fileService.trashFile(String(file1.id), String(mockUser._id));
     await fileService.trashFile(String(file2.id), String(mockUser._id));
 
     const trashedFiles = await fileService.getTrashedFiles(
-      String(mockUser._id)
+      String(mockUser._id),
     );
     expect(trashedFiles).toHaveLength(2);
     expect(trashedFiles.map((f) => f.id)).toContain(String(file1.id));
@@ -326,7 +327,7 @@ describe("Test file service", () => {
       String(parentFolder._id),
       "recent1.txt",
       "test content",
-      "recent1-hash"
+      "recent1-hash",
     );
 
     await uploadTestFile(
@@ -335,12 +336,12 @@ describe("Test file service", () => {
       String(parentFolder._id),
       "recent2.txt",
       "test content",
-      "recent2-hash"
+      "recent2-hash",
     );
 
     const recentFiles = await fileService.getRecentFiles(
       String(mockUser._id),
-      10
+      10,
     );
     expect(recentFiles.length).toBeGreaterThanOrEqual(2);
   });
@@ -352,7 +353,7 @@ describe("Test file service", () => {
       String(parentFolder._id),
       "all1.txt",
       "test content",
-      "all1-hash"
+      "all1-hash",
     );
 
     await uploadTestFile(
@@ -361,7 +362,7 @@ describe("Test file service", () => {
       String(parentFolder._id),
       "all2.txt",
       "test content",
-      "all2-hash"
+      "all2-hash",
     );
 
     const allFiles = await fileService.getAllUserFiles(String(mockUser._id));

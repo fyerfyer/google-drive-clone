@@ -2,6 +2,7 @@ import Folder, { IFolder } from "../../models/Folder.model";
 import File from "../../models/File.model";
 import User, { IUser } from "../../models/User.model";
 import { FileService } from "../../services/file.service";
+import { PermissionService } from "../../services/permission.service";
 import { uploadTestFile } from "../utils/file.util";
 import { v4 as uuidv4 } from "uuid";
 
@@ -11,7 +12,7 @@ describe("File Concurrency Tests", () => {
   let parentFolder: IFolder;
 
   beforeEach(async () => {
-    fileService = new FileService();
+    fileService = new FileService(new PermissionService());
 
     mockUser = await User.create({
       name: "testuser",
@@ -38,8 +39,8 @@ describe("File Concurrency Tests", () => {
           String(mockUser._id),
           String(parentFolder._id),
           `file-${i}.txt`,
-          `content-${i}`
-        )
+          `content-${i}`,
+        ),
       );
 
       const results = await Promise.all(uploadPromises);
@@ -67,8 +68,8 @@ describe("File Concurrency Tests", () => {
           String(parentFolder._id),
           `duplicate-${i}.txt`,
           sharedContent,
-          sharedHash
-        )
+          sharedHash,
+        ),
       );
 
       const results = await Promise.all(uploadPromises);
@@ -102,8 +103,8 @@ describe("File Concurrency Tests", () => {
           String(mockUser._id),
           String(parentFolder._id),
           `large-${i}.txt`,
-          largeContent
-        ).catch((err) => err)
+          largeContent,
+        ).catch((err) => err),
       );
 
       const results = await Promise.all(uploadPromises);
@@ -118,7 +119,7 @@ describe("File Concurrency Tests", () => {
       // Verify storage usage is accurate
       const updatedUser = await User.findById(mockUser._id);
       expect(updatedUser?.storageUsage).toBeLessThanOrEqual(
-        updatedUser!.storageQuota
+        updatedUser!.storageQuota,
       );
     });
   });
@@ -130,13 +131,13 @@ describe("File Concurrency Tests", () => {
         String(mockUser._id),
         String(parentFolder._id),
         "original.txt",
-        "test content"
+        "test content",
       );
 
       const renamePromises = Array.from({ length: 5 }, (_, i) =>
         fileService
           .renameFile(file.id, String(100), `renamed-${i}.txt`)
-          .catch((err) => err)
+          .catch((err) => err),
       );
 
       const results = await Promise.all(renamePromises);
@@ -159,7 +160,7 @@ describe("File Concurrency Tests", () => {
         String(mockUser._id),
         String(parentFolder._id),
         "star-test.txt",
-        "test content"
+        "test content",
       );
 
       // Concurrent star/unstar operations
@@ -167,8 +168,8 @@ describe("File Concurrency Tests", () => {
         fileService.starFile(
           file.id,
           String(mockUser._id),
-          i % 2 === 0 // Alternate between star and unstar
-        )
+          i % 2 === 0, // Alternate between star and unstar
+        ),
       );
 
       await Promise.all(operations);
@@ -184,7 +185,7 @@ describe("File Concurrency Tests", () => {
         String(mockUser._id),
         String(parentFolder._id),
         "delete-test.txt",
-        "test content"
+        "test content",
       );
 
       // Move to trash first
@@ -194,7 +195,7 @@ describe("File Concurrency Tests", () => {
       const deletePromises = Array.from({ length: 5 }, () =>
         fileService
           .deleteFilePermanent(file.id, String(mockUser._id))
-          .catch((err) => err)
+          .catch((err) => err),
       );
 
       const results = await Promise.all(deletePromises);
@@ -205,7 +206,7 @@ describe("File Concurrency Tests", () => {
 
       // At least one should succeed
       const succeeded = results.filter(
-        (r) => !(r instanceof Error || r === undefined)
+        (r) => !(r instanceof Error || r === undefined),
       );
       expect(succeeded.length).toBeGreaterThan(0);
 
@@ -241,9 +242,9 @@ describe("File Concurrency Tests", () => {
             String(mockUser._id),
             String(parentFolder._id),
             `file-${i}.txt`,
-            `content-${i}`
-          )
-        )
+            `content-${i}`,
+          ),
+        ),
       );
 
       // Move all files concurrently to different folders
@@ -251,8 +252,8 @@ describe("File Concurrency Tests", () => {
         fileService.moveFile(
           file.id,
           String(mockUser._id),
-          i % 2 === 0 ? String(folder1._id) : String(folder2._id)
-        )
+          i % 2 === 0 ? String(folder1._id) : String(folder2._id),
+        ),
       );
 
       const results = await Promise.all(movePromises);
@@ -273,7 +274,7 @@ describe("File Concurrency Tests", () => {
         String(mockUser._id),
         String(parentFolder._id),
         "race-test.txt",
-        "test content"
+        "test content",
       );
 
       const folders = await Promise.all(
@@ -284,15 +285,15 @@ describe("File Concurrency Tests", () => {
             parent: parentFolder._id,
             ancestors: [parentFolder._id],
             isTrashed: false,
-          })
-        )
+          }),
+        ),
       );
 
       // Try to move the same file to different folders concurrently
       const movePromises = folders.map((folder) =>
         fileService
           .moveFile(file.id, String(mockUser._id), String(folder._id))
-          .catch((err) => err)
+          .catch((err) => err),
       );
 
       const results = await Promise.all(movePromises);
@@ -315,7 +316,7 @@ describe("File Concurrency Tests", () => {
         String(mockUser._id),
         String(parentFolder._id),
         "concurrent-access.txt",
-        "initial content"
+        "initial content",
       );
 
       // Mix of read and write operations
@@ -324,7 +325,7 @@ describe("File Concurrency Tests", () => {
         ...Array.from({ length: 5 }, (_, i) =>
           fileService
             .renameFile(file.id, String(mockUser._id), `updated-${i}.txt`)
-            .catch((err) => err)
+            .catch((err) => err),
         ),
       ];
 
@@ -351,16 +352,16 @@ describe("File Concurrency Tests", () => {
             String(mockUser._id),
             String(parentFolder._id),
             `ref-file-${i}.txt`,
-            `content-${i}`
-          )
-        )
+            `content-${i}`,
+          ),
+        ),
       );
 
       // Mark files as trashed first
       await Promise.all(
         files
           .slice(0, 2)
-          .map((f) => File.findByIdAndUpdate(f.id, { isTrashed: true }))
+          .map((f) => File.findByIdAndUpdate(f.id, { isTrashed: true })),
       );
 
       // Perform various concurrent operations
@@ -368,7 +369,7 @@ describe("File Concurrency Tests", () => {
         ...files
           .slice(0, 2)
           .map((f) =>
-            fileService.deleteFilePermanent(f.id, String(mockUser._id))
+            fileService.deleteFilePermanent(f.id, String(mockUser._id)),
           ),
         ...files
           .slice(2, 4)
@@ -408,16 +409,16 @@ describe("File Concurrency Tests", () => {
             String(mockUser._id),
             String(parentFolder._id),
             `storage-${i}.txt`,
-            "x".repeat(100) // 100 bytes each
-          )
-        )
+            "x".repeat(100), // 100 bytes each
+          ),
+        ),
       );
 
       // Mark files as trashed first
       await Promise.all(
         files
           .slice(0, 3)
-          .map((f) => File.findByIdAndUpdate(f.id, { isTrashed: true }))
+          .map((f) => File.findByIdAndUpdate(f.id, { isTrashed: true })),
       );
 
       // Concurrent deletes and uploads
@@ -425,7 +426,7 @@ describe("File Concurrency Tests", () => {
         ...files
           .slice(0, 3)
           .map((f) =>
-            fileService.deleteFilePermanent(f.id, String(mockUser._id))
+            fileService.deleteFilePermanent(f.id, String(mockUser._id)),
           ),
         ...Array.from({ length: 3 }, (_, i) =>
           uploadTestFile(
@@ -433,8 +434,8 @@ describe("File Concurrency Tests", () => {
             String(mockUser._id),
             String(parentFolder._id),
             `new-${i}.txt`,
-            "y".repeat(100)
-          )
+            "y".repeat(100),
+          ),
         ),
       ];
 
@@ -448,7 +449,7 @@ describe("File Concurrency Tests", () => {
       const actualFiles = await File.find({ user: mockUser._id });
       const expectedUsage = actualFiles.reduce(
         (sum, file) => sum + file.size,
-        0
+        0,
       );
 
       expect(finalUser!.storageUsage).toBe(expectedUsage);

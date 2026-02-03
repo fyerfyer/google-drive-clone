@@ -1,5 +1,4 @@
 import { AccessRole, ResourceType } from "./model.types";
-import { ILinkShareConfig } from "../models/LinkShareConfig.schema";
 
 export interface CheckPermissionRequest {
   userId: string | null;
@@ -32,7 +31,6 @@ export interface ResourcePermission {
     avatar?: string;
   } | null;
   permissions: PermissionDetail[];
-  linkShare: ILinkShareConfig;
 }
 
 export interface ShareResourceRequest {
@@ -58,13 +56,6 @@ export interface ChangePermissionRequest {
   resourceType: ResourceType;
   targetUserId: string;
   newRole: AccessRole;
-}
-
-export interface UpdateShareLinkRequest {
-  userId: string;
-  resourceId: string;
-  resourceType: ResourceType;
-  linkShareConfig: Partial<ILinkShareConfig>;
 }
 
 export interface ListSharedWithMeRequest {

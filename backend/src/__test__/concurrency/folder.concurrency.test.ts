@@ -3,6 +3,7 @@ import File from "../../models/File.model";
 import User, { IUser } from "../../models/User.model";
 import { FolderService, IFolderContent } from "../../services/folder.service";
 import { FileService } from "../../services/file.service";
+import { PermissionService } from "../../services/permission.service";
 import { uploadTestFile } from "../utils/file.util";
 import { v4 as uuidv4 } from "uuid";
 
@@ -14,7 +15,7 @@ describe("Folder Concurrency Tests", () => {
 
   beforeEach(async () => {
     folderService = new FolderService();
-    fileService = new FileService();
+    fileService = new FileService(new PermissionService());
 
     mockUser = await User.create({
       name: "testuser",
@@ -40,7 +41,7 @@ describe("Folder Concurrency Tests", () => {
           userId: String(mockUser._id),
           parentId: String(rootFolder._id),
           name: `Folder-${i}`,
-        })
+        }),
       );
 
       const results = await Promise.all(createPromises);
@@ -67,7 +68,7 @@ describe("Folder Concurrency Tests", () => {
             parentId: String(rootFolder._id),
             name: sameName,
           })
-          .catch((err) => err)
+          .catch((err) => err),
       );
 
       const results = await Promise.all(createPromises);
@@ -95,8 +96,8 @@ describe("Folder Concurrency Tests", () => {
             userId: String(mockUser._id),
             parentId: String(rootFolder._id),
             name: `L1-${i}`,
-          })
-        )
+          }),
+        ),
       );
 
       // Create level 2 folders concurrently under each level 1 folder
@@ -106,8 +107,8 @@ describe("Folder Concurrency Tests", () => {
             userId: String(mockUser._id),
             parentId: parent.id,
             name: `L2-${i}-${j}`,
-          })
-        )
+          }),
+        ),
       );
 
       const level2Folders = await Promise.all(level2Promises);
@@ -134,7 +135,7 @@ describe("Folder Concurrency Tests", () => {
       const renamePromises = Array.from({ length: 5 }, (_, i) =>
         folderService
           .renameFolder(folder.id, String(mockUser._id), `Renamed-${i}`)
-          .catch((err) => err)
+          .catch((err) => err),
       );
 
       const results = await Promise.all(renamePromises);
@@ -157,7 +158,7 @@ describe("Folder Concurrency Tests", () => {
 
       // Concurrent star/unstar operations
       const operations = Array.from({ length: 20 }, (_, i) =>
-        folderService.starFolder(folder.id, String(mockUser._id), i % 2 === 0)
+        folderService.starFolder(folder.id, String(mockUser._id), i % 2 === 0),
       );
 
       await Promise.all(operations);
@@ -181,7 +182,7 @@ describe("Folder Concurrency Tests", () => {
       const deletePromises = Array.from({ length: 5 }, () =>
         folderService
           .deleteFolderPermanent(folder.id, String(mockUser._id))
-          .catch((err: any) => err)
+          .catch((err: any) => err),
       );
 
       const results = await Promise.all(deletePromises);
@@ -204,8 +205,8 @@ describe("Folder Concurrency Tests", () => {
             userId: String(mockUser._id),
             parentId: String(rootFolder._id),
             name: `Destination-${i}`,
-          })
-        )
+          }),
+        ),
       );
 
       const foldersToMove = await Promise.all(
@@ -214,8 +215,8 @@ describe("Folder Concurrency Tests", () => {
             userId: String(mockUser._id),
             parentId: String(rootFolder._id),
             name: `ToMove-${i}`,
-          })
-        )
+          }),
+        ),
       );
 
       // Move folders concurrently to different destinations
@@ -224,7 +225,7 @@ describe("Folder Concurrency Tests", () => {
           folderId: folder.id,
           userId: String(mockUser._id),
           destinationId: destinations[i % destinations.length].id,
-        })
+        }),
       );
 
       const results = await Promise.all(movePromises);
@@ -288,8 +289,8 @@ describe("Folder Concurrency Tests", () => {
             userId: String(mockUser._id),
             parentId: String(rootFolder._id),
             name: `Dest-${i}`,
-          })
-        )
+          }),
+        ),
       );
 
       // Try to move same folder to different destinations concurrently
@@ -300,7 +301,7 @@ describe("Folder Concurrency Tests", () => {
             userId: String(mockUser._id),
             destinationId: dest.id,
           })
-          .catch((err) => err)
+          .catch((err) => err),
       );
 
       const results = await Promise.all(movePromises);
@@ -313,7 +314,7 @@ describe("Folder Concurrency Tests", () => {
       const finalFolder = await Folder.findById(folder.id);
       expect(finalFolder?.parent).toBeDefined();
       expect(
-        destinations.some((d) => d.id === finalFolder!.parent?.toString())
+        destinations.some((d) => d.id === finalFolder!.parent?.toString()),
       ).toBe(true);
     });
   });
@@ -333,8 +334,8 @@ describe("Folder Concurrency Tests", () => {
           String(mockUser._id),
           folder.id,
           `file-${i}.txt`,
-          `content-${i}`
-        )
+          `content-${i}`,
+        ),
       );
 
       const files = await Promise.all(filePromises);
@@ -346,7 +347,7 @@ describe("Folder Concurrency Tests", () => {
         folderService.renameFolder(
           folder.id,
           String(mockUser._id),
-          "RenamedFolder"
+          "RenamedFolder",
         ),
         folderService.getFolderContent(folder.id, String(mockUser._id)),
         fileService.starFile(files[0].id, String(mockUser._id), true),
@@ -359,7 +360,7 @@ describe("Folder Concurrency Tests", () => {
       // Verify folder content
       const content = await folderService.getFolderContent(
         folder.id,
-        String(mockUser._id)
+        String(mockUser._id),
       );
 
       expect(content.files).toHaveLength(5);
@@ -386,8 +387,8 @@ describe("Folder Concurrency Tests", () => {
             String(mockUser._id),
             parentWithContents.id,
             `parent-file-${i}.txt`,
-            `content-${i}`
-          )
+            `content-${i}`,
+          ),
         ),
         ...Array.from({ length: 2 }, (_, i) =>
           uploadTestFile(
@@ -395,8 +396,8 @@ describe("Folder Concurrency Tests", () => {
             String(mockUser._id),
             subFolder.id,
             `sub-file-${i}.txt`,
-            `content-${i}`
-          )
+            `content-${i}`,
+          ),
         ),
       ];
 
@@ -410,7 +411,7 @@ describe("Folder Concurrency Tests", () => {
       // Delete parent folder
       await folderService.deleteFolderPermanent(
         parentWithContents.id,
-        String(mockUser._id)
+        String(mockUser._id),
       );
 
       // Verify all contents are deleted
@@ -452,16 +453,16 @@ describe("Folder Concurrency Tests", () => {
         folderService.renameFolder(
           String(folders[2]._id),
           String(mockUser._id),
-          "RenamedLevel2"
+          "RenamedLevel2",
         ),
         folderService.getFolderContent(
           String(folders[3]._id),
-          String(mockUser._id)
+          String(mockUser._id),
         ),
         folderService.starFolder(
           String(folders[4]._id),
           String(mockUser._id),
-          true
+          true,
         ),
       ];
 
@@ -497,17 +498,17 @@ describe("Folder Concurrency Tests", () => {
       // Concurrent breadcrumb queries while modifying
       const operations = [
         ...Array.from({ length: 10 }, () =>
-          folderService.getFolderContent(level3.id, String(mockUser._id))
+          folderService.getFolderContent(level3.id, String(mockUser._id)),
         ),
         folderService.renameFolder(
           level2.id,
           String(mockUser._id),
-          "ModifiedLevel2"
+          "ModifiedLevel2",
         ),
         folderService.renameFolder(
           level1.id,
           String(mockUser._id),
-          "ModifiedLevel1"
+          "ModifiedLevel1",
         ),
       ];
 
@@ -523,7 +524,7 @@ describe("Folder Concurrency Tests", () => {
       // Final breadcrumbs should reflect changes
       const finalContent = await folderService.getFolderContent(
         level3.id,
-        String(mockUser._id)
+        String(mockUser._id),
       );
 
       expect(finalContent.breadcrumbs).toHaveLength(4); // root + 3 levels
@@ -539,15 +540,15 @@ describe("Folder Concurrency Tests", () => {
             userId: String(mockUser._id),
             parentId: String(rootFolder._id),
             name: `Initial-${i}`,
-          })
-        )
+          }),
+        ),
       );
 
       // Mark folders as trashed first
       await Promise.all(
         initialFolders
           .slice(0, 3)
-          .map((f) => Folder.findByIdAndUpdate(f.id, { isTrashed: true }))
+          .map((f) => Folder.findByIdAndUpdate(f.id, { isTrashed: true })),
       );
 
       // Simultaneously delete some and create new ones
@@ -555,14 +556,14 @@ describe("Folder Concurrency Tests", () => {
         ...initialFolders
           .slice(0, 3)
           .map((f) =>
-            folderService.deleteFolderPermanent(f.id, String(mockUser._id))
+            folderService.deleteFolderPermanent(f.id, String(mockUser._id)),
           ),
         ...Array.from({ length: 3 }, (_, i) =>
           folderService.createFolder({
             userId: String(mockUser._id),
             parentId: String(rootFolder._id),
             name: `New-${i}`,
-          })
+          }),
         ),
       ];
 

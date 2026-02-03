@@ -2,6 +2,7 @@ import Folder, { IFolder } from "../../models/Folder.model";
 import File from "../../models/File.model";
 import User, { IUser } from "../../models/User.model";
 import { FileService } from "../../services/file.service";
+import { PermissionService } from "../../services/permission.service";
 import { maintainanceQueue } from "../../lib/queue/queue";
 import {
   QUEUE_NAMES,
@@ -29,7 +30,7 @@ describe("Test cron worker", () => {
   });
 
   beforeEach(async () => {
-    fileService = new FileService();
+    fileService = new FileService(new PermissionService());
 
     mockUser = await User.create({
       name: "testuser",
@@ -58,7 +59,7 @@ describe("Test cron worker", () => {
       String(parentFolder._id),
       "old-file.txt",
       "test content",
-      "old-hash"
+      "old-hash",
     );
 
     const folder1 = await Folder.create({
@@ -73,7 +74,7 @@ describe("Test cron worker", () => {
     await fileService.trashFile(String(file1.id), String(mockUser._id));
     await Folder.updateOne(
       { _id: folder1._id },
-      { isTrashed: true, trashedAt: new Date() }
+      { isTrashed: true, trashedAt: new Date() },
     );
 
     // Manually set trashedAt to more than 30 days ago
@@ -81,7 +82,7 @@ describe("Test cron worker", () => {
     await File.updateOne({ _id: file1.id }, { trashedAt: thirtyOneDaysAgo });
     await Folder.updateOne(
       { _id: folder1._id },
-      { trashedAt: thirtyOneDaysAgo }
+      { trashedAt: thirtyOneDaysAgo },
     );
 
     // Verify they exist before cleanup
@@ -111,7 +112,7 @@ describe("Test cron worker", () => {
       String(parentFolder._id),
       "recent-file.txt",
       "test content",
-      "recent-hash"
+      "recent-hash",
     );
 
     await fileService.trashFile(String(file.id), String(mockUser._id));
@@ -140,7 +141,7 @@ describe("Test cron worker", () => {
 
     // Should complete without errors
     await expect(
-      job.waitUntilFinished(queueEvents, 30000)
+      job.waitUntilFinished(queueEvents, 30000),
     ).resolves.toBeDefined();
   });
 
@@ -167,7 +168,7 @@ describe("Test cron worker", () => {
       String(parentFolder._id),
       "user1-file.txt",
       "test content",
-      "user1-hash"
+      "user1-hash",
     );
 
     const file2 = await uploadTestFile(
@@ -176,7 +177,7 @@ describe("Test cron worker", () => {
       String(folder2._id),
       "user2-file.txt",
       "test content",
-      "user2-hash"
+      "user2-hash",
     );
 
     await fileService.trashFile(String(file1.id), String(mockUser._id));
@@ -185,7 +186,7 @@ describe("Test cron worker", () => {
     const thirtyOneDaysAgo = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000);
     await File.updateMany(
       { _id: { $in: [file1.id, file2.id] } },
-      { trashedAt: thirtyOneDaysAgo }
+      { trashedAt: thirtyOneDaysAgo },
     );
 
     const job = await maintainanceQueue.add(QUEUE_TASKS.CLEANUP_TRASH, {
@@ -207,7 +208,7 @@ describe("Test cron worker", () => {
       String(parentFolder._id),
       "storage-test.txt",
       "test content with some size",
-      "storage-hash"
+      "storage-hash",
     );
 
     const initialUser = await User.findById(mockUser._id);
@@ -256,23 +257,23 @@ describe("Test cron worker", () => {
       String(folder._id),
       "file-in-folder.txt",
       "test content",
-      "folder-file-hash"
+      "folder-file-hash",
     );
 
     // Trash the folder (which should trash all files inside)
     await Folder.updateOne(
       { _id: folder._id },
-      { isTrashed: true, trashedAt: new Date() }
+      { isTrashed: true, trashedAt: new Date() },
     );
     await File.updateOne(
       { _id: file1.id },
-      { isTrashed: true, trashedAt: new Date() }
+      { isTrashed: true, trashedAt: new Date() },
     );
 
     const thirtyOneDaysAgo = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000);
     await Folder.updateOne(
       { _id: folder._id },
-      { trashedAt: thirtyOneDaysAgo }
+      { trashedAt: thirtyOneDaysAgo },
     );
     await File.updateOne({ _id: file1.id }, { trashedAt: thirtyOneDaysAgo });
 

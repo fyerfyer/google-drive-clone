@@ -2,6 +2,7 @@ import Folder, { IFolder } from "../../models/Folder.model";
 import File from "../../models/File.model";
 import User, { IUser } from "../../models/User.model";
 import { FileService } from "../../services/file.service";
+import { PermissionService } from "../../services/permission.service";
 import { FolderService } from "../../services/folder.service";
 import { BUCKETS } from "../../config/s3";
 import { countObjectsInBucket, uploadTestFile } from "../utils/file.util";
@@ -15,7 +16,7 @@ describe("Test file service", () => {
 
   beforeEach(async () => {
     folderService = new FolderService();
-    fileService = new FileService();
+    fileService = new FileService(new PermissionService());
 
     mockUser = await User.create({
       name: "testuser",
@@ -54,16 +55,16 @@ describe("Test file service", () => {
     expect(folder1Doc?.parent?.toString()).toBe(parentFolder._id.toString());
     expect(folder1Doc?.ancestors).toHaveLength(1);
     expect(folder1Doc?.ancestors[0].toString()).toBe(
-      parentFolder._id.toString()
+      parentFolder._id.toString(),
     );
 
     expect(folder2Doc?.parent?.toString()).toBe(folder1Doc?._id.toString());
     expect(folder2Doc?.ancestors).toHaveLength(2);
     expect(folder2Doc?.ancestors[0].toString()).toBe(
-      parentFolder._id.toString()
+      parentFolder._id.toString(),
     );
     expect(folder2Doc?.ancestors[1].toString()).toBe(
-      folder1Doc?._id.toString()
+      folder1Doc?._id.toString(),
     );
   });
 
@@ -80,12 +81,12 @@ describe("Test file service", () => {
       String(folder1.id),
       "fileInFolder.txt",
       "test content",
-      "folder-file-hash"
+      "folder-file-hash",
     );
 
     await folderService.trashFolder(
       String(parentFolder._id),
-      String(mockUser._id)
+      String(mockUser._id),
     );
     const trashedFolders = await Folder.find({ isTrashed: true });
     expect(trashedFolders).toHaveLength(2);
@@ -94,7 +95,7 @@ describe("Test file service", () => {
 
     await folderService.deleteFolderPermanent(
       String(parentFolder._id),
-      String(mockUser._id)
+      String(mockUser._id),
     );
     const remainingFolders = await Folder.find({});
     const remainingFiles = await File.find({});
@@ -117,13 +118,13 @@ describe("Test file service", () => {
       String(folder1.id),
       "file-in-folder.txt",
       "test content",
-      sharedHash
+      sharedHash,
     );
 
     await folderService.trashFolder(String(folder1.id), String(mockUser._id));
     await folderService.deleteFolderPermanent(
       String(folder1.id),
-      String(mockUser._id)
+      String(mockUser._id),
     );
 
     const objectCount = await countObjectsInBucket(BUCKETS.FILES);
@@ -149,11 +150,11 @@ describe("Test file service", () => {
 
     await folderService.trashFolder(
       String(parentFolder._id),
-      String(mockUser._id)
+      String(mockUser._id),
     );
     await folderService.deleteFolderPermanent(
       String(parentFolder._id),
-      String(mockUser._id)
+      String(mockUser._id),
     );
 
     const folder1InDb = await Folder.findById(String(folder1.id));
@@ -196,7 +197,7 @@ describe("Test file service", () => {
     await folderService.starFolder(
       String(folder.id),
       String(mockUser._id),
-      true
+      true,
     );
     folderInDb = await Folder.findById(String(folder.id));
     expect(folderInDb?.isStarred).toBe(true);
@@ -204,7 +205,7 @@ describe("Test file service", () => {
     await folderService.starFolder(
       String(folder.id),
       String(mockUser._id),
-      false
+      false,
     );
     folderInDb = await Folder.findById(String(folder.id));
     expect(folderInDb?.isStarred).toBe(false);
@@ -220,7 +221,7 @@ describe("Test file service", () => {
     await folderService.renameFolder(
       String(folder.id),
       String(mockUser._id),
-      "RenamedFolder"
+      "RenamedFolder",
     );
     const folderInDb = await Folder.findById(String(folder.id));
     expect(folderInDb?.name).toBe("RenamedFolder");
@@ -254,7 +255,7 @@ describe("Test file service", () => {
     expect(folderInDb?.parent?.toString()).toBe(targetFolder._id.toString());
     expect(folderInDb?.ancestors).toHaveLength(1);
     expect(folderInDb?.ancestors[0].toString()).toBe(
-      targetFolder._id.toString()
+      targetFolder._id.toString(),
     );
   });
 
@@ -280,16 +281,16 @@ describe("Test file service", () => {
     await folderService.starFolder(
       String(folder1.id),
       String(mockUser._id),
-      true
+      true,
     );
     await folderService.starFolder(
       String(folder2.id),
       String(mockUser._id),
-      true
+      true,
     );
 
     const starredFolders = await folderService.getStarredFolders(
-      String(mockUser._id)
+      String(mockUser._id),
     );
     expect(starredFolders).toHaveLength(2);
     expect(starredFolders.map((f) => f.id)).toContain(String(folder1.id));
@@ -319,7 +320,7 @@ describe("Test file service", () => {
     await folderService.trashFolder(String(folder2.id), String(mockUser._id));
 
     const trashedFolders = await folderService.getTrashedFolders(
-      String(mockUser._id)
+      String(mockUser._id),
     );
     expect(trashedFolders).toHaveLength(2);
     expect(trashedFolders.map((f) => f.id)).toContain(String(folder1.id));
@@ -341,7 +342,7 @@ describe("Test file service", () => {
 
     const recentFolders = await folderService.getRecentFolders(
       String(mockUser._id),
-      10
+      10,
     );
     expect(recentFolders.length).toBeGreaterThanOrEqual(2);
   });
@@ -365,12 +366,12 @@ describe("Test file service", () => {
       String(folder.id),
       "file.txt",
       "test content",
-      "content-hash"
+      "content-hash",
     );
 
     const content = await folderService.getFolderContent(
       String(folder.id),
-      String(mockUser._id)
+      String(mockUser._id),
     );
 
     expect(content.currentFolder.id).toBe(String(folder.id));

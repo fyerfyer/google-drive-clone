@@ -8,7 +8,7 @@ import { BUCKETS } from "../config/s3";
 import mimeTypes from "mime-types";
 import User from "../models/User.model";
 import { logger } from "../lib/logger";
-import { LinkAccessStatus } from "../types/model.types";
+import { PermissionService } from "./permission.service";
 
 interface CreateFileRecordDTO {
   userId: string;
@@ -54,12 +54,13 @@ export interface IFilePublic {
   isStarred: boolean;
   isTrashed: boolean;
   trashedAt?: Date;
-  linkAccessStatus: LinkAccessStatus;
   createdAt: Date;
   updatedAt: Date;
 }
 
 export class FileService {
+  constructor(private permissionService: PermissionService) {}
+
   private async getUserBasic(userId: string): Promise<IUserBasic> {
     const userObjectId = new mongoose.Types.ObjectId(userId);
     const user = await User.findById(userObjectId).select("name email avatar");
@@ -71,13 +72,6 @@ export class FileService {
         thumbnail: user?.avatar?.thumbnail || "",
       },
     };
-  }
-
-  private getLinkAccessStatus(file: IFile): LinkAccessStatus {
-    if (!file.linkShare?.enableLinkSharing) {
-      return "none";
-    }
-    return file.linkShare.role;
   }
 
   private toFilePublic(file: IFile, userBasic: IUserBasic): IFilePublic {
@@ -93,7 +87,6 @@ export class FileService {
       isStarred: file.isStarred,
       isTrashed: file.isTrashed,
       trashedAt: file.trashedAt,
-      linkAccessStatus: this.getLinkAccessStatus(file),
       createdAt: file.createdAt,
       updatedAt: file.updatedAt,
     };
@@ -378,9 +371,7 @@ export class FileService {
 
   async getPresignedDownloadUrl(data: PresignedUrlDTO) {
     const fileObjectId = new mongoose.Types.ObjectId(data.fileId);
-    const userObjectId = new mongoose.Types.ObjectId(data.userId);
 
-    // Find file without owner check
     const file = await File.findOne({
       _id: fileObjectId,
       isTrashed: false,
@@ -394,13 +385,10 @@ export class FileService {
       throw new AppError(StatusCodes.NOT_FOUND, "File not found");
     }
 
-    // Check if user has permission (owner or shared access)
+    // 检查是否有权限
     const isOwner = file.user.toString() === data.userId;
     if (!isOwner) {
-      // Check shared access via PermissionService
-      const { PermissionService } = await import("./permission.service");
-      const permissionService = new PermissionService();
-      const hasAccess = await permissionService.checkPermission({
+      const hasAccess = await this.permissionService.checkPermission({
         userId: data.userId,
         resourceId: data.fileId,
         resourceType: "File",
@@ -440,9 +428,7 @@ export class FileService {
 
   async getPreviewUrl(data: PresignedUrlDTO) {
     const fileObjectId = new mongoose.Types.ObjectId(data.fileId);
-    const userObjectId = new mongoose.Types.ObjectId(data.userId);
 
-    // Find file without owner check
     const file = await File.findOne({
       _id: fileObjectId,
       isTrashed: false,
@@ -456,13 +442,10 @@ export class FileService {
       throw new AppError(StatusCodes.NOT_FOUND, "File not found");
     }
 
-    // Check if user has permission (owner or shared access)
+    // 检查是否有权限
     const isOwner = file.user.toString() === data.userId;
     if (!isOwner) {
-      // Check shared access via PermissionService
-      const { PermissionService } = await import("./permission.service");
-      const permissionService = new PermissionService();
-      const hasAccess = await permissionService.checkPermission({
+      const hasAccess = await this.permissionService.checkPermission({
         userId: data.userId,
         resourceId: data.fileId,
         resourceType: "File",
@@ -502,9 +485,7 @@ export class FileService {
 
   async getPreviewStream(data: PreviewStreamDTO) {
     const fileObjectId = new mongoose.Types.ObjectId(data.fileId);
-    const userObjectId = new mongoose.Types.ObjectId(data.userId);
 
-    // Find file without owner check
     const file = await File.findOne({
       _id: fileObjectId,
       isTrashed: false,
@@ -518,13 +499,10 @@ export class FileService {
       throw new AppError(StatusCodes.NOT_FOUND, "File not found");
     }
 
-    // Check if user has permission (owner or shared access)
+    // 检查是否有权限
     const isOwner = file.user.toString() === data.userId;
     if (!isOwner) {
-      // Check shared access via PermissionService
-      const { PermissionService } = await import("./permission.service");
-      const permissionService = new PermissionService();
-      const hasAccess = await permissionService.checkPermission({
+      const hasAccess = await this.permissionService.checkPermission({
         userId: data.userId,
         resourceId: data.fileId,
         resourceType: "File",

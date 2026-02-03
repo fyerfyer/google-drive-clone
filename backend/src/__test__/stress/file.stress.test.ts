@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from "uuid";
 import { FileService } from "../../services/file.service";
+import { PermissionService } from "../../services/permission.service";
 import { StorageService } from "../../services/storage.service";
 import { BUCKETS } from "../../config/s3";
 import { performance } from "perf_hooks";
@@ -9,7 +10,7 @@ import File from "../../models/File.model";
 import mongoose from "mongoose";
 
 describe("File Service Stress Tests", () => {
-  const fileService = new FileService();
+  const fileService = new FileService(new PermissionService());
   let testUserId: string;
   let testFolderId: string;
 
@@ -73,7 +74,7 @@ describe("File Service Stress Tests", () => {
 
   function calculateMetrics(
     durations: number[],
-    errors: Error[]
+    errors: Error[],
   ): StressTestMetrics {
     const sortedDurations = [...durations].sort((a, b) => a - b);
     const totalDuration = durations.reduce((sum, d) => sum + d, 0);
@@ -118,10 +119,10 @@ describe("File Service Stress Tests", () => {
     console.log("=".repeat(80));
     console.log(`Total Operations:    ${metrics.totalOperations}`);
     console.log(
-      `Successful:          ${metrics.successCount} (${((metrics.successCount / metrics.totalOperations) * 100).toFixed(2)}%)`
+      `Successful:          ${metrics.successCount} (${((metrics.successCount / metrics.totalOperations) * 100).toFixed(2)}%)`,
     );
     console.log(
-      `Failed:              ${metrics.failureCount} (${((metrics.failureCount / metrics.totalOperations) * 100).toFixed(2)}%)`
+      `Failed:              ${metrics.failureCount} (${((metrics.failureCount / metrics.totalOperations) * 100).toFixed(2)}%)`,
     );
     console.log(`Total Duration:      ${metrics.totalDuration.toFixed(2)}ms`);
     console.log(`\nLatency Statistics:`);
@@ -132,7 +133,7 @@ describe("File Service Stress Tests", () => {
     console.log(`  P95:               ${metrics.p95Latency.toFixed(2)}ms`);
     console.log(`  P99:               ${metrics.p99Latency.toFixed(2)}ms`);
     console.log(
-      `\nThroughput:          ${metrics.throughput.toFixed(2)} ops/sec`
+      `\nThroughput:          ${metrics.throughput.toFixed(2)} ops/sec`,
     );
 
     if (metrics.errors.length > 0) {
@@ -146,7 +147,7 @@ describe("File Service Stress Tests", () => {
 
   async function runConcurrentOperations<T>(
     operations: Array<() => Promise<T>>,
-    concurrency: number
+    concurrency: number,
   ): Promise<{ results: T[]; durations: number[]; errors: Error[] }> {
     const results: T[] = [];
     const durations: number[] = [];
@@ -218,7 +219,7 @@ describe("File Service Stress Tests", () => {
       // Delete from MinIO
       const deleteOps = files.map(
         (file) => () =>
-          StorageService.deleteObject(BUCKETS.FILES, file.key).catch(() => {})
+          StorageService.deleteObject(BUCKETS.FILES, file.key).catch(() => {}),
       );
       await runConcurrentOperations(deleteOps, 20);
 
@@ -266,7 +267,7 @@ describe("File Service Stress Tests", () => {
               key,
               content,
               content.length,
-              "text/plain"
+              "text/plain",
             );
 
             createdFiles.push(key);
@@ -285,7 +286,7 @@ describe("File Service Stress Tests", () => {
 
         const { results, durations, errors } = await runConcurrentOperations(
           operations,
-          config.concurrent
+          config.concurrent,
         );
 
         const metrics = calculateMetrics(durations, errors);
@@ -340,7 +341,7 @@ describe("File Service Stress Tests", () => {
               key,
               content,
               content.length,
-              "application/octet-stream"
+              "application/octet-stream",
             );
 
             createdFiles.push(key);
@@ -358,7 +359,7 @@ describe("File Service Stress Tests", () => {
 
         const { results, durations, errors } = await runConcurrentOperations(
           operations,
-          config.concurrent
+          config.concurrent,
         );
 
         const metrics = calculateMetrics(durations, errors);
@@ -411,7 +412,7 @@ describe("File Service Stress Tests", () => {
               key,
               content,
               content.length,
-              "application/octet-stream"
+              "application/octet-stream",
             );
 
             createdFiles.push(key);
@@ -429,7 +430,7 @@ describe("File Service Stress Tests", () => {
 
         const { results, durations, errors } = await runConcurrentOperations(
           operations,
-          config.concurrent
+          config.concurrent,
         );
 
         const metrics = calculateMetrics(durations, errors);
@@ -486,7 +487,7 @@ describe("File Service Stress Tests", () => {
             key,
             content,
             content.length,
-            "text/plain"
+            "text/plain",
           );
 
           return await fileService.createFileRecord({
@@ -516,7 +517,7 @@ describe("File Service Stress Tests", () => {
       await runConcurrentOperations(trashOps, 5);
 
       console.log(
-        `Created ${createdFileIds.length} test files for query tests`
+        `Created ${createdFileIds.length} test files for query tests`,
       );
     }, 60000);
 
@@ -531,7 +532,7 @@ describe("File Service Stress Tests", () => {
 
       const { durations, errors } = await runConcurrentOperations(
         operations,
-        config.concurrent
+        config.concurrent,
       );
 
       const metrics = calculateMetrics(durations, errors);
@@ -553,7 +554,7 @@ describe("File Service Stress Tests", () => {
 
       const { durations, errors } = await runConcurrentOperations(
         operations,
-        config.concurrent
+        config.concurrent,
       );
 
       const metrics = calculateMetrics(durations, errors);
@@ -574,7 +575,7 @@ describe("File Service Stress Tests", () => {
 
       const { durations, errors } = await runConcurrentOperations(
         operations,
-        config.concurrent
+        config.concurrent,
       );
 
       const metrics = calculateMetrics(durations, errors);
@@ -595,7 +596,7 @@ describe("File Service Stress Tests", () => {
 
       const { durations, errors } = await runConcurrentOperations(
         operations,
-        config.concurrent
+        config.concurrent,
       );
 
       const metrics = calculateMetrics(durations, errors);
@@ -650,7 +651,7 @@ describe("File Service Stress Tests", () => {
             key,
             content,
             content.length,
-            "text/plain"
+            "text/plain",
           );
 
           return await fileService.createFileRecord({
@@ -676,7 +677,7 @@ describe("File Service Stress Tests", () => {
 
       const { durations, errors } = await runConcurrentOperations(
         operations,
-        STRESS_CONFIG.OPERATIONS.concurrent
+        STRESS_CONFIG.OPERATIONS.concurrent,
       );
 
       const metrics = calculateMetrics(durations, errors);
@@ -688,12 +689,12 @@ describe("File Service Stress Tests", () => {
 
     it("should handle concurrent trash operations", async () => {
       const operations = operationFileIds.map(
-        (fileId) => () => fileService.trashFile(fileId, testUserId)
+        (fileId) => () => fileService.trashFile(fileId, testUserId),
       );
 
       const { durations, errors } = await runConcurrentOperations(
         operations,
-        STRESS_CONFIG.OPERATIONS.concurrent
+        STRESS_CONFIG.OPERATIONS.concurrent,
       );
 
       const metrics = calculateMetrics(durations, errors);
@@ -707,17 +708,17 @@ describe("File Service Stress Tests", () => {
       // First trash all files
       await Promise.all(
         operationFileIds.map((fileId) =>
-          fileService.trashFile(fileId, testUserId)
-        )
+          fileService.trashFile(fileId, testUserId),
+        ),
       );
 
       const operations = operationFileIds.map(
-        (fileId) => () => fileService.restoreFile(fileId, testUserId)
+        (fileId) => () => fileService.restoreFile(fileId, testUserId),
       );
 
       const { durations, errors } = await runConcurrentOperations(
         operations,
-        STRESS_CONFIG.OPERATIONS.concurrent
+        STRESS_CONFIG.OPERATIONS.concurrent,
       );
 
       const metrics = calculateMetrics(durations, errors);
@@ -730,12 +731,12 @@ describe("File Service Stress Tests", () => {
     it("should handle concurrent rename operations", async () => {
       const operations = operationFileIds.map(
         (fileId, i) => () =>
-          fileService.renameFile(fileId, testUserId, `renamed-${i}.txt`)
+          fileService.renameFile(fileId, testUserId, `renamed-${i}.txt`),
       );
 
       const { durations, errors } = await runConcurrentOperations(
         operations,
-        STRESS_CONFIG.OPERATIONS.concurrent
+        STRESS_CONFIG.OPERATIONS.concurrent,
       );
 
       const metrics = calculateMetrics(durations, errors);
@@ -755,12 +756,12 @@ describe("File Service Stress Tests", () => {
 
       const operations = operationFileIds.map(
         (fileId) => () =>
-          fileService.moveFile(fileId, testUserId, targetFolder._id.toString())
+          fileService.moveFile(fileId, testUserId, targetFolder._id.toString()),
       );
 
       const { durations, errors } = await runConcurrentOperations(
         operations,
-        STRESS_CONFIG.OPERATIONS.concurrent
+        STRESS_CONFIG.OPERATIONS.concurrent,
       );
 
       const metrics = calculateMetrics(durations, errors);
@@ -782,7 +783,7 @@ describe("File Service Stress Tests", () => {
             key,
             content,
             content.length,
-            "text/plain"
+            "text/plain",
           );
 
           return await fileService.createFileRecord({
@@ -809,12 +810,12 @@ describe("File Service Stress Tests", () => {
 
       // Now delete sequentially (permanent delete uses MongoDB transactions which conflict at any concurrency > 1)
       const operations = deleteFileIds.map(
-        (fileId) => () => fileService.deleteFilePermanent(fileId, testUserId)
+        (fileId) => () => fileService.deleteFilePermanent(fileId, testUserId),
       );
 
       const { durations, errors } = await runConcurrentOperations(
         operations,
-        1 // Sequential execution required due to MongoDB transaction conflicts
+        1, // Sequential execution required due to MongoDB transaction conflicts
       );
 
       const metrics = calculateMetrics(durations, errors);
@@ -869,7 +870,7 @@ describe("File Service Stress Tests", () => {
             key,
             content,
             content.length,
-            "text/plain"
+            "text/plain",
           );
 
           return await fileService.createFileRecord({
@@ -885,7 +886,7 @@ describe("File Service Stress Tests", () => {
 
       const { results: urlTestFiles } = await runConcurrentOperations(
         createOps,
-        10
+        10,
       );
       const urlTestFileIds = urlTestFiles.map((file) => file.id);
 
@@ -903,7 +904,7 @@ describe("File Service Stress Tests", () => {
 
       const { durations, errors } = await runConcurrentOperations(
         operations,
-        config.concurrent
+        config.concurrent,
       );
 
       const metrics = calculateMetrics(durations, errors);
@@ -956,7 +957,7 @@ describe("File Service Stress Tests", () => {
             key,
             content,
             content.length,
-            "text/plain"
+            "text/plain",
           );
 
           return await fileService.createFileRecord({
@@ -972,7 +973,7 @@ describe("File Service Stress Tests", () => {
 
       const { results: previewTestFiles } = await runConcurrentOperations(
         createOps,
-        10
+        10,
       );
       const previewTestFileIds = previewTestFiles.map((file) => file.id);
 
@@ -990,7 +991,7 @@ describe("File Service Stress Tests", () => {
 
       const { durations, errors } = await runConcurrentOperations(
         operations,
-        config.concurrent
+        config.concurrent,
       );
 
       const metrics = calculateMetrics(durations, errors);
@@ -1045,7 +1046,7 @@ describe("File Service Stress Tests", () => {
             key,
             content,
             content.length,
-            "text/plain"
+            "text/plain",
           );
 
           return await fileService.createFileRecord({
@@ -1061,7 +1062,7 @@ describe("File Service Stress Tests", () => {
 
       const { results: mixedTestFiles } = await runConcurrentOperations(
         createOps,
-        10
+        10,
       );
       const mixedTestFileIds = mixedTestFiles.map((file) => file.id);
 
@@ -1095,7 +1096,7 @@ describe("File Service Stress Tests", () => {
               await fileService.renameFile(
                 fileId,
                 testUserId,
-                `mixed-renamed-${i}.txt`
+                `mixed-renamed-${i}.txt`,
               );
               return "renameFile";
             };
@@ -1119,7 +1120,7 @@ describe("File Service Stress Tests", () => {
 
       const { durations, errors } = await runConcurrentOperations(
         operations,
-        config.concurrent
+        config.concurrent,
       );
 
       const metrics = calculateMetrics(durations, errors);

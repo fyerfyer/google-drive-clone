@@ -1,26 +1,26 @@
 import { Request, Response } from "express";
-import { PermissionService } from "../services/permission.service";
-import { ResourceType } from "../types/model.types";
 import { StatusCodes } from "http-status-codes";
+
+import { ShareService } from "../services/share.service";
+
+import { ResourceType } from "../types/model.types";
 import { ResponseHelper } from "../utils/response.util";
+import { AppError } from "../middlewares/errorHandler";
+import { logger } from "../lib/logger";
+
 import {
   ShareResourceResponse,
   ResourcePermissionsResponse,
   RemovePermissionResponse,
   ChangePermissionResponse,
-  UpdateLinkShareResponse,
   SharedWithMeResponse,
   PaginationMeta,
 } from "../types/response.types";
-import { AppError } from "../middlewares/errorHandler";
-import File from "../models/File.model";
-import Folder from "../models/Folder.model";
-import { StorageService } from "../services/storage.service";
 import { BUCKETS } from "../config/s3";
-import { logger } from "../lib/logger";
+import { StorageService } from "../services/storage.service";
 
 export class ShareController {
-  private permissionService: PermissionService;
+  constructor(private shareService: ShareService) {}
 
   private normalizeResourceType(raw: unknown): ResourceType {
     const value = Array.isArray(raw) ? raw[0] : raw;
@@ -42,14 +42,11 @@ export class ShareController {
     return this.normalizeResourceType(raw);
   }
 
-  constructor(permissionService: PermissionService) {
-    this.permissionService = permissionService;
-  }
-
   async shareResource(req: Request, res: Response) {
     if (!req.user) {
       throw new AppError(StatusCodes.UNAUTHORIZED, "User not authenticated");
     }
+
     const userId = req.user.id;
     const {
       resourceId,
@@ -62,26 +59,32 @@ export class ShareController {
 
     const normalizedResourceType = this.normalizeResourceType(resourceType);
 
-    await this.permissionService.shareResource({
-      requesterId: userId,
+    const result = await this.shareService.shareWithUsers({
+      actorId: userId,
       resourceId,
       resourceType: normalizedResourceType,
-      resourceName,
       targetUserIds,
       role,
       expiresAt: expiresAt ? new Date(expiresAt) : undefined,
+      notifyUsers: true,
+      resourceName,
     });
 
     return ResponseHelper.ok<ShareResourceResponse>(res, {
-      message: "Resource shared successfully",
+      message: `Resource shared with ${result.successCount} user(s)`,
     });
   }
 
   async getResourcePermissions(req: Request, res: Response) {
+    if (!req.user) {
+      throw new AppError(StatusCodes.UNAUTHORIZED, "User not authenticated");
+    }
+
     const { resourceId } = req.params;
     const resourceType = this.normalizeResourceType(req.query.resourceType);
 
-    const permissions = await this.permissionService.getResourcePermissions(
+    const permissions = await this.shareService.getResourcePermissions(
+      req.user.id,
       resourceId,
       resourceType,
     );
@@ -98,8 +101,8 @@ export class ShareController {
     const { resourceId, targetUserId } = req.params;
     const resourceType = this.normalizeResourceType(req.query.resourceType);
 
-    await this.permissionService.removePermission({
-      requesterId: userId,
+    await this.shareService.unshareWithUser({
+      actorId: userId,
       resourceId,
       resourceType,
       targetUserId,
@@ -114,14 +117,15 @@ export class ShareController {
     if (!req.user) {
       throw new AppError(StatusCodes.UNAUTHORIZED, "User not authenticated");
     }
+
     const userId = req.user.id;
     const { resourceId, targetUserId } = req.params;
     const { resourceType, newRole } = req.body;
 
     const normalizedResourceType = this.normalizeResourceType(resourceType);
 
-    await this.permissionService.changePermission({
-      requesterId: userId,
+    await this.shareService.updateUserShareRole({
+      actorId: userId,
       resourceId,
       resourceType: normalizedResourceType,
       targetUserId,
@@ -133,38 +137,130 @@ export class ShareController {
     });
   }
 
-  async updateLinkShare(req: Request, res: Response) {
+  async createShareLink(req: Request, res: Response) {
     if (!req.user) {
       throw new AppError(StatusCodes.UNAUTHORIZED, "User not authenticated");
     }
 
-    const userId = req.user.id;
     const { resourceId } = req.params;
-    const { resourceType, linkShareConfig } = req.body;
+    const { resourceType, options } = req.body;
 
     const normalizedResourceType = this.normalizeResourceType(resourceType);
 
-    const result = await this.permissionService.updateLinkShare({
-      userId,
+    const shareLink = await this.shareService.createShareLink({
+      actorId: req.user.id,
       resourceId,
       resourceType: normalizedResourceType,
-      linkShareConfig,
+      options,
     });
 
-    return ResponseHelper.ok<UpdateLinkShareResponse>(res, result);
+    return ResponseHelper.created(res, {
+      shareLink: {
+        id: shareLink._id.toString(),
+        token: shareLink.token,
+        role: shareLink.policy.role,
+        requireLogin: shareLink.policy.requireLogin,
+        allowDownload: shareLink.policy.allowDownload,
+        expiresAt: shareLink.policy.expiresAt,
+        maxAccessCount: shareLink.policy.maxAccessCount,
+        createdAt: shareLink.createdAt,
+      },
+    });
+  }
+
+  async listShareLinks(req: Request, res: Response) {
+    if (!req.user) {
+      throw new AppError(StatusCodes.UNAUTHORIZED, "User not authenticated");
+    }
+
+    const { resourceId } = req.params;
+    const resourceType = this.normalizeResourceType(req.query.resourceType);
+
+    const links = await this.shareService.listShareLinks(
+      req.user.id,
+      resourceId,
+      resourceType,
+    );
+
+    return ResponseHelper.ok(res, { shareLinks: links });
+  }
+
+  async updateShareLink(req: Request, res: Response) {
+    if (!req.user) {
+      throw new AppError(StatusCodes.UNAUTHORIZED, "User not authenticated");
+    }
+
+    const { linkId } = req.params;
+    const { options } = req.body;
+
+    const updatedLink = await this.shareService.updateShareLink({
+      actorId: req.user.id,
+      linkId,
+      options,
+    });
+
+    return ResponseHelper.ok(res, {
+      shareLink: {
+        id: updatedLink._id.toString(),
+        token: updatedLink.token,
+        role: updatedLink.policy.role,
+        requireLogin: updatedLink.policy.requireLogin,
+        allowDownload: updatedLink.policy.allowDownload,
+        expiresAt: updatedLink.policy.expiresAt,
+        maxAccessCount: updatedLink.policy.maxAccessCount,
+      },
+    });
+  }
+
+  async revokeShareLink(req: Request, res: Response) {
+    if (!req.user) {
+      throw new AppError(StatusCodes.UNAUTHORIZED, "User not authenticated");
+    }
+
+    const { linkId } = req.params;
+
+    await this.shareService.revokeShareLink({
+      actorId: req.user.id,
+      linkId,
+    });
+
+    return ResponseHelper.ok(res, {
+      message: "Share link revoked successfully",
+    });
+  }
+
+  async rotateShareLinkToken(req: Request, res: Response) {
+    if (!req.user) {
+      throw new AppError(StatusCodes.UNAUTHORIZED, "User not authenticated");
+    }
+
+    const { linkId } = req.params;
+
+    const updatedLink = await this.shareService.rotateShareLinkToken(
+      req.user.id,
+      linkId,
+    );
+
+    return ResponseHelper.ok(res, {
+      shareLink: {
+        id: updatedLink._id.toString(),
+        token: updatedLink.token,
+      },
+    });
   }
 
   async listSharedWithMe(req: Request, res: Response) {
     if (!req.user) {
       throw new AppError(StatusCodes.UNAUTHORIZED, "User not authenticated");
     }
+
     const userId = req.user.id;
     const { page = "1", limit = "20", resourceType } = req.query;
 
     const pageNum = parseInt(page as string, 10);
     const limitNum = parseInt(limit as string, 10);
 
-    const result = await this.permissionService.listSharedWithMe({
+    const result = await this.shareService.listSharedWithMe({
       userId,
       page: pageNum,
       limit: limitNum,
@@ -188,87 +284,32 @@ export class ShareController {
 
   async getSharedByToken(req: Request, res: Response) {
     const { token, resourceType } = req.params;
+    const { password } = req.query;
 
     const normalizedResourceType = this.normalizeResourceType(resourceType);
 
-    const result = await this.permissionService.getResourceByShareToken(
+    const result = await this.shareService.getResourceByShareToken(
       token,
       normalizedResourceType,
+      password as string | undefined,
     );
+
+    // 记录访问
+    await this.shareService.recordShareLinkAccess(token);
 
     return ResponseHelper.ok(res, result);
   }
 
-  // Helper method to validate share token and get file
-  private async validateShareTokenAndGetFile(token: string) {
-    const file = await File.findOne({ "linkShare.token": token })
-      .select("+key name linkShare mimeType size originalName")
-      .lean();
-
-    if (!file) {
-      throw new AppError(
-        StatusCodes.NOT_FOUND,
-        "Shared file not found or link has expired",
-      );
-    }
-
-    const linkShare = file.linkShare;
-    if (!linkShare || !linkShare.enableLinkSharing) {
-      throw new AppError(
-        StatusCodes.FORBIDDEN,
-        "Link sharing is disabled for this file",
-      );
-    }
-
-    if (linkShare.expiresAt && new Date() > linkShare.expiresAt) {
-      throw new AppError(StatusCodes.FORBIDDEN, "This share link has expired");
-    }
-
-    if (linkShare.scope === "none") {
-      throw new AppError(StatusCodes.FORBIDDEN, "Link sharing is restricted");
-    }
-
-    return file;
-  }
-
-  // Helper method to validate share token and get folder
-  private async validateShareTokenAndGetFolder(token: string) {
-    const folder = await Folder.findOne({ "linkShare.token": token })
-      .select("name linkShare user ancestors")
-      .lean();
-
-    if (!folder) {
-      throw new AppError(
-        StatusCodes.NOT_FOUND,
-        "Shared folder not found or link has expired",
-      );
-    }
-
-    const linkShare = folder.linkShare;
-    if (!linkShare || !linkShare.enableLinkSharing) {
-      throw new AppError(
-        StatusCodes.FORBIDDEN,
-        "Link sharing is disabled for this folder",
-      );
-    }
-
-    if (linkShare.expiresAt && new Date() > linkShare.expiresAt) {
-      throw new AppError(StatusCodes.FORBIDDEN, "This share link has expired");
-    }
-
-    if (linkShare.scope === "none") {
-      throw new AppError(StatusCodes.FORBIDDEN, "Link sharing is restricted");
-    }
-
-    return folder;
-  }
-
   async downloadSharedFile(req: Request, res: Response) {
     const { token } = req.params;
-    const file = await this.validateShareTokenAndGetFile(token);
+    const { password } = req.query;
 
-    // Check if download is allowed
-    if (!file.linkShare?.allowDownload) {
+    const file = await this.shareService.getSharedFileForDownload(
+      token,
+      password as string,
+    );
+
+    if (!file.allowDownload) {
       throw new AppError(
         StatusCodes.FORBIDDEN,
         "Download is not allowed for this shared file",
@@ -283,7 +324,7 @@ export class ShareController {
     );
 
     logger.info(
-      { token, fileId: file._id },
+      { token, fileId: file.fileId },
       "Generated shared file download URL",
     );
 
@@ -298,9 +339,14 @@ export class ShareController {
 
   async previewSharedFile(req: Request, res: Response) {
     const { token } = req.params;
-    const file = await this.validateShareTokenAndGetFile(token);
+    const { password } = req.query;
 
-    // Avoid proxying very large files (50MB limit)
+    const file = await this.shareService.getSharedFileForDownload(
+      token,
+      password as string,
+    );
+
+    // 避免代理过大文件（50MB 限制）
     const MAX_PREVIEW_SIZE = 50 * 1024 * 1024;
     if (file.size > MAX_PREVIEW_SIZE) {
       throw new AppError(
@@ -336,7 +382,12 @@ export class ShareController {
 
   async getSharedFilePreviewUrl(req: Request, res: Response) {
     const { token } = req.params;
-    const file = await this.validateShareTokenAndGetFile(token);
+    const { password } = req.query;
+
+    const file = await this.shareService.getSharedFileForDownload(
+      token,
+      password as string,
+    );
 
     const presignedUrl = await StorageService.getDownloadUrl(
       BUCKETS.FILES,
@@ -346,7 +397,7 @@ export class ShareController {
     );
 
     logger.info(
-      { token, fileId: file._id },
+      { token, fileId: file.fileId },
       "Generated shared file preview URL",
     );
 
@@ -361,142 +412,62 @@ export class ShareController {
 
   async getSharedFolderContent(req: Request, res: Response) {
     const { token } = req.params;
-    const { subfolderId } = req.query;
-    const folder = await this.validateShareTokenAndGetFolder(token);
+    const { subfolderId, password } = req.query;
 
-    // Determine which folder to list - the shared folder or a subfolder
-    let targetFolderId = folder._id;
+    const content = await this.shareService.getSharedFolderContent(
+      token,
+      subfolderId as string | undefined,
+      password as string | undefined,
+    );
 
-    if (subfolderId && subfolderId !== "root") {
-      // Verify the subfolder is within the shared folder hierarchy
-      const subfolderDoc = await Folder.findById(subfolderId)
-        .select("ancestors")
-        .lean();
-
-      if (!subfolderDoc) {
-        throw new AppError(StatusCodes.NOT_FOUND, "Subfolder not found");
-      }
-
-      // Check if shared folder is in the subfolder's ancestors
-      const isInSharedFolder = subfolderDoc.ancestors.some(
-        (ancestorId) => ancestorId.toString() === folder._id.toString(),
-      );
-
-      if (!isInSharedFolder && subfolderId !== folder._id.toString()) {
-        throw new AppError(
-          StatusCodes.FORBIDDEN,
-          "Access denied to this subfolder",
-        );
-      }
-
-      targetFolderId = subfolderDoc._id;
-    }
-
-    // Fetch folder content
-    const [currentFolder, folders, files] = await Promise.all([
-      Folder.findById(targetFolderId).select("name color").lean(),
-      Folder.find({
-        folder: targetFolderId,
-        isTrashed: false,
-      })
-        .select("name color updatedAt")
-        .lean(),
-      File.find({
-        folder: targetFolderId,
-        isTrashed: false,
-      })
-        .select("name mimeType size extension originalName updatedAt")
-        .lean(),
-    ]);
-
-    return ResponseHelper.ok(res, {
-      currentFolder: currentFolder
-        ? {
-            id: currentFolder._id.toString(),
-            name: currentFolder.name,
-            color: currentFolder.color,
-          }
-        : null,
-      folders: folders.map((f) => ({
-        id: f._id.toString(),
-        name: f.name,
-        color: f.color,
-        type: "folder",
-        updatedAt: f.updatedAt,
-      })),
-      files: files.map((f) => ({
-        id: f._id.toString(),
-        name: f.name,
-        mimeType: f.mimeType,
-        size: f.size,
-        extension: f.extension,
-        originalName: f.originalName,
-        type: "file",
-        updatedAt: f.updatedAt,
-      })),
-      shareToken: token,
-    });
+    return ResponseHelper.ok(res, content);
   }
 
   async getSharedFolderPath(req: Request, res: Response) {
     const { token, folderId } = req.params;
-    const sharedFolder = await this.validateShareTokenAndGetFolder(token);
+    const { password } = req.query;
 
-    // If requesting path for the shared folder itself
-    if (folderId === sharedFolder._id.toString()) {
-      return ResponseHelper.ok(res, [
-        {
-          id: sharedFolder._id.toString(),
-          name: sharedFolder.name,
-        },
-      ]);
-    }
-
-    // Get the target folder
-    const targetFolder = await Folder.findById(folderId)
-      .select("name ancestors")
-      .lean();
-
-    if (!targetFolder) {
-      throw new AppError(StatusCodes.NOT_FOUND, "Folder not found");
-    }
-
-    // Verify target is within shared folder
-    const isInSharedFolder = targetFolder.ancestors.some(
-      (ancestorId) => ancestorId.toString() === sharedFolder._id.toString(),
+    const path = await this.shareService.getSharedFolderPath(
+      token,
+      folderId,
+      password as string | undefined,
     );
-
-    if (!isInSharedFolder) {
-      throw new AppError(StatusCodes.FORBIDDEN, "Access denied to this folder");
-    }
-
-    // Build path starting from shared folder
-    const sharedFolderIndex = targetFolder.ancestors.findIndex(
-      (id) => id.toString() === sharedFolder._id.toString(),
-    );
-
-    const relevantAncestors = targetFolder.ancestors.slice(sharedFolderIndex);
-    const ancestorFolders = await Folder.find({
-      _id: { $in: relevantAncestors },
-    })
-      .select("name")
-      .lean();
-
-    const ancestorMap = new Map(
-      ancestorFolders.map((f) => [f._id.toString(), f.name]),
-    );
-
-    const path = [
-      ...relevantAncestors.map((id) => ({
-        id: id.toString(),
-        name: ancestorMap.get(id.toString()) || "Unknown",
-      })),
-      {
-        id: targetFolder._id.toString(),
-        name: targetFolder.name,
-      },
-    ];
 
     return ResponseHelper.ok(res, path);
+  }
+
+  async saveSharedResource(req: Request, res: Response) {
+    if (!req.user) {
+      throw new AppError(
+        StatusCodes.UNAUTHORIZED,
+        "Login required to save shared resource",
+      );
+    }
+
+    const { token, resourceType } = req.params;
+    const { targetFolderId, password } = req.body;
+
+    const normalizedResourceType = this.normalizeResourceType(resourceType);
+
+    // 首先获取资源信息（包含密码验证）
+    const resourceInfo = await this.shareService.getResourceByShareToken(
+      token,
+      normalizedResourceType,
+      password,
+    );
+
+    const result = await this.shareService.saveSharedResource({
+      userId: req.user.id,
+      resourceId: resourceInfo.resourceId,
+      resourceType: normalizedResourceType,
+      targetFolderId: targetFolderId || "root",
+      shareLinkToken: token,
+      shareLinkPassword: password,
+    });
+
+    return ResponseHelper.created(res, {
+      message: "Resource saved successfully",
+      shortcut: result,
+    });
   }
 }

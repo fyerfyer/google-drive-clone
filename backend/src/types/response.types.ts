@@ -1,7 +1,6 @@
 import { IUserPublic } from "../services/user.service";
 import { IFilePublic } from "../services/file.service";
 import { IFolderPublic, IFolderContent } from "../services/folder.service";
-import { ILinkShareConfig } from "../models/LinkShareConfig.schema";
 import { AccessRole } from "./model.types";
 import { ListSharedWithMeResponse } from "./permission.types";
 
@@ -95,6 +94,9 @@ export interface ShareResourceResponse {
 export interface ResourcePermission {
   resourceId: string;
   userId: string;
+  userName?: string;
+  userEmail?: string;
+  userAvatar?: string;
   role: AccessRole;
   isInherited: boolean;
   inheritedFrom?: {
@@ -105,25 +107,31 @@ export interface ResourcePermission {
 
 export interface ResourcePermissionsResponse {
   owner: {
+    id?: string;
     name: string;
     email: string;
     avatar?: string;
   } | null;
   permissions: ResourcePermission[];
-  linkShare: ILinkShareConfig;
+  shareLinks?: Array<{
+    id: string;
+    token: string;
+    role: AccessRole;
+    requireLogin: boolean;
+    allowDownload: boolean;
+    expiresAt?: Date;
+    maxAccessCount?: number;
+    accessCount: number;
+    hasPassword: boolean;
+    createdAt: Date;
+  }>;
 }
-
 export interface RemovePermissionResponse {
   message: string;
 }
 
 export interface ChangePermissionResponse {
   message: string;
-}
-
-export interface UpdateLinkShareResponse {
-  token: string | null;
-  linkShareConfig: ILinkShareConfig;
 }
 
 export interface SharedWithMeResponse extends ListSharedWithMeResponse {}

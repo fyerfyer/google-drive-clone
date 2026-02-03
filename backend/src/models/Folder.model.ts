@@ -1,8 +1,5 @@
 import mongoose, { Schema, Document, HydratedDocument } from "mongoose";
-import {
-  ILinkShareConfig,
-  linkShareConfigSchema,
-} from "./LinkShareConfig.schema";
+import { RESOURCE_TYPES, ResourceType } from "../types/model.types";
 
 export interface IFolder extends Document {
   name: string;
@@ -19,8 +16,12 @@ export interface IFolder extends Document {
   // 用于自动清理
   trashedAt?: Date;
 
-  // 权限管理
-  linkShare: ILinkShareConfig;
+  // Share 快捷方式相关字段
+  isShortcut?: boolean;
+  shortcutTarget?: {
+    targetId: mongoose.Types.ObjectId;
+    targetType: ResourceType;
+  };
 
   createdAt: Date;
   updatedAt: Date;
@@ -69,7 +70,21 @@ const folderSchema = new Schema<IFolder>(
 
     trashedAt: { type: Date, default: null },
 
-    linkShare: linkShareConfigSchema,
+    isShortcut: { type: Boolean, required: false, default: false },
+    shortcutTarget: {
+      type: {
+        targetId: {
+          type: Schema.Types.ObjectId,
+          required: true,
+        },
+        targetType: {
+          type: String,
+          enum: Object.values(RESOURCE_TYPES),
+          required: true,
+        },
+      },
+      required: false,
+    },
   },
   {
     timestamps: true,
@@ -83,13 +98,13 @@ const folderSchema = new Schema<IFolder>(
         return ret;
       },
     },
-  }
+  },
 );
 
 // 唯一性约束，注意回收站不满足
 folderSchema.index(
   { user: 1, parent: 1, name: 1 },
-  { unique: true, partialFilterExpression: { isTrashed: false } }
+  { unique: true, partialFilterExpression: { isTrashed: false } },
 );
 
 // 查询优化：子文件夹

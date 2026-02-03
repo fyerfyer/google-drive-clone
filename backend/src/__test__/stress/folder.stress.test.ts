@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from "uuid";
 import { FolderService } from "../../services/folder.service";
 import { FileService } from "../../services/file.service";
+import { PermissionService } from "../../services/permission.service";
 import { StorageService } from "../../services/storage.service";
 import { BUCKETS } from "../../config/s3";
 import { performance } from "perf_hooks";
@@ -11,7 +12,7 @@ import mongoose from "mongoose";
 
 describe("Folder Service Stress Tests", () => {
   const folderService = new FolderService();
-  const fileService = new FileService();
+  const fileService = new FileService(new PermissionService());
   let testUserId: string;
   let rootFolderId: string;
 
@@ -81,7 +82,7 @@ describe("Folder Service Stress Tests", () => {
 
   function calculateMetrics(
     durations: number[],
-    errors: Error[]
+    errors: Error[],
   ): StressTestMetrics {
     const sortedDurations = [...durations].sort((a, b) => a - b);
     const totalDuration = durations.reduce((sum, d) => sum + d, 0);
@@ -126,10 +127,10 @@ describe("Folder Service Stress Tests", () => {
     console.log("=".repeat(80));
     console.log(`Total Operations:    ${metrics.totalOperations}`);
     console.log(
-      `Successful:          ${metrics.successCount} (${((metrics.successCount / metrics.totalOperations) * 100).toFixed(2)}%)`
+      `Successful:          ${metrics.successCount} (${((metrics.successCount / metrics.totalOperations) * 100).toFixed(2)}%)`,
     );
     console.log(
-      `Failed:              ${metrics.failureCount} (${((metrics.failureCount / metrics.totalOperations) * 100).toFixed(2)}%)`
+      `Failed:              ${metrics.failureCount} (${((metrics.failureCount / metrics.totalOperations) * 100).toFixed(2)}%)`,
     );
     console.log(`Total Duration:      ${metrics.totalDuration.toFixed(2)}ms`);
     console.log(`\nLatency Statistics:`);
@@ -140,7 +141,7 @@ describe("Folder Service Stress Tests", () => {
     console.log(`  P95:               ${metrics.p95Latency.toFixed(2)}ms`);
     console.log(`  P99:               ${metrics.p99Latency.toFixed(2)}ms`);
     console.log(
-      `\nThroughput:          ${metrics.throughput.toFixed(2)} ops/sec`
+      `\nThroughput:          ${metrics.throughput.toFixed(2)} ops/sec`,
     );
 
     if (metrics.errors.length > 0) {
@@ -154,7 +155,7 @@ describe("Folder Service Stress Tests", () => {
 
   async function runConcurrentOperations<T>(
     operations: Array<() => Promise<T>>,
-    concurrency: number
+    concurrency: number,
   ): Promise<{ results: T[]; durations: number[]; errors: Error[] }> {
     const results: T[] = [];
     const durations: number[] = [];
@@ -221,7 +222,7 @@ describe("Folder Service Stress Tests", () => {
       // Delete from MinIO
       const deleteOps = files.map(
         (file) => () =>
-          StorageService.deleteObject(BUCKETS.FILES, file.key).catch(() => {})
+          StorageService.deleteObject(BUCKETS.FILES, file.key).catch(() => {}),
       );
       await runConcurrentOperations(deleteOps, 20);
 
@@ -283,7 +284,7 @@ describe("Folder Service Stress Tests", () => {
 
         const { results, durations, errors } = await runConcurrentOperations(
           operations,
-          config.concurrent
+          config.concurrent,
         );
 
         const metrics = calculateMetrics(durations, errors);
@@ -323,7 +324,7 @@ describe("Folder Service Stress Tests", () => {
 
         const { results, durations, errors } = await runConcurrentOperations(
           operations,
-          config.concurrent
+          config.concurrent,
         );
 
         const metrics = calculateMetrics(durations, errors);
@@ -363,7 +364,7 @@ describe("Folder Service Stress Tests", () => {
 
         const { results, durations, errors } = await runConcurrentOperations(
           operations,
-          config.concurrent
+          config.concurrent,
         );
 
         const metrics = calculateMetrics(durations, errors);
@@ -427,7 +428,7 @@ describe("Folder Service Stress Tests", () => {
       await Promise.all(
         testFolders
           .slice(0, 10)
-          .map((id) => folderService.starFolder(id, testUserId, true))
+          .map((id) => folderService.starFolder(id, testUserId, true)),
       );
     }, 60000);
 
@@ -443,7 +444,7 @@ describe("Folder Service Stress Tests", () => {
 
       const { durations, errors } = await runConcurrentOperations(
         operations,
-        config.concurrent
+        config.concurrent,
       );
 
       const metrics = calculateMetrics(durations, errors);
@@ -465,7 +466,7 @@ describe("Folder Service Stress Tests", () => {
 
       const { durations, errors } = await runConcurrentOperations(
         operations,
-        config.concurrent
+        config.concurrent,
       );
 
       const metrics = calculateMetrics(durations, errors);
@@ -487,7 +488,7 @@ describe("Folder Service Stress Tests", () => {
 
       const { durations, errors } = await runConcurrentOperations(
         operations,
-        config.concurrent
+        config.concurrent,
       );
 
       const metrics = calculateMetrics(durations, errors);
@@ -510,7 +511,7 @@ describe("Folder Service Stress Tests", () => {
 
       const { durations, errors } = await runConcurrentOperations(
         operations,
-        config.concurrent
+        config.concurrent,
       );
 
       const metrics = calculateMetrics(durations, errors);
@@ -582,7 +583,7 @@ describe("Folder Service Stress Tests", () => {
 
       const { durations, errors } = await runConcurrentOperations(
         operations,
-        config.concurrent
+        config.concurrent,
       );
 
       const metrics = calculateMetrics(durations, errors);
@@ -602,7 +603,7 @@ describe("Folder Service Stress Tests", () => {
           await folderService.renameFolder(
             folderId,
             testUserId,
-            `Renamed-${i}`
+            `Renamed-${i}`,
           );
           return "renameFolder";
         };
@@ -610,7 +611,7 @@ describe("Folder Service Stress Tests", () => {
 
       const { durations, errors } = await runConcurrentOperations(
         operations,
-        config.concurrent
+        config.concurrent,
       );
 
       const metrics = calculateMetrics(durations, errors);
@@ -638,7 +639,7 @@ describe("Folder Service Stress Tests", () => {
 
       const { results: trashFolderIds } = await runConcurrentOperations(
         trashOps,
-        20
+        20,
       );
 
       // Now trash them concurrently
@@ -651,7 +652,7 @@ describe("Folder Service Stress Tests", () => {
 
       const { durations, errors } = await runConcurrentOperations(
         operations,
-        config.concurrent
+        config.concurrent,
       );
 
       const metrics = calculateMetrics(durations, errors);
@@ -680,7 +681,7 @@ describe("Folder Service Stress Tests", () => {
 
       const { results: restoreFolderIds } = await runConcurrentOperations(
         createOps,
-        20
+        20,
       );
 
       // Small delay to ensure all trash operations are committed
@@ -696,7 +697,7 @@ describe("Folder Service Stress Tests", () => {
 
       const { durations, errors } = await runConcurrentOperations(
         operations,
-        config.concurrent
+        config.concurrent,
       );
 
       const metrics = calculateMetrics(durations, errors);
@@ -748,8 +749,8 @@ describe("Folder Service Stress Tests", () => {
               userId: testUserId,
               name: `Source ${i}`,
               parentId: rootFolderId,
-            })
-          )
+            }),
+          ),
         ),
         Promise.all(
           Array.from({ length: 10 }, (_, i) =>
@@ -757,8 +758,8 @@ describe("Folder Service Stress Tests", () => {
               userId: testUserId,
               name: `Destination ${i}`,
               parentId: rootFolderId,
-            })
-          )
+            }),
+          ),
         ),
       ]);
 
@@ -776,7 +777,7 @@ describe("Folder Service Stress Tests", () => {
 
       const { durations, errors } = await runConcurrentOperations(
         operations,
-        config.concurrent
+        config.concurrent,
       );
 
       const metrics = calculateMetrics(durations, errors);
@@ -808,7 +809,7 @@ describe("Folder Service Stress Tests", () => {
           }
 
           return { rootId: folderIds[0], allIds: folderIds };
-        })
+        }),
       );
 
       // Create destination folders
@@ -818,8 +819,8 @@ describe("Folder Service Stress Tests", () => {
             userId: testUserId,
             name: `Move-Dest ${i}`,
             parentId: rootFolderId,
-          })
-        )
+          }),
+        ),
       );
 
       // Move root folders of nested structures
@@ -837,7 +838,7 @@ describe("Folder Service Stress Tests", () => {
 
       const { durations, errors } = await runConcurrentOperations(
         operations,
-        config.concurrent
+        config.concurrent,
       );
 
       const metrics = calculateMetrics(durations, errors);
@@ -898,8 +899,8 @@ describe("Folder Service Stress Tests", () => {
                 userId: testUserId,
                 name: `Subfolder ${i}-${j}`,
                 parentId: parentFolder.id,
-              })
-            )
+              }),
+            ),
           );
 
           // Create files
@@ -913,7 +914,7 @@ describe("Folder Service Stress Tests", () => {
                 key,
                 content,
                 content.length,
-                "text/plain"
+                "text/plain",
               );
 
               return await fileService.createFileRecord({
@@ -924,7 +925,7 @@ describe("Folder Service Stress Tests", () => {
                 mimeType: "text/plain",
                 originalName: `file-${i}-${j}.txt`,
               });
-            })
+            }),
           );
 
           return parentFolder.id;
@@ -933,7 +934,7 @@ describe("Folder Service Stress Tests", () => {
 
       const { results: contentFolderIds } = await runConcurrentOperations(
         createOps,
-        5
+        5,
       );
 
       // Now test loading folder content
@@ -946,7 +947,7 @@ describe("Folder Service Stress Tests", () => {
 
       const { durations, errors } = await runConcurrentOperations(
         operations,
-        config.concurrent
+        config.concurrent,
       );
 
       const metrics = calculateMetrics(durations, errors);
@@ -1007,8 +1008,8 @@ describe("Folder Service Stress Tests", () => {
                 userId: testUserId,
                 name: `Delete Sub ${i}-${j}`,
                 parentId: parentFolder.id,
-              })
-            )
+              }),
+            ),
           );
 
           // Create files
@@ -1022,7 +1023,7 @@ describe("Folder Service Stress Tests", () => {
                 key,
                 content,
                 content.length,
-                "text/plain"
+                "text/plain",
               );
 
               return await fileService.createFileRecord({
@@ -1033,7 +1034,7 @@ describe("Folder Service Stress Tests", () => {
                 mimeType: "text/plain",
                 originalName: `delete-${i}-${j}.txt`,
               });
-            })
+            }),
           );
 
           // Trash the folder first
@@ -1044,7 +1045,7 @@ describe("Folder Service Stress Tests", () => {
 
       const { results: deleteFolderIds } = await runConcurrentOperations(
         deleteOps,
-        10
+        10,
       );
 
       // Small delay to ensure all trash operations are committed
@@ -1053,12 +1054,12 @@ describe("Folder Service Stress Tests", () => {
       // Now delete permanently (sequential due to MongoDB transactions)
       const operations = deleteFolderIds.map(
         (folderId) => () =>
-          folderService.deleteFolderPermanent(folderId, testUserId)
+          folderService.deleteFolderPermanent(folderId, testUserId),
       );
 
       const { durations, errors } = await runConcurrentOperations(
         operations,
-        config.concurrent
+        config.concurrent,
       );
 
       const metrics = calculateMetrics(durations, errors);
@@ -1115,7 +1116,7 @@ describe("Folder Service Stress Tests", () => {
 
       const { results: mixedTestFolderIds } = await runConcurrentOperations(
         createOps,
-        10
+        10,
       );
 
       // Mix different operations
@@ -1144,7 +1145,7 @@ describe("Folder Service Stress Tests", () => {
               await folderService.renameFolder(
                 folderId,
                 testUserId,
-                `Mixed-Renamed-${i}`
+                `Mixed-Renamed-${i}`,
               );
               return "renameFolder";
             };
@@ -1168,7 +1169,7 @@ describe("Folder Service Stress Tests", () => {
 
       const { durations, errors } = await runConcurrentOperations(
         operations,
-        config.concurrent
+        config.concurrent,
       );
 
       const metrics = calculateMetrics(durations, errors);

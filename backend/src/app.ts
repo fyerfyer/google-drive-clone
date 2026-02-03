@@ -23,6 +23,7 @@ import { createBatchRouter } from "./routes/batch.routes";
 import { BatchService } from "./services/batch.service";
 import { BatchController } from "./controllers/batch.controller";
 import { PermissionService } from "./services/permission.service";
+import { ShareService } from "./services/share.service";
 import { ShareController } from "./controllers/share.controller";
 import { createShareRouter } from "./routes/share.route";
 
@@ -31,15 +32,16 @@ const authService = new AuthService(userService);
 const authController = new AuthController(authService);
 const userController = new UserController(userService);
 const uploadController = new UploadController();
+const permissionService = new PermissionService();
 
-const fileService = new FileService();
+const fileService = new FileService(permissionService);
 const fileController = new FileController(fileService);
 const folderService = new FolderService();
 const folderController = new FolderController(folderService);
 const batchService = new BatchService();
 const batchController = new BatchController(batchService);
-const permissionService = new PermissionService();
-const shareController = new ShareController(permissionService);
+const shareService = new ShareService(permissionService);
+const shareController = new ShareController(shareService);
 
 const app: Application = express();
 const bodyLimit = "10mb";

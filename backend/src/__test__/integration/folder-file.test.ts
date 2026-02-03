@@ -2,6 +2,7 @@ import Folder from "../../models/Folder.model";
 import File from "../../models/File.model";
 import User, { IUser } from "../../models/User.model";
 import { FileService } from "../../services/file.service";
+import { PermissionService } from "../../services/permission.service";
 import { FolderService } from "../../services/folder.service";
 import { BUCKETS } from "../../config/s3";
 import { countObjectsInBucket, uploadTestFile } from "../utils/file.util";
@@ -13,7 +14,7 @@ describe("Folder-File Integration Test", () => {
 
   beforeEach(async () => {
     folderService = new FolderService();
-    fileService = new FileService();
+    fileService = new FileService(new PermissionService());
 
     mockUser = await User.create({
       name: "testuser",
@@ -57,7 +58,7 @@ describe("Folder-File Integration Test", () => {
       String(rootFolder.id),
       "file1.txt",
       mockContent1,
-      "hash1"
+      "hash1",
     );
 
     const mockContent2 = "content for file 2";
@@ -67,7 +68,7 @@ describe("Folder-File Integration Test", () => {
       String(subFolder1.id),
       "file2.txt",
       mockContent2,
-      "hash2"
+      "hash2",
     );
 
     const mockContent3 = "content for file 3";
@@ -77,7 +78,7 @@ describe("Folder-File Integration Test", () => {
       String(subFolder2.id),
       "file3.txt",
       mockContent3,
-      "hash3"
+      "hash3",
     );
 
     // 测试文件上传
@@ -90,7 +91,7 @@ describe("Folder-File Integration Test", () => {
       String(rootFolder.id),
       "file4.txt",
       mockContent1,
-      "hash1"
+      "hash1",
     );
 
     // 测试 hash 快传 (通过 MinIO 对象数量断言)
@@ -104,7 +105,7 @@ describe("Folder-File Integration Test", () => {
 
     await folderService.trashFolder(
       String(subFolder1.id),
-      String(mockUser._id)
+      String(mockUser._id),
     );
     let subFolder1InDb = await Folder.findById(String(subFolder1.id));
     let subFolder2InDb = await Folder.findById(String(subFolder2.id));
@@ -122,7 +123,7 @@ describe("Folder-File Integration Test", () => {
 
     await folderService.restoreFolder(
       String(subFolder1.id),
-      String(mockUser._id)
+      String(mockUser._id),
     );
     subFolder1InDb = await Folder.findById(String(subFolder1.id));
     subFolder2InDb = await Folder.findById(String(subFolder2.id));
@@ -138,7 +139,7 @@ describe("Folder-File Integration Test", () => {
     await fileService.trashFile(String(file1.id), String(mockUser._id));
     await fileService.deleteFilePermanent(
       String(file1.id),
-      String(mockUser._id)
+      String(mockUser._id),
     );
     file1InDb = await File.findById(String(file1.id));
     expect(file1InDb).toBeNull();
@@ -148,11 +149,11 @@ describe("Folder-File Integration Test", () => {
 
     await folderService.trashFolder(
       String(rootFolder.id),
-      String(mockUser._id)
+      String(mockUser._id),
     );
     await folderService.deleteFolderPermanent(
       String(rootFolder.id),
-      String(mockUser._id)
+      String(mockUser._id),
     );
 
     const allFolders = await Folder.find({});
@@ -190,7 +191,7 @@ describe("Folder-File Integration Test", () => {
       String(subFolder.id),
       "file.txt",
       mockContent,
-      "file-hash"
+      "file-hash",
     );
 
     await folderService.moveFolder({
@@ -223,13 +224,13 @@ describe("Folder-File Integration Test", () => {
       String(folder.id),
       "original.txt",
       mockContent,
-      "file-hash"
+      "file-hash",
     );
 
     await folderService.renameFolder(
       String(folder.id),
       String(mockUser._id),
-      "RenamedFolder"
+      "RenamedFolder",
     );
     const renamedFolder = await Folder.findById(String(folder.id));
     expect(renamedFolder?.name).toBe("RenamedFolder");
@@ -237,7 +238,7 @@ describe("Folder-File Integration Test", () => {
     await fileService.renameFile(
       String(file.id),
       String(mockUser._id),
-      "renamed.txt"
+      "renamed.txt",
     );
     const renamedFile = await File.findById(String(file.id));
     expect(renamedFile?.name).toBe("renamed.txt");
@@ -258,13 +259,13 @@ describe("Folder-File Integration Test", () => {
       String(folder.id),
       "test.txt",
       mockContent,
-      "file-hash"
+      "file-hash",
     );
 
     await folderService.starFolder(
       String(folder.id),
       String(mockUser._id),
-      true
+      true,
     );
     let folderInDb = await Folder.findById(String(folder.id));
     expect(folderInDb?.isStarred).toBe(true);
@@ -276,7 +277,7 @@ describe("Folder-File Integration Test", () => {
     await folderService.starFolder(
       String(folder.id),
       String(mockUser._id),
-      false
+      false,
     );
     folderInDb = await Folder.findById(String(folder.id));
     expect(folderInDb?.isStarred).toBe(false);

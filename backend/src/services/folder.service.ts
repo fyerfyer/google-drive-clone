@@ -8,7 +8,6 @@ import { StorageService } from "./storage.service";
 import { BUCKETS } from "../config/s3";
 import { logger } from "../lib/logger";
 import { IFilePublic } from "./file.service";
-import { LinkAccessStatus } from "../types/model.types";
 
 interface CreateFolderDTO {
   userId: string;
@@ -43,7 +42,6 @@ export interface IFolderPublic {
   isStarred: boolean;
   isTrashed: boolean;
   trashedAt?: Date;
-  linkAccessStatus: LinkAccessStatus;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -76,16 +74,9 @@ export class FolderService {
     };
   }
 
-  private getLinkAccessStatus(folder: IFolder): LinkAccessStatus {
-    if (!folder.linkShare?.enableLinkSharing) {
-      return "none";
-    }
-    return folder.linkShare.role;
-  }
-
   private toFolderPublic(
     folder: IFolder,
-    userBasic: IUserBasic
+    userBasic: IUserBasic,
   ): IFolderPublic {
     return {
       id: folder.id,
@@ -97,17 +88,9 @@ export class FolderService {
       isStarred: folder.isStarred,
       isTrashed: folder.isTrashed,
       trashedAt: folder.trashedAt,
-      linkAccessStatus: this.getLinkAccessStatus(folder),
       createdAt: folder.createdAt,
       updatedAt: folder.updatedAt,
     };
-  }
-
-  private getFileLinkAccessStatus(file: IFile): LinkAccessStatus {
-    if (!file.linkShare?.enableLinkSharing) {
-      return "none";
-    }
-    return file.linkShare.role;
   }
 
   private toFilePublic(file: IFile, userBasic: IUserBasic): IFilePublic {
@@ -123,7 +106,6 @@ export class FolderService {
       isStarred: file.isStarred,
       isTrashed: file.isTrashed,
       trashedAt: file.trashedAt,
-      linkAccessStatus: this.getFileLinkAccessStatus(file),
       createdAt: file.createdAt,
       updatedAt: file.updatedAt,
     };
@@ -172,7 +154,7 @@ export class FolderService {
       await Folder.updateOne(
         { _id: folderObjectId, user: userObjectId },
         { isTrashed: true, trashedAt: new Date() },
-        { session }
+        { session },
       );
 
       // 标记子文件夹
@@ -186,7 +168,7 @@ export class FolderService {
       await Folder.updateMany(
         { _id: { $in: allFoldersIds } },
         { isTrashed: true, trashedAt: new Date() },
-        { session }
+        { session },
       );
 
       // 标记文件夹内的所有文件
@@ -196,7 +178,7 @@ export class FolderService {
           user: userObjectId,
         },
         { isTrashed: true, trashedAt: new Date() },
-        { session }
+        { session },
       );
 
       await session.commitTransaction();
@@ -205,7 +187,7 @@ export class FolderService {
       await session.abortTransaction();
       throw new AppError(
         StatusCodes.INTERNAL_SERVER_ERROR,
-        "Failed to trash folder"
+        "Failed to trash folder",
       );
     } finally {
       session.endSession();
@@ -222,7 +204,7 @@ export class FolderService {
       await Folder.updateOne(
         { _id: folderObjectId, user: userObjectId },
         { isTrashed: false, trashedAt: null },
-        { session }
+        { session },
       );
 
       // 标记子文件夹
@@ -236,7 +218,7 @@ export class FolderService {
       await Folder.updateMany(
         { _id: { $in: allFoldersIds } },
         { isTrashed: false, trashedAt: null },
-        { session }
+        { session },
       );
 
       // 恢复文件夹内的所有文件
@@ -246,19 +228,19 @@ export class FolderService {
           user: userObjectId,
         },
         { isTrashed: false, trashedAt: null },
-        { session }
+        { session },
       );
 
       await session.commitTransaction();
     } catch (error) {
       logger.error(
         { err: error, folderId, userId },
-        "Failed to restore folder"
+        "Failed to restore folder",
       );
       await session.abortTransaction();
       throw new AppError(
         StatusCodes.INTERNAL_SERVER_ERROR,
-        "Failed to restore folder"
+        "Failed to restore folder",
       );
     } finally {
       session.endSession();
@@ -283,7 +265,7 @@ export class FolderService {
       if (!folderToDelete) {
         throw new AppError(
           StatusCodes.NOT_FOUND,
-          "Folder not found or not trashed"
+          "Folder not found or not trashed",
         );
       }
 
@@ -311,7 +293,7 @@ export class FolderService {
           _id: { $in: fileIdsToDelete },
           user: userObjectId,
         },
-        { session }
+        { session },
       );
 
       await Folder.deleteMany(
@@ -319,14 +301,14 @@ export class FolderService {
           _id: { $in: folderIdsToDelete },
           user: userObjectId,
         },
-        { session }
+        { session },
       );
 
       if (totalFileSize > 0) {
         await User.updateOne(
           { _id: userId },
           { $inc: { storageUsage: -totalFileSize } },
-          { session }
+          { session },
         );
       }
 
@@ -334,12 +316,12 @@ export class FolderService {
     } catch (error) {
       logger.error(
         { err: error, folderId, userId },
-        "Failed to delete folder permanently"
+        "Failed to delete folder permanently",
       );
       await session.abortTransaction();
       throw new AppError(
         StatusCodes.INTERNAL_SERVER_ERROR,
-        "Failed to delete folder permanently"
+        "Failed to delete folder permanently",
       );
     } finally {
       session.endSession();
@@ -348,8 +330,8 @@ export class FolderService {
     if (filesToDelete.length > 0) {
       await Promise.all(
         filesToDelete.map((file) =>
-          this.cleanupMinioObject(file.key, file.hash)
-        )
+          this.cleanupMinioObject(file.key, file.hash),
+        ),
       );
     }
   }
@@ -361,7 +343,7 @@ export class FolderService {
     if (count === 0) {
       logger.info(
         { key, hash },
-        "No file references remaining, deleting object from MinIO"
+        "No file references remaining, deleting object from MinIO",
       );
       await StorageService.deleteObject(BUCKETS.FILES, key).catch((err) => {
         logger.error({ err, key }, "Failed to delete object from MinIO");
@@ -369,7 +351,7 @@ export class FolderService {
     } else {
       logger.debug(
         { key, hash, referenceCount: count },
-        "Object still has file references, keeping in MinIO"
+        "Object still has file references, keeping in MinIO",
       );
     }
   }
@@ -407,18 +389,18 @@ export class FolderService {
       if (folderObjectId.equals(destinationObjectId)) {
         throw new AppError(
           StatusCodes.BAD_REQUEST,
-          "Cannot move folder to itself"
+          "Cannot move folder to itself",
         );
       }
 
       // 循环引用检查：不能把自己移到自己的子文件夹
       const isCircular = destinationFolder.ancestors.some((_id) =>
-        _id.equals(folderObjectId)
+        _id.equals(folderObjectId),
       );
       if (isCircular) {
         throw new AppError(
           StatusCodes.BAD_REQUEST,
-          "Cannot move folder into itself or its children"
+          "Cannot move folder into itself or its children",
         );
       }
 
@@ -434,12 +416,12 @@ export class FolderService {
           user: userObjectId,
         },
         { parent: destinationObjectId, ancestors: newAncestors },
-        { session }
+        { session },
       );
 
       logger.debug(
         { folderId, destinationId, newAncestors },
-        "Folder ancestors updated"
+        "Folder ancestors updated",
       );
 
       // 更新所有子目录
@@ -449,7 +431,7 @@ export class FolderService {
       if (sonFolders.length > 0) {
         const bulkOps = sonFolders.map((folder) => {
           const index = folder.ancestors.findIndex((id) =>
-            id.equals(folderObjectId)
+            id.equals(folderObjectId),
           );
           const relatedPath = folder.ancestors.slice(index + 1);
           const updatedAncestors = [
@@ -477,12 +459,12 @@ export class FolderService {
           destinationId: data.destinationId,
           userId: data.userId,
         },
-        "Failed to move folder"
+        "Failed to move folder",
       );
       await session.abortTransaction();
       throw new AppError(
         StatusCodes.INTERNAL_SERVER_ERROR,
-        "Failed to move folder"
+        "Failed to move folder",
       );
     } finally {
       session.endSession();
@@ -503,7 +485,7 @@ export class FolderService {
 
   async getFolderContent(
     folderId: string,
-    userId: string
+    userId: string,
   ): Promise<IFolderContent> {
     const userObjectId = new mongoose.Types.ObjectId(userId);
 
@@ -560,7 +542,7 @@ export class FolderService {
       }).select("name _id");
 
       const ancestorMap = new Map(
-        ancestorDocs.map((doc) => [String(doc._id), doc])
+        ancestorDocs.map((doc) => [String(doc._id), doc]),
       );
 
       breadcrumbs = currentFolder.ancestors
@@ -577,7 +559,7 @@ export class FolderService {
         .filter((item): item is IBreadcrumbItem => item !== null);
     }
 
-    // Add current folder to breadcrumbs if not root
+    // 添加当前文件夹到面包屑导航
     if (currentFolder && !isRoot) {
       breadcrumbs.push({
         id: String(currentFolder._id),
@@ -585,7 +567,7 @@ export class FolderService {
       });
     }
 
-    // For root folder, create a virtual folder object
+    // 为根文件夹创建虚拟文件夹对象
     const currentFolderPublic: IFolderPublic = isRoot
       ? {
           id: "root",
@@ -596,18 +578,17 @@ export class FolderService {
           description: "Root folder",
           isStarred: false,
           isTrashed: false,
-          linkAccessStatus: "none",
           createdAt: new Date(),
           updatedAt: new Date(),
         }
       : this.toFolderPublic(currentFolder!, userBasic);
 
     const foldersPublic: IFolderPublic[] = folders.map((folder) =>
-      this.toFolderPublic(folder, userBasic)
+      this.toFolderPublic(folder, userBasic),
     );
 
     const filesPublic: IFilePublic[] = files.map((file) =>
-      this.toFilePublic(file, userBasic)
+      this.toFilePublic(file, userBasic),
     );
 
     return {
@@ -629,7 +610,7 @@ export class FolderService {
         user: userObjectId,
       },
       { isStarred: star },
-      { new: true }
+      { new: true },
     );
 
     if (!result) {
@@ -670,7 +651,7 @@ export class FolderService {
 
   async getRecentFolders(
     userId: string,
-    limit: number = 20
+    limit: number = 20,
   ): Promise<IFolderPublic[]> {
     const userObjectId = new mongoose.Types.ObjectId(userId);
 
@@ -689,7 +670,7 @@ export class FolderService {
 
   async getFolderPath(
     folderId: string,
-    userId: string
+    userId: string,
   ): Promise<IBreadcrumbItem[]> {
     const userObjectId = new mongoose.Types.ObjectId(userId);
 
@@ -716,7 +697,7 @@ export class FolderService {
       }).select("name _id");
 
       const ancestorMap = new Map(
-        ancestorDocs.map((doc) => [String(doc._id), doc])
+        ancestorDocs.map((doc) => [String(doc._id), doc]),
       );
 
       breadcrumbs = folder.ancestors
@@ -733,7 +714,7 @@ export class FolderService {
         .filter((item): item is IBreadcrumbItem => item !== null);
     }
 
-    // Add current folder to breadcrumbs
+    // 添加当前文件夹到面包屑导航
     breadcrumbs.push({
       id: String(folder._id),
       name: folder.name,

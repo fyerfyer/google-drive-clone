@@ -2,11 +2,7 @@ import { SharedAccess } from "../../models/SharedAccess.model";
 import User, { IUser } from "../../models/User.model";
 import Folder, { IFolder } from "../../models/Folder.model";
 import File from "../../models/File.model";
-import {
-  AccessRole,
-  ResourceType,
-  LinkShareScope,
-} from "../../types/model.types";
+import { AccessRole, ResourceType } from "../../types/model.types";
 import mongoose from "mongoose";
 
 export async function createTestUser(
@@ -73,38 +69,6 @@ export async function createSharedAccess(
     role,
     expiresAt,
   });
-}
-
-export async function setLinkShare(
-  resourceId: string,
-  resourceType: ResourceType,
-  config: {
-    enableLinkSharing: boolean;
-    role: AccessRole;
-    scope: LinkShareScope;
-    password?: string;
-    token?: string;
-    expiresAt?: Date;
-    allowDownload?: boolean;
-  },
-) {
-  let resource;
-  if (resourceType === "Folder") {
-    resource = await Folder.findById(resourceId);
-  } else {
-    resource = await File.findById(resourceId);
-  }
-
-  if (!resource) {
-    throw new Error("Resource not found");
-  }
-
-  resource.linkShare = {
-    ...config,
-    allowDownload: config.allowDownload ?? true,
-  } as any;
-  await resource.save();
-  return resource;
 }
 
 export async function getSharedAccessForResource(

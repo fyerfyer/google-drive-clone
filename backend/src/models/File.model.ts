@@ -1,8 +1,5 @@
 import mongoose, { Schema, Document, HydratedDocument } from "mongoose";
-import {
-  ILinkShareConfig,
-  linkShareConfigSchema,
-} from "./LinkShareConfig.schema";
+import { RESOURCE_TYPES, ResourceType } from "../types/model.types";
 
 export interface IFile extends Document {
   name: string;
@@ -26,8 +23,12 @@ export interface IFile extends Document {
   isTrashed: boolean;
   trashedAt?: Date;
 
-  // 权限管理
-  linkShare: ILinkShareConfig;
+  // Share 快捷方式相关字段
+  isShortcut?: boolean;
+  shortcutTarget?: {
+    targetId: mongoose.Types.ObjectId;
+    targetType: ResourceType;
+  };
 
   createdAt: Date;
   updatedAt: Date;
@@ -73,7 +74,21 @@ const fileSchema = new Schema<IFile>(
     isTrashed: { type: Boolean, required: true, index: true },
     trashedAt: { type: Date, default: null },
 
-    linkShare: linkShareConfigSchema,
+    isShortcut: { type: Boolean, required: false, default: false },
+    shortcutTarget: {
+      type: {
+        targetId: {
+          type: Schema.Types.ObjectId,
+          required: true,
+        },
+        targetType: {
+          type: String,
+          enum: Object.values(RESOURCE_TYPES),
+          required: true,
+        },
+      },
+      required: false,
+    },
   },
   {
     timestamps: true,
@@ -87,13 +102,13 @@ const fileSchema = new Schema<IFile>(
         return ret;
       },
     },
-  }
+  },
 );
 
 // 唯一性约束
 fileSchema.index(
   { user: 1, folder: 1, name: 1 },
-  { unique: true, partialFilterExpression: { isTrashed: false } }
+  { unique: true, partialFilterExpression: { isTrashed: false } },
 );
 
 // 搜索优化

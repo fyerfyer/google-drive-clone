@@ -26,6 +26,7 @@ Thumbs.db
 # IDE
 .vscode/
 .idea/
+.gemini/
 *.swp
 *.swo
 
@@ -35,11 +36,6 @@ backend/src/uploads/*
 
 # Test coverage
 coverage/
-shadcn-docs/
-design-document.md
-.claude/
-.spec-workflow/
 .playwright-mcp/
 self-docs/
-google-drive-prev/
 test-data/
