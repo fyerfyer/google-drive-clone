@@ -734,6 +734,11 @@ export class ShareService {
         throw new AppError(StatusCodes.NOT_FOUND, "Resource not found");
       }
 
+      await ShareLink.updateOne(
+        { _id: shareLink._id, isRevoked: false },
+        { $inc: { accessCount: 1 } },
+      );
+
       return {
         resourceId: shareLink.resourceId.toString(),
         resourceType,

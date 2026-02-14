@@ -79,7 +79,6 @@ export const SharedWithMeView = () => {
   });
 
   // Convert shared resource to IFile format for preview
-  // Note: We only need the minimal fields required by FilePreviewModal
   const convertToIFile = (item: SharedWithMeItem): IFile | null => {
     if (item.resourceType !== "File") return null;
     const resource = item.resource;
@@ -258,12 +257,11 @@ export const SharedWithMeView = () => {
           </Table>
 
           {/* Pagination */}
-          {data.pagination.totalPages > 1 && (
+          {Math.ceil(data.total / limit) > 1 && (
             <div className="flex items-center justify-between">
               <p className="text-sm text-muted-foreground">
                 Showing {(page - 1) * limit + 1} to{" "}
-                {Math.min(page * limit, data.pagination.total)} of{" "}
-                {data.pagination.total} items
+                {Math.min(page * limit, data.total)} of {data.total} items
               </p>
               <div className="flex items-center gap-2">
                 <Button
@@ -278,7 +276,7 @@ export const SharedWithMeView = () => {
                 <Button
                   variant="outline"
                   size="sm"
-                  disabled={page >= data.pagination.totalPages}
+                  disabled={page >= Math.ceil(data.total / limit)}
                   onClick={() => setPage((p) => p + 1)}
                 >
                   Next

@@ -6,11 +6,16 @@ import type {
   RemovePermissionResponse,
   ChangePermissionRequest,
   ChangePermissionResponse,
-  UpdateLinkShareRequest,
-  UpdateLinkShareResponse,
+  CreateShareLinkRequest,
+  CreateShareLinkResponse,
+  UpdateShareLinkRequest,
+  UpdateShareLinkResponse,
   SharedWithMeResponse,
   ListSharedWithMeParams,
   ResourceType,
+  SaveSharedResourceRequest,
+  SaveSharedResourceResponse,
+  SharedResourcePublicInfo,
 } from "@/types/share.types";
 
 const SHARE_API_BASE = "/api/share";
@@ -79,20 +84,63 @@ export const shareService = {
   },
 
   /**
-   * 更新资源的链接分享配置
+   * 创建分享链接
    */
-  updateLinkShare: async (
+  createShareLink: async (
     resourceId: string,
-    req: UpdateLinkShareRequest,
-  ): Promise<UpdateLinkShareResponse> => {
-    const response = await api.patch<
-      UpdateLinkShareResponse,
-      UpdateLinkShareRequest
-    >(`${SHARE_API_BASE}/${resourceId}/link`, req);
+    req: CreateShareLinkRequest,
+  ): Promise<CreateShareLinkResponse> => {
+    const response = await api.post<
+      CreateShareLinkResponse,
+      CreateShareLinkRequest
+    >(`${SHARE_API_BASE}/${resourceId}/links`, req);
     if (response.success && response.data) {
       return response.data;
     }
-    throw new Error(response.message || "Failed to update link share settings");
+    throw new Error(response.message || "Failed to create share link");
+  },
+
+  /**
+   * 更新资源的链接分享配置
+   */
+  updateShareLink: async (
+    linkId: string,
+    req: UpdateShareLinkRequest,
+  ): Promise<UpdateShareLinkResponse> => {
+    const response = await api.patch<
+      UpdateShareLinkResponse,
+      UpdateShareLinkRequest
+    >(`${SHARE_API_BASE}/links/${linkId}`, req);
+    if (response.success && response.data) {
+      return response.data;
+    }
+    throw new Error(response.message || "Failed to update share link");
+  },
+
+  /**
+   * 重置分享链接Token
+   */
+  rotateShareLinkToken: async (
+    linkId: string,
+  ): Promise<{ shareLink: { id: string; token: string } }> => {
+    const response = await api.post<
+      { shareLink: { id: string; token: string } },
+      Record<string, never>
+    >(`${SHARE_API_BASE}/links/${linkId}/rotate`, {});
+    if (response.success && response.data) {
+      return response.data;
+    }
+    throw new Error(response.message || "Failed to rotate share link token");
+  },
+
+  /**
+   * 撤销/删除分享链接
+   */
+  revokeShareLink: async (linkId: string): Promise<void> => {
+    const response = await api.delete(`${SHARE_API_BASE}/links/${linkId}`);
+    if (!response.success) {
+      throw new Error(response.message || "Failed to revoke share link");
+    }
   },
 
   /**
@@ -136,22 +184,38 @@ export const shareService = {
   },
 
   /**
+   * 保存共享资源到我的网盘
+   */
+  saveSharedResource: async (
+    token: string,
+    resourceType: ResourceType,
+    req: SaveSharedResourceRequest,
+  ): Promise<SaveSharedResourceResponse> => {
+    const response = await api.post<
+      SaveSharedResourceResponse,
+      SaveSharedResourceRequest
+    >(`${SHARE_API_BASE}/public/${resourceType}/${token}/save`, req);
+
+    if (response.success && response.data) {
+      return response.data;
+    }
+    throw new Error(response.message || "Failed to save shared resource");
+  },
+
+  /**
    * 通过分享链接token获取共享资源信息（公开API，不需要认证）
    */
   getSharedResourceByToken: async (
     token: string,
     resourceType: string,
-  ): Promise<{
-    resourceId: string;
-    resourceType: ResourceType;
-    name: string;
-    role: string;
-    allowDownload: boolean;
-  }> => {
-    // This endpoint doesn't require authentication, so we call it directly
-    const response = await apiClient.get(
-      `${SHARE_API_BASE}/public/${resourceType}/${token}`,
-    );
+    password?: string,
+  ): Promise<SharedResourcePublicInfo> => {
+    let url = `${SHARE_API_BASE}/public/${resourceType}/${token}`;
+    if (password) {
+      url += `?password=${encodeURIComponent(password)}`;
+    }
+
+    const response = await apiClient.get(url);
     if (response.data.success && response.data.data) {
       return response.data.data;
     }
@@ -165,6 +229,7 @@ export const shareService = {
    */
   getSharedFilePreviewUrl: async (
     token: string,
+    password?: string,
   ): Promise<{
     url: string;
     fileName: string;
@@ -172,9 +237,12 @@ export const shareService = {
     size: number;
     expiresIn: number;
   }> => {
-    const response = await apiClient.get(
-      `${SHARE_API_BASE}/public/file/${token}/preview-url`,
-    );
+    let url = `${SHARE_API_BASE}/public/file/${token}/preview-url`;
+    if (password) {
+      url += `?password=${encodeURIComponent(password)}`;
+    }
+
+    const response = await apiClient.get(url);
     if (response.data.success && response.data.data) {
       return response.data.data;
     }
@@ -186,6 +254,7 @@ export const shareService = {
    */
   getSharedFileDownloadInfo: async (
     token: string,
+    password?: string,
   ): Promise<{
     downloadUrl: string;
     fileName: string;
@@ -193,9 +262,12 @@ export const shareService = {
     size: number;
     expiresIn: number;
   }> => {
-    const response = await apiClient.get(
-      `${SHARE_API_BASE}/public/file/${token}/download`,
-    );
+    let url = `${SHARE_API_BASE}/public/file/${token}/download`;
+    if (password) {
+      url += `?password=${encodeURIComponent(password)}`;
+    }
+
+    const response = await apiClient.get(url);
     if (response.data.success && response.data.data) {
       return response.data.data;
     }
@@ -208,13 +280,14 @@ export const shareService = {
   getSharedFolderContent: async (
     token: string,
     subfolderId?: string,
+    password?: string,
   ): Promise<{
     currentFolder: { id: string; name: string; color?: string } | null;
     folders: Array<{
       id: string;
       name: string;
       color?: string;
-      type: string;
+      type: "Folder";
       updatedAt: string;
     }>;
     files: Array<{
@@ -222,15 +295,26 @@ export const shareService = {
       name: string;
       mimeType: string;
       size: number;
-      type: string;
+      extension: string;
+      originalName: string;
+      type: "File";
       updatedAt: string;
     }>;
     shareToken: string;
   }> => {
     let url = `${SHARE_API_BASE}/public/folder/${token}/content`;
+    const params = new URLSearchParams();
     if (subfolderId && subfolderId !== "root") {
-      url += `?subfolderId=${subfolderId}`;
+      params.append("subfolderId", subfolderId);
     }
+    if (password) {
+      params.append("password", password);
+    }
+    const queryString = params.toString();
+    if (queryString) {
+      url += `?${queryString}`;
+    }
+
     const response = await apiClient.get(url);
     if (response.data.success && response.data.data) {
       return response.data.data;
@@ -246,10 +330,14 @@ export const shareService = {
   getSharedFolderPath: async (
     token: string,
     folderId: string,
+    password?: string,
   ): Promise<Array<{ id: string; name: string }>> => {
-    const response = await apiClient.get(
-      `${SHARE_API_BASE}/public/folder/${token}/path/${folderId}`,
-    );
+    let url = `${SHARE_API_BASE}/public/folder/${token}/path/${folderId}`;
+    if (password) {
+      url += `?password=${encodeURIComponent(password)}`;
+    }
+
+    const response = await apiClient.get(url);
     if (response.data.success && response.data.data) {
       return response.data.data;
     }

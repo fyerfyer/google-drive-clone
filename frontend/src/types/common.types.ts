@@ -34,5 +34,6 @@ export type ViewType =
   | "trash"
   | "files"
   | "shared";
+export type ResourceType = "File" | "Folder";
 export type SortField = "name" | "createdAt" | "updatedAt" | "size";
 export type SortOrder = "asc" | "desc";

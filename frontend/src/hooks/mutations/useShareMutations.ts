@@ -5,13 +5,12 @@ import { toast } from "sonner";
 import type {
   ShareResourceRequest,
   ChangePermissionRequest,
-  UpdateLinkShareRequest,
+  CreateShareLinkRequest,
+  UpdateShareLinkRequest,
   ResourceType,
 } from "@/types/share.types";
 
-/**
- * Hook for sharing a resource with users
- */
+// Hook for sharing a resource with users
 export const useShareResource = () => {
   const queryClient = useQueryClient();
 
@@ -33,9 +32,7 @@ export const useShareResource = () => {
   });
 };
 
-/**
- * Hook for removing a user's permission from a resource
- */
+// Hook for removing a user's permission from a resource
 export const useRemovePermission = () => {
   const queryClient = useQueryClient();
 
@@ -63,9 +60,7 @@ export const useRemovePermission = () => {
   });
 };
 
-/**
- * Hook for changing a user's permission role
- */
+// Hook for changing a user's permission role
 export const useChangePermission = () => {
   const queryClient = useQueryClient();
 
@@ -93,10 +88,8 @@ export const useChangePermission = () => {
   });
 };
 
-/**
- * Hook for updating link share settings
- */
-export const useUpdateLinkShare = () => {
+// Hook for creating a share link
+export const useCreateShareLink = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -105,31 +98,92 @@ export const useUpdateLinkShare = () => {
       data,
     }: {
       resourceId: string;
-      data: UpdateLinkShareRequest;
-    }) => shareService.updateLinkShare(resourceId, data),
-    onSuccess: (data, variables) => {
-      if (data.linkShareConfig.enableLinkSharing) {
-        toast.success("Link sharing enabled");
-      } else {
-        toast.success("Link sharing disabled");
-      }
+      data: CreateShareLinkRequest;
+    }) => shareService.createShareLink(resourceId, data),
+    onSuccess: (_data, variables) => {
+      toast.success("Share link created");
       queryClient.invalidateQueries({
         queryKey: queryKeys.share.permissions(variables.resourceId),
       });
     },
     onError: (error) => {
       const message =
-        error instanceof Error
-          ? error.message
-          : "Failed to update link share settings";
+        error instanceof Error ? error.message : "Failed to create share link";
       toast.error(message);
     },
   });
 };
 
-/**
- * Hook for copying share link to clipboard
- */
+// Hook for updating share link settings
+export const useUpdateShareLink = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      linkId,
+      data,
+    }: {
+      linkId: string;
+      resourceId: string;
+      data: UpdateShareLinkRequest;
+    }) => shareService.updateShareLink(linkId, data),
+    onSuccess: (_data, variables) => {
+      toast.success("Share link updated");
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.share.permissions(variables.resourceId),
+      });
+    },
+    onError: (error) => {
+      const message =
+        error instanceof Error ? error.message : "Failed to update share link";
+      toast.error(message);
+    },
+  });
+};
+
+// Hook for rotating share link token
+export const useRotateShareLinkToken = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ linkId }: { linkId: string; resourceId: string }) =>
+      shareService.rotateShareLinkToken(linkId),
+    onSuccess: (_data, variables) => {
+      toast.success("Link token rotated");
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.share.permissions(variables.resourceId),
+      });
+    },
+    onError: (error) => {
+      const message =
+        error instanceof Error ? error.message : "Failed to rotate token";
+      toast.error(message);
+    },
+  });
+};
+
+// Hook for revoking a share link
+export const useRevokeShareLink = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ linkId }: { linkId: string; resourceId: string }) =>
+      shareService.revokeShareLink(linkId),
+    onSuccess: (_data, variables) => {
+      toast.success("Share link revoked");
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.share.permissions(variables.resourceId),
+      });
+    },
+    onError: (error) => {
+      const message =
+        error instanceof Error ? error.message : "Failed to revoke link";
+      toast.error(message);
+    },
+  });
+};
+
+// Hook for copying share link to clipboard
 export const useCopyShareLink = () => {
   return useMutation({
     mutationFn: ({

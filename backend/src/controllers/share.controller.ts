@@ -294,9 +294,6 @@ export class ShareController {
       password as string | undefined,
     );
 
-    // 记录访问
-    await this.shareService.recordShareLinkAccess(token);
-
     return ResponseHelper.ok(res, result);
   }
 
@@ -321,6 +318,7 @@ export class ShareController {
       file.key,
       3600,
       "attachment",
+      file.originalName,
     );
 
     logger.info(
@@ -394,6 +392,7 @@ export class ShareController {
       file.key,
       3600,
       "inline",
+      file.originalName,
     );
 
     logger.info(

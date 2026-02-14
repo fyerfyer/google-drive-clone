@@ -22,7 +22,7 @@ import {
 import { UserPlus, X, Crown, Info } from "lucide-react";
 import { toast } from "sonner";
 import { userService } from "@/services/user.service";
-import type { ResourceType, ResourcePermission } from "@/types/share.types";
+import type { ResourceType, PermissionDetail } from "@/types/share.types";
 import type { AccessRole } from "@/types/common.types";
 
 interface Owner {
@@ -36,7 +36,7 @@ interface SharePeopleTabProps {
   resourceType: ResourceType;
   resourceName: string;
   owner: Owner | null;
-  permissions: ResourcePermission[];
+  permissions: PermissionDetail[];
   isLoading: boolean;
   onShareWithUsers: (
     resourceName: string,
@@ -203,7 +203,7 @@ export const SharePeopleTab = ({
 };
 
 interface PermissionRowProps {
-  permission: ResourcePermission;
+  permission: PermissionDetail;
   onChangeRole: (targetUserId: string, newRole: AccessRole) => Promise<void>;
   onRemove: (targetUserId: string) => Promise<void>;
 }

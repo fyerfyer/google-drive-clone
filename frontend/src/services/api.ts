@@ -22,7 +22,7 @@ apiClient.interceptors.request.use(
   },
   (error) => {
     Promise.reject(error);
-  }
+  },
 );
 
 apiClient.interceptors.response.use(
@@ -37,14 +37,21 @@ apiClient.interceptors.response.use(
       window.location.href = "/login";
     }
 
+    const responseData = error.response?.data as
+      | { message?: string }
+      | undefined;
+
     const apiError: ApiError = {
-      message: error.message || "An unexpected error occurred",
-      status: error.status,
+      message:
+        responseData?.message ||
+        error.message ||
+        "An unexpected error occurred",
+      status: error.response?.status,
       code: error.code,
     };
 
     return Promise.reject(apiError);
-  }
+  },
 );
 
 export const api = {
@@ -66,7 +73,7 @@ export const api = {
 
   delete: <T, D = undefined>(
     url: string,
-    data?: D
+    data?: D,
   ): Promise<ApiResponse<T>> => {
     return apiClient
       .delete<ApiResponse<T>>(url, data ? { data } : undefined)

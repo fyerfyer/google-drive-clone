@@ -45,7 +45,11 @@ export const useAuthForm = <T extends Record<string, unknown>>({
   // Redirect any authenticated user away from auth routes.
   useEffect(() => {
     if (isAuthenticated) {
-      const from = location.state?.from || "/dashboard";
+      const params = new URLSearchParams(location.search);
+      const redirect = params.get("redirect");
+      // Use redirect parameter if exists, otherwise fallback to location.state.from, then dashboard
+      // Note: decodeURIComponent is generally handled by URLSearchParams
+      const from = redirect || location.state?.from || "/dashboard";
       navigate(from, { replace: true });
     }
   }, [isAuthenticated, location, navigate]);

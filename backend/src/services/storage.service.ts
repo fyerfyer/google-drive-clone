@@ -18,7 +18,7 @@ export class StorageService {
   static async createMultipartUpload(
     bucketName: BucketsType,
     objectKey: string,
-    mimeType: string
+    mimeType: string,
   ) {
     const command = new CreateMultipartUploadCommand({
       Bucket: bucketName,
@@ -35,7 +35,7 @@ export class StorageService {
     objectKey: string,
     uploadId: string,
     partNumber: number,
-    expireTime: number = 3600
+    expireTime: number = 3600,
   ) {
     const command = new UploadPartCommand({
       Bucket: bucketName,
@@ -57,7 +57,7 @@ export class StorageService {
     bucketName: BucketsType,
     objectKey: string,
     mimeType: string,
-    expireTime: number = 3600
+    expireTime: number = 3600,
   ): Promise<string> {
     const command = new PutObjectCommand({
       Bucket: bucketName,
@@ -76,7 +76,7 @@ export class StorageService {
     bucketName: BucketsType,
     objectKey: string,
     uploadId: string,
-    parts: { ETag: string; PartNumber: number }[]
+    parts: { ETag: string; PartNumber: number }[],
   ) {
     const command = new CompleteMultipartUploadCommand({
       Bucket: bucketName,
@@ -94,7 +94,7 @@ export class StorageService {
   static async listParts(
     bucketName: BucketsType,
     objectKey: string,
-    uploadId: string
+    uploadId: string,
   ) {
     const command = new ListPartsCommand({
       Bucket: bucketName,
@@ -109,7 +109,7 @@ export class StorageService {
   static async abortMultipartUpload(
     bucketName: BucketsType,
     objectKey: string,
-    uploadId: string
+    uploadId: string,
   ): Promise<void> {
     const command = new AbortMultipartUploadCommand({
       Bucket: bucketName,
@@ -122,7 +122,7 @@ export class StorageService {
 
   static async getObjectStream(
     bucketName: BucketsType,
-    objectKey: string
+    objectKey: string,
   ): Promise<Readable> {
     const command = new GetObjectCommand({
       Bucket: bucketName,
@@ -138,14 +138,16 @@ export class StorageService {
     bucketName: BucketsType,
     objectKey: string,
     expireTime: number = 3600,
-    disposition: "attachment" | "inline" = "attachment"
+    disposition: "attachment" | "inline" = "attachment",
+    fileName?: string,
   ): Promise<string> {
+    const fallbackFileName = objectKey.split("/").pop() || "download";
+    const safeFileName = (fileName || fallbackFileName).replace(/"/g, "");
+
     const command = new GetObjectCommand({
       Bucket: bucketName,
       Key: objectKey,
-      ResponseContentDisposition: `${disposition}; filename=${encodeURIComponent(
-        objectKey
-      )}`,
+      ResponseContentDisposition: `${disposition}; filename="${safeFileName}"`,
     });
 
     // Use s3ClientForPresign for download URLs as well
@@ -162,7 +164,7 @@ export class StorageService {
     body: Buffer | Uint8Array | Blob | Readable | string,
     contentLength: number,
     mimeType: string,
-    metadata?: Record<string, string>
+    metadata?: Record<string, string>,
   ) {
     const command = new PutObjectCommand({
       Bucket: bucketName,
@@ -178,7 +180,7 @@ export class StorageService {
 
   static async deleteObject(
     bucketName: BucketsType,
-    objectKey: string
+    objectKey: string,
   ): Promise<void> {
     const command = new DeleteObjectCommand({
       Bucket: bucketName,
@@ -190,7 +192,7 @@ export class StorageService {
 
   static async checkObjectExists(
     bucketName: BucketsType,
-    objectKey: string
+    objectKey: string,
   ): Promise<boolean> {
     try {
       const command = new HeadObjectCommand({

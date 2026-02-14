@@ -8,6 +8,10 @@ import { StorageService } from "./storage.service";
 import { BUCKETS } from "../config/s3";
 import { logger } from "../lib/logger";
 import { IFilePublic } from "./file.service";
+import {
+  buildShortcutFileOverrides,
+  buildShortcutFolderOverrides,
+} from "../utils/shortcut.util";
 
 interface CreateFolderDTO {
   userId: string;
@@ -77,14 +81,15 @@ export class FolderService {
   private toFolderPublic(
     folder: IFolder,
     userBasic: IUserBasic,
+    override?: Partial<IFolderPublic>,
   ): IFolderPublic {
     return {
       id: folder.id,
-      name: folder.name,
+      name: override?.name ?? folder.name,
       parent: folder.parent ? folder.parent.toString() : null,
       user: userBasic,
-      color: folder.color,
-      description: folder.description,
+      color: override?.color ?? folder.color,
+      description: override?.description ?? folder.description,
       isStarred: folder.isStarred,
       isTrashed: folder.isTrashed,
       trashedAt: folder.trashedAt,
@@ -93,14 +98,18 @@ export class FolderService {
     };
   }
 
-  private toFilePublic(file: IFile, userBasic: IUserBasic): IFilePublic {
+  private toFilePublic(
+    file: IFile,
+    userBasic: IUserBasic,
+    override?: Partial<IFilePublic>,
+  ): IFilePublic {
     return {
       id: file.id,
       name: file.name,
-      originalName: file.originalName,
-      extension: file.extension,
-      mimeType: file.mimeType,
-      size: file.size,
+      originalName: override?.originalName ?? file.originalName,
+      extension: override?.extension ?? file.extension,
+      mimeType: override?.mimeType ?? file.mimeType,
+      size: override?.size ?? file.size,
       folder: file.folder ? file.folder.toString() : null,
       user: userBasic,
       isStarred: file.isStarred,
@@ -568,6 +577,8 @@ export class FolderService {
     }
 
     // 为根文件夹创建虚拟文件夹对象
+    const folderOverrides = await buildShortcutFolderOverrides(folders);
+
     const currentFolderPublic: IFolderPublic = isRoot
       ? {
           id: "root",
@@ -584,11 +595,12 @@ export class FolderService {
       : this.toFolderPublic(currentFolder!, userBasic);
 
     const foldersPublic: IFolderPublic[] = folders.map((folder) =>
-      this.toFolderPublic(folder, userBasic),
+      this.toFolderPublic(folder, userBasic, folderOverrides.get(folder.id)),
     );
 
+    const fileOverrides = await buildShortcutFileOverrides(files);
     const filesPublic: IFilePublic[] = files.map((file) =>
-      this.toFilePublic(file, userBasic),
+      this.toFilePublic(file, userBasic, fileOverrides.get(file.id)),
     );
 
     return {

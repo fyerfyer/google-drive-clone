@@ -1,11 +1,13 @@
-import { useEffect, useState, useMemo } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useEffect, useState, useMemo, useCallback } from "react";
+import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { shareService } from "@/services/share.service";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Folder as FolderIcon,
   File as FileIcon,
@@ -14,6 +16,8 @@ import {
   Eye,
   ChevronRight,
   ArrowLeft,
+  Save,
+  Lock,
 } from "lucide-react";
 import GoogleDriveIcon from "@/assets/GoogleDriveIcon.svg";
 import { triggerDownload } from "@/lib/download";
@@ -21,6 +25,10 @@ import { toast } from "sonner";
 import DocViewer, { DocViewerRenderers } from "@cyntler/react-doc-viewer";
 import "@cyntler/react-doc-viewer/dist/index.css";
 import { getFileCategory, createDocViewerDocument } from "@/lib/file-preview";
+import { useAuth } from "@/hooks/auth/useAuth";
+import { FolderPicker } from "@/components/files/FolderPicker";
+import type { ResourceType } from "@/types/share.types";
+import type { ApiError } from "@/types/api.types";
 
 interface SharedResource {
   resourceId: string;
@@ -28,6 +36,7 @@ interface SharedResource {
   name: string;
   role: string;
   allowDownload: boolean;
+  hasPassword?: boolean;
 }
 
 interface FolderItem {
@@ -54,14 +63,53 @@ interface BreadcrumbItem {
 
 type ViewMode = "landing" | "folder" | "file-preview";
 
+type ShareApiError = Partial<ApiError> & {
+  response?: {
+    status?: number;
+    data?: {
+      message?: string;
+    };
+  };
+};
+
+const getErrorDetails = (
+  error: unknown,
+): { status?: number; message?: string; code?: string } => {
+  if (typeof error !== "object" || error === null) {
+    return {};
+  }
+
+  const parsedError = error as ShareApiError;
+  const status =
+    typeof parsedError.status === "number"
+      ? parsedError.status
+      : parsedError.response?.status;
+  const message =
+    typeof parsedError.message === "string"
+      ? parsedError.message
+      : parsedError.response?.data?.message;
+  const code =
+    typeof parsedError.code === "string" ? parsedError.code : undefined;
+
+  return { status, message, code };
+};
+
 const SharedAccessPage = () => {
   const { type, token } = useParams<{ type: string; token: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
+  const { isAuthenticated } = useAuth(); // Assuming useAuth returns isAuthenticated
 
   // Resource info
   const [resource, setResource] = useState<SharedResource | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Password protection
+  const [password, setPassword] = useState("");
+  const [passwordInput, setPasswordInput] = useState("");
+  const [isPasswordRequired, setIsPasswordRequired] = useState(false);
+  const [passwordError, setPasswordError] = useState(false);
 
   // View state
   const [viewMode, setViewMode] = useState<ViewMode>("landing");
@@ -81,9 +129,13 @@ const SharedAccessPage = () => {
   } | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
 
+  // Save to Drive state
+  const [showFolderPicker, setShowFolderPicker] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+
   // Fetch resource info on mount
-  useEffect(() => {
-    const fetchResource = async () => {
+  const fetchResource = useCallback(
+    async (pwd?: string) => {
       if (!type || !token) {
         setError("Invalid share link");
         setIsLoading(false);
@@ -91,31 +143,57 @@ const SharedAccessPage = () => {
       }
 
       const resourceType = type.charAt(0).toUpperCase() + type.slice(1);
+      // Basic validation
       if (resourceType !== "File" && resourceType !== "Folder") {
         setError("Invalid resource type");
         setIsLoading(false);
         return;
       }
 
+      setIsLoading(true);
+      setError(null);
+      setPasswordError(false);
+
       try {
         const data = await shareService.getSharedResourceByToken(
           token,
           resourceType,
+          pwd,
         );
         setResource(data as SharedResource);
-      } catch (err) {
-        setError(
-          err instanceof Error
-            ? err.message
-            : "Failed to access shared resource",
-        );
+        setIsPasswordRequired(false);
+        if (pwd) setPassword(pwd);
+      } catch (err: unknown) {
+        // Check if error is due to password requirement
+        // Assuming 403 or specific message implies password needed
+        const { status, message, code } = getErrorDetails(err);
+        const isPasswordRelated =
+          status === 403 ||
+          message?.toLowerCase().includes("password") ||
+          code === "PASSWORD_REQUIRED";
+
+        if (isPasswordRelated) {
+          setIsPasswordRequired(true);
+          if (pwd) setPasswordError(true); // Tried password but failed
+        } else {
+          setError(message || "Failed to access shared resource");
+        }
       } finally {
         setIsLoading(false);
       }
-    };
+    },
+    [type, token],
+  );
 
+  // Fetch resource info on mount
+  useEffect(() => {
     fetchResource();
-  }, [type, token]);
+  }, [fetchResource]);
+
+  const handlePasswordSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    fetchResource(passwordInput);
+  };
 
   // Load folder content
   const loadFolderContent = async (folderId?: string) => {
@@ -126,13 +204,18 @@ const SharedAccessPage = () => {
       const content = await shareService.getSharedFolderContent(
         token,
         folderId,
+        password,
       );
       setFolders(content.folders);
       setFiles(content.files);
 
       // Load breadcrumbs if not at root shared folder
       if (folderId && folderId !== resource?.resourceId) {
-        const path = await shareService.getSharedFolderPath(token, folderId);
+        const path = await shareService.getSharedFolderPath(
+          token,
+          folderId,
+          password,
+        );
         setBreadcrumbs(path);
       } else {
         setBreadcrumbs([
@@ -152,7 +235,10 @@ const SharedAccessPage = () => {
 
     setPreviewLoading(true);
     try {
-      const result = await shareService.getSharedFilePreviewUrl(token);
+      const result = await shareService.getSharedFilePreviewUrl(
+        token,
+        password,
+      );
       setPreviewUrl(result.url);
       setPreviewFile({
         name: result.fileName,
@@ -199,11 +285,50 @@ const SharedAccessPage = () => {
     if (!token || !resource) return;
 
     try {
-      const result = await shareService.getSharedFileDownloadInfo(token);
+      const result = await shareService.getSharedFileDownloadInfo(
+        token,
+        password,
+      );
       triggerDownload(result.downloadUrl, result.fileName);
       toast.success("Download started");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to download");
+    }
+  };
+
+  // Handle Save to Drive request
+  const handleSaveToDrive = () => {
+    if (!isAuthenticated) {
+      // Redirect to login with return url
+      const returnUrl = encodeURIComponent(location.pathname);
+      navigate(`/login?redirect=${returnUrl}`);
+      return;
+    }
+    setShowFolderPicker(true);
+  };
+
+  // Handle folder selection for Save to Drive
+  const handleSaveLocationSelected = async (targetFolderId: string) => {
+    if (!token || !resource) return;
+
+    setIsSaving(true);
+    try {
+      await shareService.saveSharedResource(
+        token,
+        resource.resourceType as ResourceType,
+        {
+          targetFolderId,
+          password: password || undefined,
+        },
+      );
+      toast.success(`Saved "${resource.name}" to your Drive`);
+      setShowFolderPicker(false);
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Failed to save to Drive",
+      );
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -247,7 +372,50 @@ const SharedAccessPage = () => {
     );
   }
 
-  // Error state
+  // Password Prompt
+  if (isPasswordRequired) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background p-4">
+        <Card className="max-w-md w-full">
+          <CardHeader className="text-center">
+            <div className="flex justify-center mb-4">
+              <div className="bg-primary/10 p-3 rounded-full">
+                <Lock className="w-6 h-6 text-primary" />
+              </div>
+            </div>
+            <CardTitle>Password Required</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handlePasswordSubmit} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="password">
+                  Enter password to access this resource
+                </Label>
+                <Input
+                  id="password"
+                  type="password"
+                  value={passwordInput}
+                  onChange={(e) => setPasswordInput(e.target.value)}
+                  placeholder="Password"
+                  autoFocus
+                />
+                {passwordError && (
+                  <p className="text-sm text-destructive">
+                    Incorrect password. Please try again.
+                  </p>
+                )}
+              </div>
+              <Button type="submit" className="w-full">
+                Access Resource
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // Error state (non-password related)
   if (error) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background p-4">
@@ -369,12 +537,30 @@ const SharedAccessPage = () => {
       <div className="min-h-screen bg-background p-4">
         <div className="max-w-6xl mx-auto">
           {/* Header */}
-          <div className="flex items-center gap-4 mb-6">
-            <Button variant="ghost" size="icon" onClick={handleBackToLanding}>
-              <ArrowLeft className="h-5 w-5" />
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-4">
+              <Button variant="ghost" size="icon" onClick={handleBackToLanding}>
+                <ArrowLeft className="h-5 w-5" />
+              </Button>
+              <img
+                src={GoogleDriveIcon}
+                alt="Google Drive"
+                className="w-8 h-8"
+              />
+              <h1 className="text-xl font-semibold">Shared Folder</h1>
+            </div>
+
+            <Button
+              onClick={handleSaveToDrive}
+              variant={isAuthenticated ? "default" : "outline"}
+            >
+              {isAuthenticated ? (
+                <Save className="mr-2 h-4 w-4" />
+              ) : (
+                <img src={GoogleDriveIcon} alt="G" className="mr-2 h-4 w-4" />
+              )}
+              {isAuthenticated ? "Save to Drive" : "Sign in to Save"}
             </Button>
-            <img src={GoogleDriveIcon} alt="Google Drive" className="w-8 h-8" />
-            <h1 className="text-xl font-semibold">Shared Folder</h1>
           </div>
 
           {/* Breadcrumbs */}
@@ -413,7 +599,7 @@ const SharedAccessPage = () => {
                 <div
                   key={folder.id}
                   onClick={() => handleFolderClick(folder.id)}
-                  className="flex items-center gap-4 p-4 rounded-lg border hover:bg-muted/50 cursor-pointer"
+                  className="flex items-center gap-4 p-4 rounded-lg border hover:bg-muted/50 cursor-pointer transition-colors"
                 >
                   <FolderIcon
                     className="h-10 w-10"
@@ -430,7 +616,7 @@ const SharedAccessPage = () => {
               {files.map((file) => (
                 <div
                   key={file.id}
-                  className="flex items-center gap-4 p-4 rounded-lg border hover:bg-muted/50"
+                  className="flex items-center gap-4 p-4 rounded-lg border hover:bg-muted/50 transition-colors"
                 >
                   <FileIcon className="h-10 w-10 text-muted-foreground" />
                   <div className="flex-1">
@@ -443,19 +629,17 @@ const SharedAccessPage = () => {
               ))}
             </div>
           )}
-
-          {/* Login prompt */}
-          <div className="mt-8 text-center text-sm text-muted-foreground border-t pt-4">
-            <p>Want to save this to your Drive?</p>
-            <Button
-              variant="link"
-              className="p-0 h-auto"
-              onClick={() => navigate("/login")}
-            >
-              Sign in to Google Drive Clone
-            </Button>
-          </div>
         </div>
+
+        <FolderPicker
+          open={showFolderPicker}
+          onOpenChange={setShowFolderPicker}
+          onSelect={handleSaveLocationSelected}
+          title="Save to Drive"
+          description={`Choose where to create a shortcut for "${resource.name}"`}
+          isLoading={isSaving}
+          actionLabel="Save Shortcut"
+        />
       </div>
     );
   }
@@ -487,29 +671,40 @@ const SharedAccessPage = () => {
                 )}
               </div>
             </div>
-            {resource.allowDownload && (
-              <Button onClick={handleDownload}>
-                <Download className="mr-2 h-4 w-4" />
-                Download
+            <div className="flex gap-2">
+              <Button
+                onClick={handleSaveToDrive}
+                variant={isAuthenticated ? "secondary" : "outline"}
+              >
+                {isAuthenticated ? (
+                  <Save className="mr-2 h-4 w-4" />
+                ) : (
+                  <img src={GoogleDriveIcon} alt="G" className="mr-2 h-4 w-4" />
+                )}
+                {isAuthenticated ? "Save" : "Sign in to Save"}
               </Button>
-            )}
+              {resource.allowDownload && (
+                <Button onClick={handleDownload}>
+                  <Download className="mr-2 h-4 w-4" />
+                  Download
+                </Button>
+              )}
+            </div>
           </div>
 
           {/* Preview content */}
           {renderFilePreview()}
-
-          {/* Login prompt */}
-          <div className="mt-8 text-center text-sm text-muted-foreground border-t pt-4">
-            <p>Want to save this to your Drive?</p>
-            <Button
-              variant="link"
-              className="p-0 h-auto"
-              onClick={() => navigate("/login")}
-            >
-              Sign in to Google Drive Clone
-            </Button>
-          </div>
         </div>
+
+        <FolderPicker
+          open={showFolderPicker}
+          onOpenChange={setShowFolderPicker}
+          onSelect={handleSaveLocationSelected}
+          title="Save to Drive"
+          description={`Choose where to create a shortcut for "${resource.name}"`}
+          isLoading={isSaving}
+          actionLabel="Save Shortcut"
+        />
       </div>
     );
   }
@@ -555,43 +750,64 @@ const SharedAccessPage = () => {
           {/* Actions */}
           <div className="flex flex-col gap-3">
             {resource.resourceType === "Folder" ? (
-              <Button onClick={handleOpenFolder} className="w-full">
-                <FolderIcon className="mr-2 h-4 w-4" />
+              <Button onClick={handleOpenFolder} className="w-full" size="lg">
+                <FolderIcon className="mr-2 h-5 w-5" />
                 Open Folder
               </Button>
             ) : (
               <>
-                <Button onClick={handlePreviewFile} className="w-full">
-                  <Eye className="mr-2 h-4 w-4" />
+                <Button
+                  onClick={handlePreviewFile}
+                  className="w-full"
+                  size="lg"
+                >
+                  <Eye className="mr-2 h-5 w-5" />
                   Preview File
                 </Button>
-                {resource.allowDownload && (
-                  <Button
-                    variant="outline"
-                    onClick={handleDownload}
-                    className="w-full"
-                  >
-                    <Download className="mr-2 h-4 w-4" />
-                    Download File
-                  </Button>
-                )}
               </>
             )}
-          </div>
 
-          {/* Login prompt */}
-          <div className="text-center text-sm text-muted-foreground border-t pt-4">
-            <p>Want to save this to your Drive?</p>
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-background px-2 text-muted-foreground">
+                  Or
+                </span>
+              </div>
+            </div>
+
             <Button
-              variant="link"
-              className="p-0 h-auto"
-              onClick={() => navigate("/login")}
+              onClick={handleSaveToDrive}
+              variant="outline"
+              className="w-full"
             >
-              Sign in to Google Drive Clone
+              <Save className="mr-2 h-4 w-4" />
+              {isAuthenticated
+                ? "Save Shortcut to Drive"
+                : "Sign in to Save to Drive"}
             </Button>
           </div>
+
+          {!isAuthenticated && (
+            <div className="text-center text-xs text-muted-foreground mt-4">
+              Sign in to save this shared item to your personal Drive for easy
+              access later.
+            </div>
+          )}
         </CardContent>
       </Card>
+
+      <FolderPicker
+        open={showFolderPicker}
+        onOpenChange={setShowFolderPicker}
+        onSelect={handleSaveLocationSelected}
+        title="Save to Drive"
+        description={`Choose where to create a shortcut for "${resource.name}"`}
+        isLoading={isSaving}
+        actionLabel="Save Shortcut"
+      />
     </div>
   );
 };

@@ -9,6 +9,7 @@ import mimeTypes from "mime-types";
 import User from "../models/User.model";
 import { logger } from "../lib/logger";
 import { PermissionService } from "./permission.service";
+import { buildShortcutFileOverrides } from "../utils/shortcut.util";
 
 interface CreateFileRecordDTO {
   userId: string;
@@ -61,6 +62,30 @@ export interface IFilePublic {
 export class FileService {
   constructor(private permissionService: PermissionService) {}
 
+  private async resolveFileForRead(file: IFile): Promise<IFile> {
+    if (
+      !file.isShortcut ||
+      !file.shortcutTarget ||
+      file.shortcutTarget.targetType !== "File"
+    ) {
+      return file;
+    }
+
+    const targetFile = await File.findOne({
+      _id: file.shortcutTarget.targetId,
+      isTrashed: false,
+    }).select("+key mimeType originalName size user");
+
+    if (!targetFile) {
+      throw new AppError(
+        StatusCodes.NOT_FOUND,
+        "Shortcut target file not found",
+      );
+    }
+
+    return targetFile;
+  }
+
   private async getUserBasic(userId: string): Promise<IUserBasic> {
     const userObjectId = new mongoose.Types.ObjectId(userId);
     const user = await User.findById(userObjectId).select("name email avatar");
@@ -74,14 +99,18 @@ export class FileService {
     };
   }
 
-  private toFilePublic(file: IFile, userBasic: IUserBasic): IFilePublic {
+  private toFilePublic(
+    file: IFile,
+    userBasic: IUserBasic,
+    override?: Partial<IFilePublic>,
+  ): IFilePublic {
     return {
       id: file.id,
       name: file.name,
-      originalName: file.originalName,
-      extension: file.extension,
-      mimeType: file.mimeType,
-      size: file.size,
+      originalName: override?.originalName ?? file.originalName,
+      extension: override?.extension ?? file.extension,
+      mimeType: override?.mimeType ?? file.mimeType,
+      size: override?.size ?? file.size,
       folder: file.folder ? file.folder.toString() : null,
       user: userBasic,
       isStarred: file.isStarred,
@@ -375,7 +404,7 @@ export class FileService {
     const file = await File.findOne({
       _id: fileObjectId,
       isTrashed: false,
-    }).select("+key mimeType originalName size user");
+    }).select("+key mimeType originalName size user isShortcut shortcutTarget");
 
     if (!file) {
       logger.warn(
@@ -385,12 +414,14 @@ export class FileService {
       throw new AppError(StatusCodes.NOT_FOUND, "File not found");
     }
 
-    // 检查是否有权限
-    const isOwner = file.user.toString() === data.userId;
+    const targetFile = await this.resolveFileForRead(file);
+
+    // 检查是否有权限（快捷方式需校验目标文件权限）
+    const isOwner = targetFile.user.toString() === data.userId;
     if (!isOwner) {
       const hasAccess = await this.permissionService.checkPermission({
         userId: data.userId,
-        resourceId: data.fileId,
+        resourceId: targetFile._id.toString(),
         resourceType: "File",
         requireRole: "viewer",
       });
@@ -407,9 +438,10 @@ export class FileService {
     const expirySeconds = data.expirySeconds || 3600;
     const presignedUrl = await StorageService.getDownloadUrl(
       BUCKETS.FILES,
-      file.key,
+      targetFile.key,
       expirySeconds,
       "attachment",
+      targetFile.originalName,
     );
 
     logger.info(
@@ -419,9 +451,9 @@ export class FileService {
 
     return {
       url: presignedUrl,
-      fileName: file.originalName,
-      mimeType: file.mimeType,
-      size: file.size,
+      fileName: targetFile.originalName,
+      mimeType: targetFile.mimeType,
+      size: targetFile.size,
       expiresIn: expirySeconds,
     };
   }
@@ -432,7 +464,7 @@ export class FileService {
     const file = await File.findOne({
       _id: fileObjectId,
       isTrashed: false,
-    }).select("+key mimeType originalName size user");
+    }).select("+key mimeType originalName size user isShortcut shortcutTarget");
 
     if (!file) {
       logger.warn(
@@ -442,12 +474,14 @@ export class FileService {
       throw new AppError(StatusCodes.NOT_FOUND, "File not found");
     }
 
-    // 检查是否有权限
-    const isOwner = file.user.toString() === data.userId;
+    const targetFile = await this.resolveFileForRead(file);
+
+    // 检查是否有权限（快捷方式需校验目标文件权限）
+    const isOwner = targetFile.user.toString() === data.userId;
     if (!isOwner) {
       const hasAccess = await this.permissionService.checkPermission({
         userId: data.userId,
-        resourceId: data.fileId,
+        resourceId: targetFile._id.toString(),
         resourceType: "File",
         requireRole: "viewer",
       });
@@ -464,9 +498,10 @@ export class FileService {
     const expirySeconds = data.expirySeconds || 3600;
     const presignedUrl = await StorageService.getDownloadUrl(
       BUCKETS.FILES,
-      file.key,
+      targetFile.key,
       expirySeconds,
       "inline",
+      targetFile.originalName,
     );
 
     logger.info(
@@ -476,9 +511,9 @@ export class FileService {
 
     return {
       url: presignedUrl,
-      fileName: file.originalName,
-      mimeType: file.mimeType,
-      size: file.size,
+      fileName: targetFile.originalName,
+      mimeType: targetFile.mimeType,
+      size: targetFile.size,
       expiresIn: expirySeconds,
     };
   }
@@ -489,7 +524,7 @@ export class FileService {
     const file = await File.findOne({
       _id: fileObjectId,
       isTrashed: false,
-    }).select("+key mimeType originalName size user");
+    }).select("+key mimeType originalName size user isShortcut shortcutTarget");
 
     if (!file) {
       logger.warn(
@@ -499,12 +534,14 @@ export class FileService {
       throw new AppError(StatusCodes.NOT_FOUND, "File not found");
     }
 
-    // 检查是否有权限
-    const isOwner = file.user.toString() === data.userId;
+    const targetFile = await this.resolveFileForRead(file);
+
+    // 检查是否有权限（快捷方式需校验目标文件权限）
+    const isOwner = targetFile.user.toString() === data.userId;
     if (!isOwner) {
       const hasAccess = await this.permissionService.checkPermission({
         userId: data.userId,
-        resourceId: data.fileId,
+        resourceId: targetFile._id.toString(),
         resourceType: "File",
         requireRole: "viewer",
       });
@@ -520,9 +557,13 @@ export class FileService {
 
     // 避免代理超大文件（50MB 以内）
     const MAX_PREVIEW_SIZE = 50 * 1024 * 1024; // 50MB
-    if (file.size > MAX_PREVIEW_SIZE) {
+    if (targetFile.size > MAX_PREVIEW_SIZE) {
       logger.warn(
-        { fileId: data.fileId, fileSize: file.size, maxSize: MAX_PREVIEW_SIZE },
+        {
+          fileId: data.fileId,
+          fileSize: targetFile.size,
+          maxSize: MAX_PREVIEW_SIZE,
+        },
         "File too large for preview stream",
       );
       throw new AppError(
@@ -534,19 +575,19 @@ export class FileService {
     // 从 MinIO 获取文件流
     const stream = await StorageService.getObjectStream(
       BUCKETS.FILES,
-      file.key,
+      targetFile.key,
     );
 
     logger.info(
-      { fileId: data.fileId, userId: data.userId, fileSize: file.size },
+      { fileId: data.fileId, userId: data.userId, fileSize: targetFile.size },
       "Generated preview stream",
     );
 
     return {
       stream,
-      mimeType: file.mimeType,
-      fileName: file.originalName,
-      size: file.size,
+      mimeType: targetFile.mimeType,
+      fileName: targetFile.originalName,
+      size: targetFile.size,
     };
   }
 
@@ -562,7 +603,10 @@ export class FileService {
       this.getUserBasic(userId),
     ]);
 
-    return files.map((file) => this.toFilePublic(file, userBasic));
+    const overrides = await buildShortcutFileOverrides(files);
+    return files.map((file) =>
+      this.toFilePublic(file, userBasic, overrides.get(file.id)),
+    );
   }
 
   async getTrashedFiles(userId: string): Promise<IFilePublic[]> {
@@ -576,7 +620,10 @@ export class FileService {
       this.getUserBasic(userId),
     ]);
 
-    return files.map((file) => this.toFilePublic(file, userBasic));
+    const overrides = await buildShortcutFileOverrides(files);
+    return files.map((file) =>
+      this.toFilePublic(file, userBasic, overrides.get(file.id)),
+    );
   }
 
   async getRecentFiles(
@@ -595,7 +642,10 @@ export class FileService {
       this.getUserBasic(userId),
     ]);
 
-    return files.map((file) => this.toFilePublic(file, userBasic));
+    const overrides = await buildShortcutFileOverrides(files);
+    return files.map((file) =>
+      this.toFilePublic(file, userBasic, overrides.get(file.id)),
+    );
   }
 
   async getAllUserFiles(userId: string): Promise<IFilePublic[]> {
@@ -618,6 +668,9 @@ export class FileService {
       },
     };
 
-    return files.map((file) => this.toFilePublic(file, userBasic));
+    const overrides = await buildShortcutFileOverrides(files);
+    return files.map((file) =>
+      this.toFilePublic(file, userBasic, overrides.get(file.id)),
+    );
   }
 }

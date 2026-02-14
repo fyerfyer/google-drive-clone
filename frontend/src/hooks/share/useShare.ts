@@ -4,11 +4,18 @@ import {
   useShareResource,
   useRemovePermission,
   useChangePermission,
-  useUpdateLinkShare,
+  useCreateShareLink,
+  useUpdateShareLink,
+  useRotateShareLinkToken,
   useCopyShareLink,
+  useRevokeShareLink,
 } from "@/hooks/mutations/useShareMutations";
 import { useResourcePermissions } from "@/hooks/queries/useShareQueries";
-import type { ResourceType, LinkShareConfig } from "@/types/share.types";
+import type {
+  ResourceType,
+  CreateShareLinkOptions,
+  UpdateShareLinkOptions,
+} from "@/types/share.types";
 import type { AccessRole } from "@/types/common.types";
 
 /**
@@ -20,7 +27,10 @@ export const useShare = () => {
   const shareResourceMutation = useShareResource();
   const removePermissionMutation = useRemovePermission();
   const changePermissionMutation = useChangePermission();
-  const updateLinkShareMutation = useUpdateLinkShare();
+  const createShareLinkMutation = useCreateShareLink();
+  const updateShareLinkMutation = useUpdateShareLink();
+  const rotateShareLinkMutation = useRotateShareLinkToken();
+  const revokeShareLinkMutation = useRevokeShareLink();
   const copyShareLinkMutation = useCopyShareLink();
 
   // Open share dialog for a resource
@@ -89,47 +99,62 @@ export const useShare = () => {
     [changePermissionMutation],
   );
 
-  // Update link share settings
-  const updateLinkSettings = useCallback(
+  // Create a new share link
+  const createShareLink = useCallback(
     async (
       resourceId: string,
       resourceType: ResourceType,
-      linkShareConfig: Partial<LinkShareConfig>,
+      options: CreateShareLinkOptions = {},
     ) => {
-      return await updateLinkShareMutation.mutateAsync({
+      return await createShareLinkMutation.mutateAsync({
         resourceId,
         data: {
           resourceType,
-          linkShareConfig,
+          options,
         },
       });
     },
-    [updateLinkShareMutation],
+    [createShareLinkMutation],
   );
 
-  // Enable link sharing
-  const enableLinkShare = useCallback(
+  // Update an existing share link
+  const updateShareLink = useCallback(
     async (
-      resourceId: string,
-      resourceType: ResourceType,
-      role: AccessRole = "viewer",
+      resourceId: string, // passed for invalidation
+      linkId: string,
+      options: UpdateShareLinkOptions,
     ) => {
-      return await updateLinkSettings(resourceId, resourceType, {
-        enableLinkSharing: true,
-        role,
+      return await updateShareLinkMutation.mutateAsync({
+        linkId,
+        resourceId,
+        data: {
+          options,
+        },
       });
     },
-    [updateLinkSettings],
+    [updateShareLinkMutation],
   );
 
-  // Disable link sharing
-  const disableLinkShare = useCallback(
-    async (resourceId: string, resourceType: ResourceType) => {
-      return await updateLinkSettings(resourceId, resourceType, {
-        enableLinkSharing: false,
+  // Rotate share link token
+  const rotateShareLinkToken = useCallback(
+    async (resourceId: string, linkId: string) => {
+      return await rotateShareLinkMutation.mutateAsync({
+        linkId,
+        resourceId,
       });
     },
-    [updateLinkSettings],
+    [rotateShareLinkMutation],
+  );
+
+  // Revoke share link
+  const revokeShareLink = useCallback(
+    async (resourceId: string, linkId: string) => {
+      return await revokeShareLinkMutation.mutateAsync({
+        linkId,
+        resourceId,
+      });
+    },
+    [revokeShareLinkMutation],
   );
 
   // Copy share link to clipboard
@@ -150,16 +175,19 @@ export const useShare = () => {
     shareWithUsers,
     removeUserPermission,
     changeUserRole,
-    updateLinkSettings,
-    enableLinkShare,
-    disableLinkShare,
+    createShareLink,
+    updateShareLink,
+    rotateShareLinkToken,
+    revokeShareLink,
     copyLink,
 
     // Loading states
     isSharing: shareResourceMutation.isPending,
     isRemovingPermission: removePermissionMutation.isPending,
     isChangingPermission: changePermissionMutation.isPending,
-    isUpdatingLinkShare: updateLinkShareMutation.isPending,
+    isCreatingLink: createShareLinkMutation.isPending,
+    isUpdatingLink: updateShareLinkMutation.isPending,
+    isRotatingToken: rotateShareLinkMutation.isPending,
     isCopyingLink: copyShareLinkMutation.isPending,
   };
 };
@@ -181,11 +209,14 @@ export const useResourceShare = (
 
   const share = useShare();
 
+  // For the UI, we just take the first active share link if available
+  const activeShareLink = permissions?.shareLinks?.[0] || null;
+
   return {
     // Data
     owner: permissions?.owner ?? null,
     permissions: permissions?.permissions ?? [],
-    linkShare: permissions?.linkShare ?? null,
+    activeShareLink,
 
     // Loading state
     isLoading,
@@ -214,13 +245,24 @@ export const useResourceShare = (
     changeUserRole: (targetUserId: string, newRole: AccessRole) =>
       share.changeUserRole(resourceId, targetUserId, resourceType, newRole),
 
-    updateLinkSettings: (linkShareConfig: Partial<LinkShareConfig>) =>
-      share.updateLinkSettings(resourceId, resourceType, linkShareConfig),
+    // Unified Link Management
+    createLink: (options?: CreateShareLinkOptions) =>
+      share.createShareLink(resourceId, resourceType, options),
 
-    enableLinkShare: (role?: AccessRole) =>
-      share.enableLinkShare(resourceId, resourceType, role),
+    updateLink: (options: UpdateShareLinkOptions) => {
+      if (!activeShareLink) throw new Error("No active share link to update");
+      return share.updateShareLink(resourceId, activeShareLink.id, options);
+    },
 
-    disableLinkShare: () => share.disableLinkShare(resourceId, resourceType),
+    rotateLink: () => {
+      if (!activeShareLink) throw new Error("No active share link to rotate");
+      return share.rotateShareLinkToken(resourceId, activeShareLink.id);
+    },
+
+    revokeLink: () => {
+      if (!activeShareLink) throw new Error("No active share link to revoke");
+      return share.revokeShareLink(resourceId, activeShareLink.id);
+    },
 
     copyLink: (token: string) => share.copyLink(token, resourceType),
   };

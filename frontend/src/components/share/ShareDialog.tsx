@@ -22,12 +22,15 @@ export const ShareDialog = () => {
   const {
     owner,
     permissions,
-    linkShare,
+    activeShareLink,
     isLoading,
     shareWithUsers,
     removeUserPermission,
     changeUserRole,
-    updateLinkSettings,
+    createLink,
+    updateLink,
+    rotateLink,
+    revokeLink,
     copyLink,
   } = useResourceShare(resourceId, resourceType, isOpen);
 
@@ -83,9 +86,12 @@ export const ShareDialog = () => {
           <TabsContent value="link" className="mt-4">
             <ShareLinkTab
               resourceType={resourceType}
-              linkShare={linkShare}
+              shareLink={activeShareLink}
               isLoading={isLoading}
-              onUpdateLinkSettings={updateLinkSettings}
+              onCreateLink={createLink}
+              onUpdateLink={updateLink}
+              onRotateLink={rotateLink}
+              onRevokeLink={revokeLink}
               onCopyLink={copyLink}
             />
           </TabsContent>
