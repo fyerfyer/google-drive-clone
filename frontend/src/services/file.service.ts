@@ -24,7 +24,7 @@ export const fileService = {
   async uploadFile(
     file: File,
     folderId: string,
-    onProgress?: (progress: UploadFileProgress) => void
+    onProgress?: (progress: UploadFileProgress) => void,
   ): Promise<IFile> {
     const hash = await this.calculateHash(file);
     const uniqueFileId = crypto.randomUUID();
@@ -44,7 +44,7 @@ export const fileService = {
         onUploadProgress: (progressEvent?: AxiosProgressEvent) => {
           if (onProgress && progressEvent?.total && progressEvent?.loaded) {
             const progress = Math.round(
-              (progressEvent.loaded * 100) / progressEvent.total
+              (progressEvent.loaded * 100) / progressEvent.total,
             );
             onProgress({
               file,
@@ -85,7 +85,7 @@ export const fileService = {
   async uploadFiles(
     files: File[],
     folderId: string,
-    onProgress?: (progress: UploadFileProgress) => void
+    onProgress?: (progress: UploadFileProgress) => void,
   ): Promise<IFile[]> {
     const uploadPromises = files.map((file) => {
       return this.uploadFile(file, folderId, onProgress);
@@ -96,10 +96,10 @@ export const fileService = {
   },
 
   getDownloadInfo: async (
-    fileId: string
+    fileId: string,
   ): Promise<{ downloadUrl: string; fileName: string }> => {
     const response = await api.get<FileDownloadResponse>(
-      `${FILE_API_BASE}/${fileId}/download`
+      `${FILE_API_BASE}/${fileId}/download`,
     );
     if (!response.success || !response.data) {
       throw new Error(response.message || "Failed to get download info");
@@ -109,7 +109,7 @@ export const fileService = {
 
   getPreviewUrl: async (fileId: string): Promise<string> => {
     const response = await api.get<{ url: string }>(
-      `${FILE_API_BASE}/${fileId}/preview-url`
+      `${FILE_API_BASE}/${fileId}/preview-url`,
     );
 
     if (!response.success || !response.data) {
@@ -122,7 +122,7 @@ export const fileService = {
   async renameFile(fileId: string, newName: string): Promise<void> {
     const response = await api.patch<void, { newName: string }>(
       `${FILE_API_BASE}/${fileId}/rename`,
-      { newName }
+      { newName },
     );
 
     if (!response.success) {
@@ -133,7 +133,7 @@ export const fileService = {
   async moveFile(fileId: string, destinationId: string): Promise<void> {
     const response = await api.patch<void, { destinationId: string }>(
       `${FILE_API_BASE}/${fileId}/move`,
-      { destinationId }
+      { destinationId },
     );
 
     if (!response.success) {
@@ -144,7 +144,7 @@ export const fileService = {
   async trashFile(fileId: string): Promise<void> {
     const response = await api.post<void, undefined>(
       `${FILE_API_BASE}/${fileId}/trash`,
-      undefined
+      undefined,
     );
 
     if (!response.success) {
@@ -155,7 +155,7 @@ export const fileService = {
   async restoreFile(fileId: string): Promise<void> {
     const response = await api.post<void, undefined>(
       `${FILE_API_BASE}/${fileId}/restore`,
-      undefined
+      undefined,
     );
 
     if (!response.success) {
@@ -174,7 +174,7 @@ export const fileService = {
   async starFile(fileId: string): Promise<void> {
     const response = await api.patch<void, undefined>(
       `${FILE_API_BASE}/${fileId}/star`,
-      undefined
+      undefined,
     );
 
     if (!response.success) {
@@ -185,7 +185,7 @@ export const fileService = {
   async unstarFile(fileId: string): Promise<void> {
     const response = await api.patch<void, undefined>(
       `${FILE_API_BASE}/${fileId}/unstar`,
-      undefined
+      undefined,
     );
 
     if (!response.success) {
@@ -250,7 +250,7 @@ export const fileService = {
   }): Promise<IFile> {
     const response = await api.post<FileUploadResponse, typeof data>(
       FILE_API_BASE,
-      data
+      data,
     );
 
     if (!response.success || !response.data?.file) {
@@ -258,5 +258,83 @@ export const fileService = {
     }
 
     return normalizeFile(response.data.file);
+  },
+
+  /**
+   * Create a blank file directly in the drive
+   */
+  async createBlankFile(data: {
+    folderId: string;
+    fileName: string;
+    content?: string;
+  }): Promise<IFile> {
+    const response = await api.post<FileUploadResponse, typeof data>(
+      `${FILE_API_BASE}/create`,
+      data,
+    );
+
+    if (!response.success || !response.data?.file) {
+      throw new Error(response.message || "Failed to create file");
+    }
+
+    return normalizeFile(response.data.file);
+  },
+
+  /**
+   * Get text content of a file for editing
+   */
+  async getFileContent(
+    fileId: string,
+  ): Promise<{ content: string; file: IFile }> {
+    const response = await api.get<{ content: string; file: IFile }>(
+      `${FILE_API_BASE}/${fileId}/content`,
+    );
+
+    if (!response.success || !response.data) {
+      throw new Error(response.message || "Failed to get file content");
+    }
+
+    return {
+      content: response.data.content,
+      file: normalizeFile(response.data.file),
+    };
+  },
+
+  /**
+   * Update text content of a file
+   */
+  async updateFileContent(fileId: string, content: string): Promise<IFile> {
+    const response = await api.put<{ file: IFile }, { content: string }>(
+      `${FILE_API_BASE}/${fileId}/content`,
+      { content },
+    );
+
+    if (!response.success || !response.data?.file) {
+      throw new Error(response.message || "Failed to update file content");
+    }
+
+    return normalizeFile(response.data.file);
+  },
+
+  /**
+   * Get OnlyOffice configuration including URL and JWT token.
+   * Returns the complete configuration needed for OnlyOffice Document Server.
+   */
+  async getOfficeContentUrl(fileId: string): Promise<{
+    url: string;
+    token?: string;
+    config?: any;
+  }> {
+    const response = await api.get<{
+      url: string;
+      token?: string;
+      config?: any;
+    }>(`${FILE_API_BASE}/${fileId}/office-url`);
+
+    if (!response.success || !response.data) {
+      throw new Error(response.message || "Failed to get office content URL");
+    }
+
+    return response.data;
   },
 };

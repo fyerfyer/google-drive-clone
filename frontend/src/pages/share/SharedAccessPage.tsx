@@ -22,9 +22,11 @@ import {
 import GoogleDriveIcon from "@/assets/GoogleDriveIcon.svg";
 import { triggerDownload } from "@/lib/download";
 import { toast } from "sonner";
-import DocViewer, { DocViewerRenderers } from "@cyntler/react-doc-viewer";
-import "@cyntler/react-doc-viewer/dist/index.css";
-import { getFileCategory, createDocViewerDocument } from "@/lib/file-preview";
+import { Worker, Viewer } from "@react-pdf-viewer/core";
+import { defaultLayoutPlugin } from "@react-pdf-viewer/default-layout";
+import "@react-pdf-viewer/core/lib/styles/index.css";
+import "@react-pdf-viewer/default-layout/lib/styles/index.css";
+import { getFileCategory } from "@/lib/file-preview";
 import { useAuth } from "@/hooks/auth/useAuth";
 import { FolderPicker } from "@/components/files/FolderPicker";
 import type { ResourceType } from "@/types/share.types";
@@ -342,17 +344,14 @@ const SharedAccessPage = () => {
     setBreadcrumbs([]);
   };
 
-  // File preview document for DocViewer
-  const docs = useMemo(() => {
-    if (!previewUrl || !previewFile) return [];
-    return [createDocViewerDocument(previewUrl, previewFile.name)];
-  }, [previewUrl, previewFile]);
-
   const fileCategory = useMemo(() => {
     return previewFile
       ? getFileCategory(previewFile.mimeType, previewFile.name)
       : "other";
   }, [previewFile]);
+
+  // PDF viewer plugin
+  const defaultLayoutPluginInstance = defaultLayoutPlugin();
 
   // Format file size
   const formatFileSize = (bytes: number): string => {
@@ -500,15 +499,12 @@ const SharedAccessPage = () => {
       case "pdf":
         return (
           <div className="h-[70vh] bg-gray-50 dark:bg-gray-900 rounded-lg overflow-hidden">
-            <DocViewer
-              documents={docs}
-              pluginRenderers={DocViewerRenderers}
-              prefetchMethod="GET"
-              config={{
-                header: { disableHeader: true },
-                pdfZoom: { defaultZoom: 1.0, zoomJump: 0.2 },
-              }}
-            />
+            <Worker workerUrl="https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js">
+              <Viewer
+                fileUrl={previewUrl}
+                plugins={[defaultLayoutPluginInstance]}
+              />
+            </Worker>
           </div>
         );
 

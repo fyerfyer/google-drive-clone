@@ -16,6 +16,14 @@ export const generateToken = (payload: JwtPayload): string => {
   } as jwt.SignOptions);
 };
 
+// 生成 OnlyOffice 编辑器使用的 JWT Token
+export const generateOnlyOfficeToken = (payload: any): string => {
+  const secret: string = config.onlyofficeJwtSecret;
+  return jwt.sign(payload, secret, {
+    expiresIn: "8h",
+  });
+};
+
 export const verifyToken = (token: string): JwtPayload => {
   try {
     const secret: string = config.jwtSecret;

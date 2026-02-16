@@ -13,6 +13,7 @@ import DashboardPage from "@/pages/dashboard/DashboardPage";
 import ProfilePage from "@/pages/profile/ProfilePage";
 import FilesPage from "@/pages/files/FilesPage";
 import SharedAccessPage from "@/pages/share/SharedAccessPage";
+import EditorPage from "@/pages/editor/EditorPage";
 import NotFoundPage from "@/pages/NotFoundPage";
 
 const RootRedirector = () => {
@@ -48,6 +49,14 @@ export const AppRouter = () => {
             element={
               <AuthRoute>
                 <FilesPage />
+              </AuthRoute>
+            }
+          ></Route>
+          <Route
+            path="/editor"
+            element={
+              <AuthRoute>
+                <EditorPage />
               </AuthRoute>
             }
           ></Route>

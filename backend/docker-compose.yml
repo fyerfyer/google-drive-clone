@@ -78,6 +78,31 @@ services:
     networks:
       - gdrive-network
 
+  # OnlyOffice Document Server
+  onlyoffice:
+    image: onlyoffice/documentserver:latest
+    container_name: gdrive-onlyoffice
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    environment:
+      - JWT_ENABLED=false
+      # Allow OnlyOffice to access private IP addresses (Docker container network)
+      - ALLOW_META_IP_ADDRESS=true
+      - ALLOW_PRIVATE_IP_ADDRESS=true
+    volumes:
+      - onlyoffice-data:/var/www/onlyoffice/Data
+      - onlyoffice-logs:/var/log/onlyoffice
+      - onlyoffice-lib:/var/lib/onlyoffice
+    networks:
+      - gdrive-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+
   # 应用容器（构建上下文为 backend 目录）
   app:
     build:
@@ -107,6 +132,9 @@ volumes:
   mongo-data:
   minio-data:
   redis-data:
+  onlyoffice-data:
+  onlyoffice-logs:
+  onlyoffice-lib:
 
 networks:
   gdrive-network:

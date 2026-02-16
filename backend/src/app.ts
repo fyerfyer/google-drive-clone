@@ -45,12 +45,32 @@ const shareController = new ShareController(shareService);
 
 const app: Application = express();
 const bodyLimit = "10mb";
-app.use(
+
+// OnlyOffice CORS 服务
+app.use((req, res, next) => {
+  if (req.path.includes("/office-content")) {
+    // 由于已经设置了 Token 校验，这里全部放行
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+    if (req.method === "OPTIONS") {
+      return res.sendStatus(200);
+    }
+    return next();
+  }
+  next();
+});
+
+// 前端 Global CORS 设置
+app.use((req, res, next) => {
+  if (req.path.includes("/office-content")) {
+    return next();
+  }
   cors({
     origin: config.corsOrigin,
     credentials: true,
-  }),
-);
+  })(req, res, next);
+});
 app.use(helmet());
 app.use(requestLogger);
 

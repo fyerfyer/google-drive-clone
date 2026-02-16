@@ -9,15 +9,37 @@ export function createFileRouter(
   permissionService: PermissionService,
 ) {
   const router = Router();
+
+  // OnlyOffice 文档服务器通过查询字符串中的令牌获取文件内容
+  // 路由 CORS 在 app.ts 中处理
+  router.get(
+    "/:fileId/office-content",
+    fileController.serveOfficeContent.bind(fileController),
+  );
+
   router.use(jwtAuth);
 
   // 在上传文件成功后保存 record
   router.post("/", fileController.createFile.bind(fileController));
 
+  router.post("/create", fileController.createBlankFile.bind(fileController));
+
   router.get(
     "/:fileId/download",
     requireAccess(permissionService, "viewer", { resourceType: "File" }),
     fileController.downloadFile.bind(fileController),
+  );
+
+  router.get(
+    "/:fileId/content",
+    requireAccess(permissionService, "viewer", { resourceType: "File" }),
+    fileController.getFileContent.bind(fileController),
+  );
+
+  router.put(
+    "/:fileId/content",
+    requireAccess(permissionService, "editor", { resourceType: "File" }),
+    fileController.updateFileContent.bind(fileController),
   );
 
   router.get(
@@ -30,6 +52,13 @@ export function createFileRouter(
     "/:fileId/preview-url",
     requireAccess(permissionService, "viewer", { resourceType: "File" }),
     fileController.getPreviewUrl.bind(fileController),
+  );
+  
+  // OnlyOffice 获取文件内容
+  router.get(
+    "/:fileId/office-url",
+    requireAccess(permissionService, "viewer", { resourceType: "File" }),
+    fileController.getOfficeContentUrl.bind(fileController),
   );
 
   router.patch(

@@ -1,4 +1,5 @@
 import { type ReactNode, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useFolderOperations } from "@/hooks/folder/useFolderOperations";
 import { useFileOperations } from "@/hooks/folder/useFileOperations";
 import { useShareDialogStore } from "@/stores/useShareDialogStore";
@@ -19,6 +20,7 @@ import {
   Eye,
   Star,
   StarOff,
+  Pencil,
 } from "lucide-react";
 import type { Folder } from "@/types/folder.types";
 import type { IFile } from "@/types/file.types";
@@ -27,6 +29,7 @@ import { DeleteConfirmDialog } from "./DeleteConfirmDialog";
 import { MoveDialog } from "./MoveDialog";
 import { fileService } from "@/services/file.service";
 import { toast } from "sonner";
+import { getEditorMode } from "@/lib/file-preview";
 
 interface ItemContextMenuProps {
   children: ReactNode;
@@ -41,12 +44,22 @@ export const ItemContextMenu = ({
   type,
   viewType = "normal",
 }: ItemContextMenuProps) => {
+  const navigate = useNavigate();
   const folderOps = useFolderOperations();
   const fileOps = useFileOperations();
   const { openShareDialog } = useShareDialogStore();
   const [showRenameDialog, setShowRenameDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showMoveDialog, setShowMoveDialog] = useState(false);
+
+  const canEdit =
+    type === "file" && item.name ? getEditorMode(item.name) !== "none" : false;
+
+  const handleEdit = () => {
+    if (type === "file") {
+      navigate(`/editor?fileId=${item.id}&mode=edit`);
+    }
+  };
 
   const handleRename = (newName: string) => {
     if (type === "folder") {
@@ -186,6 +199,12 @@ export const ItemContextMenu = ({
                   <Eye className="size-4" />
                   Preview
                 </ContextMenuItem>
+                {canEdit && (
+                  <ContextMenuItem onClick={handleEdit}>
+                    <Pencil className="size-4" />
+                    Open in Editor
+                  </ContextMenuItem>
+                )}
                 <ContextMenuItem onClick={handleDownload}>
                   <Download className="size-4" />
                   Download
@@ -255,6 +274,12 @@ export const ItemContextMenu = ({
                 <Eye className="size-4" />
                 Preview
               </ContextMenuItem>
+              {canEdit && (
+                <ContextMenuItem onClick={handleEdit}>
+                  <Pencil className="size-4" />
+                  Open in Editor
+                </ContextMenuItem>
+              )}
               <ContextMenuItem onClick={handleDownload}>
                 <Download className="size-4" />
                 Download

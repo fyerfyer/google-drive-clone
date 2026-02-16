@@ -21,6 +21,19 @@ interface CreateFileRecordDTO {
   hash?: string;
 }
 
+interface CreateBlankFileDTO {
+  userId: string;
+  folderId: string;
+  fileName: string;
+  content?: string;
+}
+
+interface UpdateFileContentDTO {
+  userId: string;
+  fileId: string;
+  content: string;
+}
+
 interface PreviewStreamDTO {
   userId: string;
   fileId: string;
@@ -193,6 +206,239 @@ export class FileService {
     });
 
     const userBasic = await this.getUserBasic(userId);
+
+    return this.toFilePublic(file, userBasic);
+  }
+
+  async createBlankFile(data: CreateBlankFileDTO): Promise<IFilePublic> {
+    const { userId, folderId, fileName, content = "" } = data;
+    const userObjectId = new mongoose.Types.ObjectId(userId);
+
+    // Determine mime type from file name
+    const extension = fileName.split(".").pop()?.toLowerCase() || "txt";
+    const mimeTypeMap: Record<string, string> = {
+      txt: "text/plain",
+      md: "text/markdown",
+      markdown: "text/markdown",
+      html: "text/html",
+      css: "text/css",
+      js: "application/javascript",
+      ts: "application/typescript",
+      json: "application/json",
+      xml: "application/xml",
+      csv: "text/csv",
+      docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    };
+    const mimeType =
+      mimeTypeMap[extension] || mimeTypes.lookup(fileName) || "text/plain";
+
+    const isRoot = folderId === "root";
+    const folderObjectId = isRoot
+      ? null
+      : new mongoose.Types.ObjectId(folderId);
+
+    let ancestors: mongoose.Types.ObjectId[] = [];
+    if (folderObjectId) {
+      const parentFolder = await Folder.findOne({
+        _id: folderObjectId,
+        user: userObjectId,
+      });
+      if (!parentFolder) {
+        throw new AppError(StatusCodes.NOT_FOUND, "Parent folder not found");
+      }
+      ancestors = [...parentFolder.ancestors, folderObjectId];
+    }
+
+    const key = `files/${userId}/${Date.now()}-${fileName}`;
+
+    const contentBuffer = Buffer.from(content, "utf-8");
+    await StorageService.putObject(
+      BUCKETS.FILES,
+      key,
+      contentBuffer,
+      contentBuffer.length,
+      mimeType,
+    );
+
+    // 更新用户配额
+    const updateUser = await User.findOneAndUpdate(
+      {
+        _id: userObjectId,
+        $expr: {
+          $lte: [
+            { $add: ["$storageUsage", contentBuffer.length] },
+            "$storageQuota",
+          ],
+        },
+      },
+      { $inc: { storageUsage: contentBuffer.length } },
+      { new: true },
+    );
+
+    if (!updateUser) {
+      await StorageService.deleteObject(BUCKETS.FILES, key).catch((err) => {
+        logger.error(
+          { err, userId, key },
+          "Failed to rollback MinIO object after quota exceeded",
+        );
+      });
+      throw new AppError(
+        StatusCodes.BAD_REQUEST,
+        "Storage quota exceeded or user not found",
+      );
+    }
+
+    const file = await File.create({
+      user: userObjectId,
+      folder: folderObjectId,
+      ancestors,
+      key,
+      size: contentBuffer.length,
+      mimeType,
+      originalName: fileName,
+      name: fileName,
+      extension: mimeTypes.extension(mimeType) || extension,
+      isStarred: false,
+      isTrashed: false,
+    });
+
+    const userBasic = await this.getUserBasic(userId);
+    logger.info(
+      { fileId: file.id, fileName, userId },
+      "Blank file created successfully",
+    );
+
+    return this.toFilePublic(file, userBasic);
+  }
+
+  async getFileById(fileId: string, userId: string): Promise<IFilePublic> {
+    const fileObjectId = new mongoose.Types.ObjectId(fileId);
+
+    const file = await File.findOne({
+      _id: fileObjectId,
+      isTrashed: false,
+    }).select(
+      "+key name originalName extension mimeType size folder user isStarred isTrashed trashedAt isShortcut shortcutTarget createdAt updatedAt",
+    );
+
+    if (!file) {
+      throw new AppError(StatusCodes.NOT_FOUND, "File not found");
+    }
+
+    const targetFile = await this.resolveFileForRead(file);
+    const userBasic = await this.getUserBasic(targetFile.user.toString());
+
+    return this.toFilePublic(targetFile, userBasic);
+  }
+
+  async getFileContent(data: {
+    userId: string;
+    fileId: string;
+  }): Promise<{ content: string; file: IFilePublic }> {
+    const fileObjectId = new mongoose.Types.ObjectId(data.fileId);
+
+    const file = await File.findOne({
+      _id: fileObjectId,
+      isTrashed: false,
+    }).select(
+      "+key name originalName extension mimeType size folder user isStarred isTrashed trashedAt isShortcut shortcutTarget createdAt updatedAt",
+    );
+
+    if (!file) {
+      throw new AppError(StatusCodes.NOT_FOUND, "File not found");
+    }
+
+    const targetFile = await this.resolveFileForRead(file);
+
+    const MAX_TEXT_SIZE = 10 * 1024 * 1024;
+    if (targetFile.size > MAX_TEXT_SIZE) {
+      throw new AppError(
+        StatusCodes.BAD_REQUEST,
+        "File too large for text editing",
+      );
+    }
+
+    const stream = await StorageService.getObjectStream(
+      BUCKETS.FILES,
+      targetFile.key,
+    );
+
+    const chunks: Buffer[] = [];
+    for await (const chunk of stream) {
+      chunks.push(Buffer.from(chunk));
+    }
+    const content = Buffer.concat(chunks).toString("utf-8");
+
+    const userBasic = await this.getUserBasic(targetFile.user.toString());
+
+    return {
+      content,
+      file: this.toFilePublic(targetFile, userBasic),
+    };
+  }
+
+  async updateFileContent(data: UpdateFileContentDTO): Promise<IFilePublic> {
+    const { userId, fileId, content } = data;
+    const fileObjectId = new mongoose.Types.ObjectId(fileId);
+    const userObjectId = new mongoose.Types.ObjectId(userId);
+
+    const file = await File.findOne({
+      _id: fileObjectId,
+      user: userObjectId,
+      isTrashed: false,
+    }).select(
+      "+key name originalName extension mimeType size folder user isStarred isTrashed trashedAt createdAt updatedAt",
+    );
+
+    if (!file) {
+      throw new AppError(StatusCodes.NOT_FOUND, "File not found");
+    }
+
+    const oldSize = file.size;
+    const newBuffer = Buffer.from(content, "utf-8");
+    const newSize = newBuffer.length;
+    const sizeDiff = newSize - oldSize;
+
+    if (sizeDiff > 0) {
+      const updateUser = await User.findOneAndUpdate(
+        {
+          _id: userObjectId,
+          $expr: {
+            $lte: [{ $add: ["$storageUsage", sizeDiff] }, "$storageQuota"],
+          },
+        },
+        { $inc: { storageUsage: sizeDiff } },
+        { new: true },
+      );
+
+      if (!updateUser) {
+        throw new AppError(StatusCodes.BAD_REQUEST, "Storage quota exceeded");
+      }
+    } else if (sizeDiff < 0) {
+      await User.updateOne(
+        { _id: userObjectId },
+        { $inc: { storageUsage: sizeDiff } },
+      );
+    }
+
+    await StorageService.putObject(
+      BUCKETS.FILES,
+      file.key,
+      newBuffer,
+      newSize,
+      file.mimeType,
+    );
+
+    file.size = newSize;
+    await file.save();
+
+    const userBasic = await this.getUserBasic(userId);
+    logger.info(
+      { fileId, userId, oldSize, newSize },
+      "File content updated successfully",
+    );
 
     return this.toFilePublic(file, userBasic);
   }

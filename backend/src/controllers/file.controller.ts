@@ -7,6 +7,9 @@ import { ResponseHelper } from "../utils/response.util";
 import { FileUploadResponse } from "../types/response.types";
 import { StorageService } from "../services/storage.service";
 import { BUCKETS } from "../config/s3";
+import { generateOnlyOfficeToken } from "../utils/jwt.util";
+import { config } from "../config/env";
+import jwt from "jsonwebtoken";
 
 export class FileController {
   constructor(private fileService: FileService) {}
@@ -149,6 +152,212 @@ export class FileController {
 
     await this.fileService.renameFile(fileId, userId, newName);
     return ResponseHelper.message(res, "File renamed successfully");
+  }
+
+  // 只创建空白文件
+  async createBlankFile(req: Request, res: Response, next: NextFunction) {
+    if (!req.user) {
+      throw new AppError(StatusCodes.UNAUTHORIZED, "User not authenticated");
+    }
+
+    const { folderId, fileName, content } = req.body;
+    if (!fileName) {
+      throw new AppError(StatusCodes.BAD_REQUEST, "File name is required");
+    }
+
+    const file = await this.fileService.createBlankFile({
+      userId: req.user.id,
+      folderId: folderId || "root",
+      fileName,
+      content: content || "",
+    });
+
+    return ResponseHelper.created<FileUploadResponse>(
+      res,
+      { file },
+      "File created successfully",
+    );
+  }
+
+  async getFileContent(req: Request, res: Response, next: NextFunction) {
+    if (!req.user) {
+      throw new AppError(StatusCodes.UNAUTHORIZED, "User not authenticated");
+    }
+
+    const { fileId } = req.params;
+    if (!fileId) {
+      throw new AppError(StatusCodes.BAD_REQUEST, "File ID is required");
+    }
+
+    const result = await this.fileService.getFileContent({
+      userId: req.user.id,
+      fileId,
+    });
+
+    return ResponseHelper.success(res, result);
+  }
+
+  async updateFileContent(req: Request, res: Response, next: NextFunction) {
+    if (!req.user) {
+      throw new AppError(StatusCodes.UNAUTHORIZED, "User not authenticated");
+    }
+
+    const { fileId } = req.params;
+    const { content } = req.body;
+
+    if (!fileId) {
+      throw new AppError(StatusCodes.BAD_REQUEST, "File ID is required");
+    }
+
+    if (content === undefined || content === null) {
+      throw new AppError(StatusCodes.BAD_REQUEST, "Content is required");
+    }
+
+    const file = await this.fileService.updateFileContent({
+      userId: req.user.id,
+      fileId,
+      content,
+    });
+
+    return ResponseHelper.success(
+      res,
+      { file },
+      StatusCodes.OK,
+      "File content updated",
+    );
+  }
+
+  // 获取一个 OnlyOffice 文档服务器可用于获取文件的 URL。
+  // 返回一个包含内嵌短期 JWT 令牌和 OnlyOffice 配置令牌的 URL。
+  async getOfficeContentUrl(req: Request, res: Response, next: NextFunction) {
+    if (!req.user) {
+      throw new AppError(StatusCodes.UNAUTHORIZED, "User not authenticated");
+    }
+
+    const { fileId } = req.params;
+    if (!fileId) {
+      throw new AppError(StatusCodes.BAD_REQUEST, "File ID is required");
+    }
+
+    // 获取文件信息，根据文件信息配置 OnlyOffice
+    const file = await this.fileService.getFileById(fileId, req.user.id);
+    if (!file) {
+      throw new AppError(StatusCodes.NOT_FOUND, "File not found");
+    }
+
+    // 生成临时 JWT token 让 OnlyOffice Document Server 验证请求并获取文件内容
+    const officeToken = jwt.sign(
+      {
+        id: req.user.id,
+        email: (req.user as IUser).email,
+        fileId,
+        purpose: "office-content",
+      },
+      config.jwtSecret,
+      { expiresIn: "15m" },
+    );
+
+    // 构建 OnlyOffice 可访问的 URL，包含 JWT 令牌作为查询参数
+    const officeContentUrl = `${config.officeCallbackUrl}/api/files/${fileId}/office-content?token=${officeToken}`;
+
+    const getDocumentType = (filename: string): string => {
+      const ext = filename.split(".").pop()?.toLowerCase() || "";
+      if (["doc", "docx", "odt", "rtf", "txt"].includes(ext)) return "word";
+      if (["xls", "xlsx", "ods", "csv"].includes(ext)) return "cell";
+      if (["ppt", "pptx", "odp"].includes(ext)) return "slide";
+      return "word";
+    };
+
+    const getFileType = (filename: string): string => {
+      return filename.split(".").pop()?.toLowerCase() || "docx";
+    };
+
+    const documentConfig = {
+      document: {
+        fileType: getFileType(file.name),
+        key: `${fileId}_${file.updatedAt}`, // 时间戳 Key
+        title: file.name,
+        url: officeContentUrl,
+        permissions: {
+          comment: true,
+          copy: true,
+          download: true,
+          edit: true,
+          fillForms: true,
+          modifyContentControl: true,
+          modifyFilter: true,
+          print: true,
+          review: true,
+        },
+      },
+      documentType: getDocumentType(file.name),
+      editorConfig: {
+        user: {
+          id: req.user.id,
+          name: (req.user as IUser).email,
+        },
+      },
+    };
+
+    const response: any = {
+      url: officeContentUrl,
+      config: documentConfig,
+    };
+
+    if (config.onlyofficeJwtEnabled) {
+      const onlyofficeToken = generateOnlyOfficeToken(documentConfig);
+      response.token = onlyofficeToken;
+    }
+
+    return ResponseHelper.success(res, response);
+  }
+
+  // 为 OnlyOffice 文档服务器流式传输文件内容。`
+  async serveOfficeContent(req: Request, res: Response, next: NextFunction) {
+    // 通过查询字符串 token 进行认证
+    const token = req.query.token as string;
+    if (!token) {
+      throw new AppError(StatusCodes.UNAUTHORIZED, "Token is required");
+    }
+
+    let payload: { id: string; email: string; fileId: string; purpose: string };
+    try {
+      payload = jwt.verify(token, config.jwtSecret) as typeof payload;
+    } catch {
+      throw new AppError(StatusCodes.UNAUTHORIZED, "Invalid or expired token");
+    }
+
+    if (
+      payload.purpose !== "office-content" ||
+      payload.fileId !== req.params.fileId
+    ) {
+      throw new AppError(StatusCodes.FORBIDDEN, "Token mismatch");
+    }
+
+    // 流式文件
+    const result = await this.fileService.getPreviewStream({
+      userId: payload.id,
+      fileId: payload.fileId,
+    });
+
+    res.setHeader("Content-Type", result.mimeType);
+    res.setHeader("Content-Length", result.size);
+    res.setHeader(
+      "Content-Disposition",
+      `inline; filename="${encodeURIComponent(result.fileName)}"`,
+    );
+    res.setHeader("Cache-Control", "private, max-age=900");
+
+    result.stream.pipe(res);
+    result.stream.on("error", (error) => {
+      console.error("Office content stream error:", error);
+      if (!res.headersSent) {
+        throw new AppError(
+          StatusCodes.INTERNAL_SERVER_ERROR,
+          "Failed to stream file",
+        );
+      }
+    });
   }
 
   async moveFile(req: Request, res: Response, next: NextFunction) {

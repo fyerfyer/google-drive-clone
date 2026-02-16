@@ -10,6 +10,7 @@ import { useFileOperations } from "./useFileOperations";
 
 export type ItemActions =
   | "preview"
+  | "edit"
   | "download"
   | "rename"
   | "star"
@@ -44,6 +45,13 @@ export const useFileActions = () => {
         break;
       }
 
+      case "edit": {
+        if (item.type === "file") {
+          navigate(`/editor?fileId=${item.id}&mode=edit`);
+        }
+        break;
+      }
+
       case "download": {
         if (item.type === "file") {
           toast.promise(
@@ -54,7 +62,7 @@ export const useFileActions = () => {
               loading: "Preparing download...",
               success: "Download started",
               error: "Failed to download",
-            }
+            },
           );
         }
 

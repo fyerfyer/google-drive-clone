@@ -7,6 +7,7 @@ import {
   Star,
   StarOff,
   FolderInput,
+  Pencil,
 } from "lucide-react";
 import {
   ContextMenuItem,
@@ -17,6 +18,7 @@ import {
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import type { FolderItem, ItemActions } from "@/hooks/folder/useFileActions";
+import { getEditorMode } from "@/lib/file-preview";
 
 interface FileActionsProps {
   item: FolderItem;
@@ -30,6 +32,7 @@ export const FileActions = ({ item, onAction, mode }: FileActionsProps) => {
     mode === "context" ? ContextMenuSeparator : DropdownMenuSeparator;
 
   const isFile = item.type === "file";
+  const canEdit = isFile && getEditorMode(item.name) !== "none";
 
   return (
     <>
@@ -38,6 +41,11 @@ export const FileActions = ({ item, onAction, mode }: FileActionsProps) => {
           <Item onClick={() => onAction("preview", item)}>
             <Eye className="mr-2 h-4 w-4" /> Preview
           </Item>
+          {canEdit && (
+            <Item onClick={() => onAction("edit", item)}>
+              <Pencil className="mr-2 h-4 w-4" /> Open in Editor
+            </Item>
+          )}
           <Item onClick={() => onAction("download", item)}>
             <Download className="mr-2 h-4 w-4" /> Download
           </Item>

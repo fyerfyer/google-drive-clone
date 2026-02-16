@@ -3,6 +3,52 @@ import { fileService } from "@/services/file.service";
 import { queryKeys } from "@/lib/queryClient";
 import { toast } from "sonner";
 
+// Hook for creating a blank file
+export const useCreateBlankFile = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (data: {
+      folderId: string;
+      fileName: string;
+      content?: string;
+    }) => fileService.createBlankFile(data),
+    onSuccess: () => {
+      toast.success("File created successfully");
+      queryClient.invalidateQueries({ queryKey: queryKeys.folders.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.files.all });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.specialViews.recent(),
+      });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.specialViews.files(),
+      });
+    },
+    onError: (error) => {
+      const message =
+        error instanceof Error ? error.message : "Failed to create file";
+      toast.error(message);
+    },
+  });
+};
+
+// Hook for updating file content
+export const useUpdateFileContent = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ fileId, content }: { fileId: string; content: string }) =>
+      fileService.updateFileContent(fileId, content),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.files.all });
+    },
+    onError: (error) => {
+      const message =
+        error instanceof Error ? error.message : "Failed to save file";
+      toast.error(message);
+    },
+  });
+};
 
 // Hook for renaming a file
 export const useRenameFile = () => {
@@ -273,4 +319,4 @@ const updateFileInCache = (
   }
 
   return data;
-}
+};

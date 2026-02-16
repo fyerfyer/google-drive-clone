@@ -21,10 +21,12 @@ import {
   Trash2,
   Star,
   X,
+  FilePlus,
 } from "lucide-react";
 import { CreateFolderDialog } from "./CreateFolderDialog";
 import { FileUploadDialog } from "./FileUploadDialog";
 import { DeleteConfirmDialog } from "./DeleteConfirmDialog";
+import { CreateFileDialog } from "./CreateFileDialog";
 
 export const FolderToolbar = () => {
   const queryClient = useQueryClient();
@@ -46,6 +48,7 @@ export const FolderToolbar = () => {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showUploadDialog, setShowUploadDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [showCreateFileDialog, setShowCreateFileDialog] = useState(false);
 
   const hasSelection = selectedItems.size > 0;
 
@@ -109,6 +112,12 @@ export const FolderToolbar = () => {
                     <FolderPlus className="size-4" />
                     New Folder
                   </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => setShowCreateFileDialog(true)}
+                  >
+                    <FilePlus className="size-4" />
+                    New File
+                  </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={handleUploadFile}>
                     <Upload className="size-4" />
@@ -158,6 +167,11 @@ export const FolderToolbar = () => {
         onConfirm={handleBatchTrash}
         itemName=""
         itemCount={selectedItems.size}
+      />
+      <CreateFileDialog
+        open={showCreateFileDialog}
+        onOpenChange={setShowCreateFileDialog}
+        folderId={currentFolder?.id || "root"}
       />
     </>
   );

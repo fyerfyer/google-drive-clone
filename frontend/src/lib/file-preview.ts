@@ -5,6 +5,10 @@ export type FileCategory =
   | "text"
   | "pdf"
   | "document"
+  | "spreadsheet"
+  | "presentation"
+  | "code"
+  | "markdown"
   | "other";
 
 export const OFFICE_EXTENSIONS = {
@@ -50,7 +54,7 @@ export const isLegacyOfficeFormat = (fileName: string): boolean => {
 
 export const getFileCategory = (
   mimeType: string,
-  fileName: string
+  fileName: string,
 ): FileCategory => {
   if (mimeType.startsWith("image/")) return "image";
   if (mimeType.startsWith("video/")) return "video";
@@ -78,7 +82,7 @@ export const getFileCategory = (
 };
 
 export const getOfficePreviewErrorMessage = (
-  fileName: string
+  fileName: string,
 ): string | null => {
   const ext = getFileExtension(fileName);
 
@@ -110,10 +114,82 @@ export const isLegacyFormatError = (error: Error | string): boolean => {
   );
 };
 
-export const createDocViewerDocument = (url: string, fileName: string) => {
-  return {
-    uri: url,
-    fileName: fileName,
-    fileType: getFileExtension(fileName) || undefined,
-  };
+// Determine editor mode based on file type and size
+export const getEditorMode = (
+  fileName: string,
+): "text" | "onlyoffice" | "none" => {
+  const ext = getFileExtension(fileName);
+
+  // Text files
+  const textExtensions = [
+    "txt",
+    "md",
+    "json",
+    "xml",
+    "yaml",
+    "yml",
+    "html",
+    "css",
+    "js",
+    "ts",
+    "jsx",
+    "tsx",
+    "py",
+    "java",
+    "c",
+    "cpp",
+    "h",
+    "hpp",
+    "sh",
+    "bat",
+    "sql",
+    "csv",
+    "log",
+  ];
+  if (textExtensions.includes(ext)) return "text";
+
+  // OnlyOffice compatible files
+  const officeExtensions = [
+    "doc",
+    "docx",
+    "xls",
+    "xlsx",
+    "ppt",
+    "pptx",
+    "odt",
+    "ods",
+    "odp",
+  ];
+  if (officeExtensions.includes(ext)) return "onlyoffice";
+
+  return "none";
 };
+
+export const isOnlyOfficeCompatible = (fileName: string): boolean => {
+  const ext = getFileExtension(fileName);
+  const officeExtensions = [
+    "doc",
+    "docx",
+    "xls",
+    "xlsx",
+    "ppt",
+    "pptx",
+    "odt",
+    "ods",
+    "odp",
+  ];
+  return officeExtensions.includes(ext);
+};
+
+export const CREATABLE_FILE_TYPES = [
+  { extension: "txt", label: "Text File", icon: "📄" },
+  { extension: "md", label: "Markdown", icon: "📝" },
+  { extension: "docx", label: "Word Document", icon: "📄" },
+  { extension: "xlsx", label: "Excel Spreadsheet", icon: "📊" },
+  { extension: "pptx", label: "PowerPoint Presentation", icon: "📈" },
+  { extension: "json", label: "JSON File", icon: "🔧" },
+  { extension: "js", label: "JavaScript File", icon: "📜" },
+  { extension: "py", label: "Python File", icon: "🐍" },
+  { extension: "html", label: "HTML File", icon: "🌐" },
+  { extension: "css", label: "CSS File", icon: "🎨" },
+] as const;
