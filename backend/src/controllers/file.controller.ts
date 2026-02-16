@@ -7,9 +7,6 @@ import { ResponseHelper } from "../utils/response.util";
 import { FileUploadResponse } from "../types/response.types";
 import { StorageService } from "../services/storage.service";
 import { BUCKETS } from "../config/s3";
-import { generateOnlyOfficeToken } from "../utils/jwt.util";
-import { config } from "../config/env";
-import jwt from "jsonwebtoken";
 
 export class FileController {
   constructor(private fileService: FileService) {}
@@ -227,8 +224,7 @@ export class FileController {
     );
   }
 
-  // 获取一个 OnlyOffice 文档服务器可用于获取文件的 URL。
-  // 返回一个包含内嵌短期 JWT 令牌和 OnlyOffice 配置令牌的 URL。
+  // 获取 OnlyOffice 配置：URL + token
   async getOfficeContentUrl(req: Request, res: Response, next: NextFunction) {
     if (!req.user) {
       throw new AppError(StatusCodes.UNAUTHORIZED, "User not authenticated");
@@ -239,93 +235,23 @@ export class FileController {
       throw new AppError(StatusCodes.BAD_REQUEST, "File ID is required");
     }
 
-    // 获取文件信息，根据文件信息配置 OnlyOffice
-    const file = await this.fileService.getFileById(fileId, req.user.id);
-    if (!file) {
-      throw new AppError(StatusCodes.NOT_FOUND, "File not found");
-    }
-
-    // 生成临时 JWT token 让 OnlyOffice Document Server 验证请求并获取文件内容
-    const officeToken = jwt.sign(
-      {
-        id: req.user.id,
-        email: (req.user as IUser).email,
-        fileId,
-        purpose: "office-content",
-      },
-      config.jwtSecret,
-      { expiresIn: "15m" },
-    );
-
-    // 构建 OnlyOffice 可访问的 URL，包含 JWT 令牌作为查询参数
-    const officeContentUrl = `${config.officeCallbackUrl}/api/files/${fileId}/office-content?token=${officeToken}`;
-
-    const getDocumentType = (filename: string): string => {
-      const ext = filename.split(".").pop()?.toLowerCase() || "";
-      if (["doc", "docx", "odt", "rtf", "txt"].includes(ext)) return "word";
-      if (["xls", "xlsx", "ods", "csv"].includes(ext)) return "cell";
-      if (["ppt", "pptx", "odp"].includes(ext)) return "slide";
-      return "word";
-    };
-
-    const getFileType = (filename: string): string => {
-      return filename.split(".").pop()?.toLowerCase() || "docx";
-    };
-
-    const documentConfig = {
-      document: {
-        fileType: getFileType(file.name),
-        key: `${fileId}_${file.updatedAt}`, // 时间戳 Key
-        title: file.name,
-        url: officeContentUrl,
-        permissions: {
-          comment: true,
-          copy: true,
-          download: true,
-          edit: true,
-          fillForms: true,
-          modifyContentControl: true,
-          modifyFilter: true,
-          print: true,
-          review: true,
-        },
-      },
-      documentType: getDocumentType(file.name),
-      editorConfig: {
-        user: {
-          id: req.user.id,
-          name: (req.user as IUser).email,
-        },
-      },
-    };
-
-    const response: any = {
-      url: officeContentUrl,
-      config: documentConfig,
-    };
-
-    if (config.onlyofficeJwtEnabled) {
-      const onlyofficeToken = generateOnlyOfficeToken(documentConfig);
-      response.token = onlyofficeToken;
-    }
+    const response = await this.fileService.getOnlyOfficeConfig({
+      userId: req.user.id,
+      userEmail: (req.user as IUser).email,
+      fileId,
+    });
 
     return ResponseHelper.success(res, response);
   }
 
-  // 为 OnlyOffice 文档服务器流式传输文件内容。`
+  // 访问内容接口，返回文件流
   async serveOfficeContent(req: Request, res: Response, next: NextFunction) {
-    // 通过查询字符串 token 进行认证
     const token = req.query.token as string;
     if (!token) {
       throw new AppError(StatusCodes.UNAUTHORIZED, "Token is required");
     }
 
-    let payload: { id: string; email: string; fileId: string; purpose: string };
-    try {
-      payload = jwt.verify(token, config.jwtSecret) as typeof payload;
-    } catch {
-      throw new AppError(StatusCodes.UNAUTHORIZED, "Invalid or expired token");
-    }
+    const payload = this.fileService.verifyOfficeContentToken(token);
 
     if (
       payload.purpose !== "office-content" ||
@@ -334,7 +260,6 @@ export class FileController {
       throw new AppError(StatusCodes.FORBIDDEN, "Token mismatch");
     }
 
-    // 流式文件
     const result = await this.fileService.getPreviewStream({
       userId: payload.id,
       fileId: payload.fileId,

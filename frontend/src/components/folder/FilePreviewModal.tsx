@@ -1,11 +1,4 @@
-/* eslint-disable react-hooks/set-state-in-effect */
-/**
- * Google Drive-style fullscreen file preview overlay.
- * Uses a portal instead of Dialog to avoid Radix max-width constraints.
- */
-import { fileService } from "@/services/file.service";
-import type { IFile } from "@/types/file.types";
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { createPortal } from "react-dom";
 import { Worker, Viewer } from "@react-pdf-viewer/core";
@@ -34,13 +27,13 @@ import {
 import { triggerDownload } from "@/lib/download";
 import { toast } from "sonner";
 import { OnlyOfficeEditor } from "@/components/editor/OnlyOfficeEditor";
-import {
-  getFileCategory,
-  getEditorMode,
-  isOnlyOfficeCompatible,
-  type FileCategory,
-} from "@/lib/file-preview";
+import type { FileCategory } from "@/lib/file-preview";
 import { TextEditor } from "@/components/editor/TextEditor";
+import type { IFile } from "@/types/file.types";
+import { fileService } from "@/services/file.service";
+import { useFilePreview } from "@/hooks/editor/useFilePreview";
+import { useEscapeKey } from "@/hooks/editor/useKeyboardShortcuts";
+import { useEffect } from "react";
 
 const ONLYOFFICE_URL = import.meta.env.VITE_ONLYOFFICE_URL || "";
 
@@ -84,24 +77,26 @@ export const FilePreviewModal = ({
   file,
 }: FilePreviewModalProps) => {
   const navigate = useNavigate();
-  const [url, setUrl] = useState<string | null>(null);
-  const [officeUrl, setOfficeUrl] = useState<string | null>(null);
-  const [onlyofficeToken, setOnlyofficeToken] = useState<string | undefined>(
-    undefined,
-  );
-  const [textContent, setTextContent] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
-  // Close on Escape
-  useEffect(() => {
-    if (!isOpen) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, onClose]);
+  // Use the new file preview hook
+  const {
+    url,
+    officeUrl,
+    onlyOfficeToken,
+    textContent,
+    isLoading,
+    error,
+    fileCategory,
+    canOpenInEditor,
+    useOnlyOffice,
+  } = useFilePreview({
+    file,
+    isOpen,
+    onlyOfficeEnabled: !!ONLYOFFICE_URL,
+  });
+
+  // Handle ESC key to close
+  useEscapeKey(onClose, isOpen);
 
   // Prevent body scroll when open
   useEffect(() => {
@@ -114,69 +109,6 @@ export const FilePreviewModal = ({
       document.body.style.overflow = "";
     };
   }, [isOpen]);
-
-  // Load file data
-  useEffect(() => {
-    if (isOpen && file) {
-      setIsLoading(true);
-      setError(null);
-      setTextContent(null);
-      setUrl(null);
-      setOfficeUrl(null);
-
-      const editorMode = getEditorMode(file.name);
-      const useOO = isOnlyOfficeCompatible(file.name) && !!ONLYOFFICE_URL;
-
-      if (editorMode === "text") {
-        fileService
-          .getFileContent(file.id)
-          .then((result) => setTextContent(result.content))
-          .catch((err) =>
-            setError(
-              err instanceof Error ? err.message : "Failed to load file",
-            ),
-          )
-          .finally(() => setIsLoading(false));
-      } else if (useOO) {
-        // Office docs: fetch both preview URL and office-content URL
-        Promise.all([
-          fileService.getPreviewUrl(file.id),
-          fileService.getOfficeContentUrl(file.id),
-        ])
-          .then(([previewUrl, officeData]) => {
-            setUrl(previewUrl);
-            setOfficeUrl(officeData.url);
-            setOnlyofficeToken(officeData.token);
-          })
-          .catch((err) =>
-            setError(
-              err instanceof Error ? err.message : "Failed to load file",
-            ),
-          )
-          .finally(() => setIsLoading(false));
-      } else {
-        fileService
-          .getPreviewUrl(file.id)
-          .then((previewUrl) => setUrl(previewUrl))
-          .catch((err) =>
-            setError(
-              err instanceof Error ? err.message : "Failed to load file",
-            ),
-          )
-          .finally(() => setIsLoading(false));
-      }
-    } else {
-      setUrl(null);
-      setOfficeUrl(null);
-      setTextContent(null);
-      setError(null);
-    }
-  }, [isOpen, file]);
-
-  const fileCategory = useMemo(
-    () => (file ? getFileCategory(file.mimeType, file.name) : "other"),
-    [file],
-  );
 
   const defaultLayoutPluginInstance = defaultLayoutPlugin();
 
@@ -195,25 +127,17 @@ export const FilePreviewModal = ({
     }
   }, [file]);
 
-  const canOpenInEditor = file?.name
-    ? getEditorMode(file.name) !== "none"
-    : false;
-
   const handleOpenInEditor = useCallback(() => {
     if (!file) return;
     onClose();
     navigate(`/editor?fileId=${file.id}&mode=edit`);
   }, [file, onClose, navigate]);
 
-  const useOnlyOffice =
-    file && isOnlyOfficeCompatible(file.name) && !!ONLYOFFICE_URL;
-
   // ── Render preview content ──────────────────────────────────
   const renderPreview = () => {
     if (!file) return null;
 
-    const editorMode = getEditorMode(file.name);
-    if (editorMode === "text" && textContent !== null) {
+    if (textContent !== null) {
       return (
         <div className="h-full w-full max-w-5xl mx-auto bg-white dark:bg-gray-950 shadow-2xl rounded-lg overflow-hidden">
           <TextEditor
@@ -239,7 +163,7 @@ export const FilePreviewModal = ({
             fileUrl={officeUrl}
             documentServerUrl={ONLYOFFICE_URL}
             mode="view"
-            token={onlyofficeToken}
+            token={onlyOfficeToken}
           />
         </div>
       );

@@ -10,6 +10,9 @@ import User from "../models/User.model";
 import { logger } from "../lib/logger";
 import { PermissionService } from "./permission.service";
 import { buildShortcutFileOverrides } from "../utils/shortcut.util";
+import jwt from "jsonwebtoken";
+import { config } from "../config/env";
+import { generateOnlyOfficeToken } from "../utils/jwt.util";
 
 interface CreateFileRecordDTO {
   userId: string;
@@ -918,5 +921,112 @@ export class FileService {
     return files.map((file) =>
       this.toFilePublic(file, userBasic, overrides.get(file.id)),
     );
+  }
+
+  private getDocumentType(filename: string): string {
+    const ext = filename.split(".").pop()?.toLowerCase() || "";
+    if (["doc", "docx", "odt", "rtf", "txt"].includes(ext)) return "word";
+    if (["xls", "xlsx", "ods", "csv"].includes(ext)) return "cell";
+    if (["ppt", "pptx", "odp"].includes(ext)) return "slide";
+    return "word";
+  }
+
+  private getFileType(filename: string): string {
+    return filename.split(".").pop()?.toLowerCase() || "docx";
+  }
+
+  async getOnlyOfficeConfig(data: {
+    userId: string;
+    userEmail: string;
+    fileId: string;
+  }): Promise<{
+    url: string;
+    config: any;
+    token?: string;
+  }> {
+    const { userId, userEmail, fileId } = data;
+
+    const file = await this.getFileById(fileId, userId);
+    if (!file) {
+      throw new AppError(StatusCodes.NOT_FOUND, "File not found");
+    }
+
+    // 生成用于访问的临时 token
+    const officeToken = jwt.sign(
+      {
+        id: userId,
+        email: userEmail,
+        fileId,
+        purpose: "office-content",
+      },
+      config.jwtSecret,
+      { expiresIn: "15m" },
+    );
+
+    // 通过参数传递 token
+    const officeContentUrl = `${config.officeCallbackUrl}/api/files/${fileId}/office-content?token=${officeToken}`;
+
+    const documentConfig = {
+      document: {
+        fileType: this.getFileType(file.name),
+        key: `${fileId}_${file.updatedAt}`, // unique key，防止 cache
+        title: file.name,
+        url: officeContentUrl,
+        permissions: {
+          comment: true,
+          copy: true,
+          download: true,
+          edit: true,
+          fillForms: true,
+          modifyContentControl: true,
+          modifyFilter: true,
+          print: true,
+          review: true,
+        },
+      },
+      documentType: this.getDocumentType(file.name),
+      editorConfig: {
+        user: {
+          id: userId,
+          name: userEmail,
+        },
+      },
+    };
+
+    const response: any = {
+      url: officeContentUrl,
+      config: documentConfig,
+    };
+
+    if (config.onlyofficeJwtEnabled) {
+      const onlyofficeToken = generateOnlyOfficeToken(documentConfig);
+      response.token = onlyofficeToken;
+    }
+
+    logger.info(
+      { fileId, userId, fileName: file.name },
+      "Generated OnlyOffice configuration",
+    );
+
+    return response;
+  }
+
+  verifyOfficeContentToken(token: string): {
+    id: string;
+    email: string;
+    fileId: string;
+    purpose: string;
+  } {
+    try {
+      const payload = jwt.verify(token, config.jwtSecret) as {
+        id: string;
+        email: string;
+        fileId: string;
+        purpose: string;
+      };
+      return payload;
+    } catch {
+      throw new AppError(StatusCodes.UNAUTHORIZED, "Invalid or expired token");
+    }
   }
 }

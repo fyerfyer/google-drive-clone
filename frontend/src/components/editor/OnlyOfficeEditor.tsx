@@ -1,19 +1,17 @@
 import { useEffect, useRef } from "react";
-
-declare global {
-  interface Window {
-    DocsAPI?: {
-      DocEditor: new (id: string, config: any) => any;
-    };
-  }
-}
+import type {
+  OnlyOfficeConfig,
+  DocsAPIDocEditor,
+  DocumentType,
+  EditorMode,
+} from "@/types/onlyoffice.types";
 
 interface OnlyOfficeEditorProps {
   fileId: string;
   fileName: string;
   fileUrl: string;
   documentServerUrl: string;
-  mode?: "edit" | "view";
+  mode?: EditorMode;
   token?: string;
 }
 
@@ -26,13 +24,13 @@ export const OnlyOfficeEditor = ({
   token,
 }: OnlyOfficeEditorProps) => {
   const editorRef = useRef<HTMLDivElement>(null);
-  const docEditorRef = useRef<any>(null);
+  const docEditorRef = useRef<DocsAPIDocEditor | null>(null);
 
   useEffect(() => {
     if (!editorRef.current || !documentServerUrl) return;
 
     // Determine document type based on file extension
-    const getDocumentType = (filename: string): string => {
+    const getDocumentType = (filename: string): DocumentType => {
       const ext = filename.split(".").pop()?.toLowerCase() || "";
       if (["doc", "docx", "odt", "rtf", "txt"].includes(ext)) return "word";
       if (["xls", "xlsx", "ods", "csv"].includes(ext)) return "cell";
@@ -45,7 +43,7 @@ export const OnlyOfficeEditor = ({
       return filename.split(".").pop()?.toLowerCase() || "docx";
     };
 
-    const config: any = {
+    const config: OnlyOfficeConfig = {
       document: {
         fileType: getFileType(fileName),
         key: `${fileId}_${Date.now()}`, // Unique key for document identification
