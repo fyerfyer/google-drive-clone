@@ -7,11 +7,13 @@ import {
   IconClock,
   IconCloudUp,
   IconUsers,
+  IconRobot,
 } from "@tabler/icons-react";
 
 import { NavMain } from "@/components/nav/nav-main";
 import { NavUser } from "@/components/nav/nav-user";
 import { useAuth } from "@/hooks/auth/useAuth";
+import { useAgentStore } from "@/stores/useAgentStore";
 import GoogleDriveIcon from "@/assets/GoogleDriveIcon.svg";
 import {
   Sidebar,
@@ -67,6 +69,7 @@ const data = {
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const auth = useAuth();
+  const toggleAgent = useAgentStore((s) => s.toggle);
 
   const userProp = auth?.user
     ? {
@@ -112,6 +115,19 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       <SidebarContent>
         <NavMain items={data.navMain} />
         <NavMain items={data.navStorage} hideQuickCreate />
+
+        {/* AI Assistant */}
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              onClick={toggleAgent}
+              className="mx-2 mt-2 gap-2"
+            >
+              <IconRobot className="size-4" />
+              <span>AI Assistant</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
       </SidebarContent>
       <SidebarFooter>
         <NavUser user={userProp} />

@@ -3,14 +3,11 @@ import { config } from "../config/env";
 
 const isDevelopment = config.nodeEnv === "development";
 const isTest = config.nodeEnv === "test";
+const isMcp = config.nodeEnv === "mcp";
 
 const productionConfig: pino.LoggerOptions = {
   level: "info",
-  formatters: {
-    level: (label) => {
-      return { level: label.toUpperCase() };
-    },
-  },
+  // formatters 在 transport.targets 中无法使用
   timestamp: pino.stdTimeFunctions.isoTime,
   transport: {
     targets: [
@@ -71,11 +68,26 @@ const testConfig: pino.LoggerOptions = {
     : undefined,
 };
 
+const mcpConfig: pino.LoggerOptions = {
+  level: "debug",
+  transport: {
+    target: "pino-pretty",
+    options: {
+      colorize: true,
+      translateTime: "SYS:standard",
+      ignore: "pid,hostname",
+      singleLine: false,
+    },
+  },
+};
+
 let loggerConfig: pino.LoggerOptions;
 if (isTest) {
   loggerConfig = testConfig;
 } else if (isDevelopment) {
   loggerConfig = developmentConfig;
+} else if (isMcp) {
+  loggerConfig = mcpConfig;
 } else {
   loggerConfig = productionConfig;
 }
@@ -89,7 +101,7 @@ export const createChildLogger = (bindings: pino.Bindings) => {
 export const logError = (
   error: Error | unknown,
   message: string,
-  context?: Record<string, any>
+  context?: Record<string, any>,
 ) => {
   if (error instanceof Error) {
     logger.error(
@@ -98,7 +110,7 @@ export const logError = (
         stack: error.stack,
         ...context,
       },
-      message
+      message,
     );
   } else {
     logger.error(
@@ -106,7 +118,7 @@ export const logError = (
         error: String(error),
         ...context,
       },
-      message
+      message,
     );
   }
 };

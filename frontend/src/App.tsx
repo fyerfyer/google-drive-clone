@@ -5,9 +5,12 @@ import { Toaster } from "sonner";
 import { useAuthStore } from "@/stores/useAuthStore";
 import { useEffect } from "react";
 import { queryClient } from "@/lib/queryClient";
+import { AgentPanel } from "@/components/agent/AgentPanel";
+import { AgentTrigger } from "@/components/agent/AgentTrigger";
 
 function App() {
   const initializeAuth = useAuthStore((state) => state.initializeAuth);
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
 
   useEffect(() => {
     initializeAuth();
@@ -16,6 +19,12 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <AppRouter />
+      {isAuthenticated && (
+        <>
+          <AgentTrigger />
+          <AgentPanel />
+        </>
+      )}
       <Toaster position="bottom-right" richColors expand={false} />
       <ReactQueryDevtools initialIsOpen={false} />
     </QueryClientProvider>

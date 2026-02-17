@@ -17,12 +17,11 @@ export class AuthController {
       password: password,
       name: name,
       avatarDataUrl,
-      avatarFile: req.file,
     });
     return ResponseHelper.created<AuthResponse>(
       res,
       { user, token },
-      "Registration successful"
+      "Registration successful",
     );
   }
 
@@ -38,7 +37,7 @@ export class AuthController {
   async logout(req: Request, res: Response) {
     return ResponseHelper.message(
       res,
-      "Successfully logged out, please clear jwt token in client side"
+      "Successfully logged out, please clear jwt token in client side",
     );
   }
 }

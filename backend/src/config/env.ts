@@ -2,7 +2,12 @@ import dotenv from "dotenv";
 import path from "path";
 
 // Load environment-specific .env file
-const envFile = process.env.NODE_ENV === "test" ? ".env.test" : ".env";
+let envFile = ".env";
+if (process.env.NODE_ENV === "test") {
+  envFile = ".env.test";
+} else if (process.env.NODE_ENV === "mcp") {
+  envFile = ".env.mcp";
+}
 dotenv.config({ path: path.resolve(__dirname, "../../", envFile) });
 
 interface EnvConfig {
@@ -26,6 +31,11 @@ interface EnvConfig {
   onlyofficeUrl: string;
   onlyofficeJwtSecret: string;
   onlyofficeJwtEnabled: boolean;
+
+  // AI Agent (LLM) configuration
+  llmApiKey: string;
+  llmBaseUrl: string;
+  llmModel: string;
 }
 
 export const config: EnvConfig = {
@@ -50,6 +60,11 @@ export const config: EnvConfig = {
   onlyofficeUrl: process.env.ONLYOFFICE_URL || "http://localhost:8080",
   onlyofficeJwtSecret: process.env.ONLYOFFICE_JWT_SECRET || "my_secret_jwt_key",
   onlyofficeJwtEnabled: process.env.ONLYOFFICE_JWT_ENABLED === "true",
+
+  // AI Agent (LLM) configuration
+  llmApiKey: process.env.LLM_API_KEY || "",
+  llmBaseUrl: process.env.LLM_BASE_URL || "https://api.openai.com/v1",
+  llmModel: process.env.LLM_MODEL || "gpt-4o-mini",
 };
 
 const requiredEnvVars = ["MONGODB_URI", "JWT_SECRET"];

@@ -8,6 +8,8 @@
     "dev": "nodemon --exec tsx src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
+    "mcp:stdio": "NODE_ENV=mcp tsx src/mcp/stdio.ts",
+    "mcp:stdio:build": "NODE_ENV=mcp node dist/mcp/stdio.js",
     "lint": "eslint .",
     "format": "prettier --write \"src/**/*.ts\"",
     "test": "npm run test:setup && jest --runInBand",

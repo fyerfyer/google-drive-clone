@@ -28,6 +28,10 @@ import { ShareController } from "./controllers/share.controller";
 import { createShareRouter } from "./routes/share.route";
 import { createMcpServer } from "./mcp/server";
 import { createMcpRouter } from "./mcp/transport";
+import { McpClientService } from "./services/mcp-client.service";
+import { AgentService } from "./services/agent.service";
+import { AgentController } from "./controllers/agent.controller";
+import { createAgentRouter } from "./routes/agent.route";
 
 const userService = new UserService();
 const authService = new AuthService(userService);
@@ -122,6 +126,11 @@ const mcpServices = {
 };
 const mcpRouter = createMcpRouter(() => createMcpServer(mcpServices));
 app.use("/api/mcp", mcpRouter);
+
+const mcpClientService = new McpClientService(mcpServices);
+const agentService = new AgentService(mcpClientService);
+const agentController = new AgentController(agentService);
+app.use("/api/agent", createAgentRouter(agentController));
 
 app.use(notFound);
 app.use(errorHandler);
