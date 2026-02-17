@@ -1,22 +1,24 @@
 import { useState, useEffect } from "react";
 import { fileService } from "@/services/file.service";
+import type { OnlyOfficeConfig } from "@/types/onlyoffice.types";
 
-export interface OnlyOfficeConfig {
+export interface OnlyOfficeResult {
   url: string;
   token?: string;
+  config?: OnlyOfficeConfig;
 }
 
 /**
  * Hook for managing OnlyOffice configuration and state
  */
 export const useOnlyOffice = (fileId: string | null) => {
-  const [config, setConfig] = useState<OnlyOfficeConfig | null>(null);
+  const [result, setResult] = useState<OnlyOfficeResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!fileId) {
-      setConfig(null);
+      setResult(null);
       return;
     }
 
@@ -26,9 +28,10 @@ export const useOnlyOffice = (fileId: string | null) => {
 
       try {
         const officeData = await fileService.getOfficeContentUrl(fileId);
-        setConfig({
+        setResult({
           url: officeData.url,
           token: officeData.token,
+          config: officeData.config,
         });
       } catch (err) {
         const message =
@@ -36,7 +39,7 @@ export const useOnlyOffice = (fileId: string | null) => {
             ? err.message
             : "Failed to load OnlyOffice configuration";
         setError(message);
-        setConfig(null);
+        setResult(null);
       } finally {
         setIsLoading(false);
       }
@@ -46,7 +49,9 @@ export const useOnlyOffice = (fileId: string | null) => {
   }, [fileId]);
 
   return {
-    config,
+    config: result ? { url: result.url, token: result.token } : null,
+    /** The full OnlyOffice document config from backend (includes callbackUrl) */
+    serverConfig: result?.config || null,
     isLoading,
     error,
   };

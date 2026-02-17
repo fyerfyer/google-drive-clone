@@ -17,6 +17,13 @@ export function createFileRouter(
     fileController.serveOfficeContent.bind(fileController),
   );
 
+  // OnlyOffice Document Server 保存回调
+  // 当用户在 OnlyOffice 中保存文档时，Document Server POST 到此端点
+  router.post(
+    "/:fileId/office-callback",
+    fileController.handleOfficeCallback.bind(fileController),
+  );
+
   router.use(jwtAuth);
 
   // 在上传文件成功后保存 record
@@ -53,7 +60,7 @@ export function createFileRouter(
     requireAccess(permissionService, "viewer", { resourceType: "File" }),
     fileController.getPreviewUrl.bind(fileController),
   );
-  
+
   // OnlyOffice 获取文件内容
   router.get(
     "/:fileId/office-url",

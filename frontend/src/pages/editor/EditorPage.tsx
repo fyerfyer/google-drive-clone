@@ -38,6 +38,7 @@ const EditorPage = () => {
     setContent,
     onlyOfficeUrl,
     onlyOfficeToken,
+    onlyOfficeServerConfig,
     isLoading,
     isSaving,
     error,
@@ -236,6 +237,7 @@ const EditorPage = () => {
             fileId={file.id}
             fileName={file.name}
             fileUrl={onlyOfficeUrl}
+            serverConfig={onlyOfficeServerConfig}
             documentServerUrl={ONLYOFFICE_URL}
             mode={editorMode}
             token={onlyOfficeToken}

@@ -285,6 +285,38 @@ export class FileController {
     });
   }
 
+  // OnlyOffice Document Server 回调处理
+  // 当用户保存文档时，Document Server POST 用这个接口进行处理
+  async handleOfficeCallback(req: Request, res: Response, next: NextFunction) {
+    const token = req.query.token as string;
+    if (!token) {
+      // OnlyOffice 要求返回 { error: 1 } 格式
+      return res.json({ error: 1 });
+    }
+
+    let payload: { id: string; email: string; fileId: string; purpose: string };
+    try {
+      payload = this.fileService.verifyOfficeContentToken(token);
+    } catch {
+      return res.json({ error: 1 });
+    }
+
+    if (
+      payload.purpose !== "office-callback" ||
+      payload.fileId !== req.params.fileId
+    ) {
+      return res.json({ error: 1 });
+    }
+
+    const result = await this.fileService.handleOnlyOfficeCallback({
+      fileId: payload.fileId,
+      userId: payload.id,
+      callbackBody: req.body,
+    });
+
+    return res.json(result);
+  }
+
   async moveFile(req: Request, res: Response, next: NextFunction) {
     if (!req.user) {
       throw new AppError(StatusCodes.UNAUTHORIZED, "User not authenticated");

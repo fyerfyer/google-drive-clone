@@ -26,6 +26,8 @@ import { PermissionService } from "./services/permission.service";
 import { ShareService } from "./services/share.service";
 import { ShareController } from "./controllers/share.controller";
 import { createShareRouter } from "./routes/share.route";
+import { createMcpServer } from "./mcp/server";
+import { createMcpRouter } from "./mcp/transport";
 
 const userService = new UserService();
 const authService = new AuthService(userService);
@@ -46,12 +48,15 @@ const shareController = new ShareController(shareService);
 const app: Application = express();
 const bodyLimit = "10mb";
 
-// OnlyOffice CORS 服务
+// OnlyOffice CORS 服务 (office-content 和 office-callback)
 app.use((req, res, next) => {
-  if (req.path.includes("/office-content")) {
+  if (
+    req.path.includes("/office-content") ||
+    req.path.includes("/office-callback")
+  ) {
     // 由于已经设置了 Token 校验，这里全部放行
     res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, HEAD, OPTIONS");
     res.setHeader("Access-Control-Allow-Headers", "Content-Type");
     if (req.method === "OPTIONS") {
       return res.sendStatus(200);
@@ -63,7 +68,10 @@ app.use((req, res, next) => {
 
 // 前端 Global CORS 设置
 app.use((req, res, next) => {
-  if (req.path.includes("/office-content")) {
+  if (
+    req.path.includes("/office-content") ||
+    req.path.includes("/office-callback")
+  ) {
     return next();
   }
   cors({
@@ -104,6 +112,16 @@ app.use(
 app.use("/api/upload", createUploadRouter(uploadController));
 app.use("/api/batch", createBatchRouter(batchController));
 app.use("/api/share", createShareRouter(shareController));
+
+// === MCP Server (AI Agent 能力暴露层) ===
+const mcpServices = {
+  fileService,
+  folderService,
+  shareService,
+  permissionService,
+};
+const mcpRouter = createMcpRouter(() => createMcpServer(mcpServices));
+app.use("/api/mcp", mcpRouter);
 
 app.use(notFound);
 app.use(errorHandler);

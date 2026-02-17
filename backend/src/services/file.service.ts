@@ -966,10 +966,24 @@ export class FileService {
     // 通过参数传递 token
     const officeContentUrl = `${config.officeCallbackUrl}/api/files/${fileId}/office-content?token=${officeToken}`;
 
+    // 生成回调 token（较长有效期，编辑期间需持续有效）
+    const callbackToken = jwt.sign(
+      {
+        id: userId,
+        email: userEmail,
+        fileId,
+        purpose: "office-callback",
+      },
+      config.jwtSecret,
+      { expiresIn: "24h" },
+    );
+
+    const callbackUrl = `${config.officeCallbackUrl}/api/files/${fileId}/office-callback?token=${callbackToken}`;
+
     const documentConfig = {
       document: {
         fileType: this.getFileType(file.name),
-        key: `${fileId}_${file.updatedAt}`, // unique key，防止 cache
+        key: `${fileId}_${file.updatedAt.getTime()}`, // 只在更新时变化的 key
         title: file.name,
         url: officeContentUrl,
         permissions: {
@@ -986,9 +1000,14 @@ export class FileService {
       },
       documentType: this.getDocumentType(file.name),
       editorConfig: {
+        callbackUrl,
         user: {
           id: userId,
           name: userEmail,
+        },
+        customization: {
+          autosave: true,
+          forcesave: true,
         },
       },
     };
@@ -1028,5 +1047,182 @@ export class FileService {
     } catch {
       throw new AppError(StatusCodes.UNAUTHORIZED, "Invalid or expired token");
     }
+  }
+
+  // OnlyOffice 回调处理，响应 Save 等请求
+  async handleOnlyOfficeCallback(data: {
+    fileId: string;
+    userId: string;
+    callbackBody: {
+      status: number;
+      url?: string;
+      key?: string;
+      users?: string[];
+      actions?: Array<{ type: number; userid: string }>;
+      forcesavetype?: number;
+      userdata?: string;
+    };
+  }): Promise<{ error: number }> {
+    const { fileId, userId, callbackBody } = data;
+    const { status, url } = callbackBody;
+
+    logger.info(
+      {
+        fileId,
+        userId,
+        status,
+        url: url ? "[present]" : "[absent]",
+        key: callbackBody.key,
+      },
+      "OnlyOffice callback received",
+    );
+
+    // status 2 = 准备保存（编辑器关闭后），status 6 = 强制保存（Ctrl+S）
+    if ((status === 2 || status === 6) && url) {
+      try {
+        // 从 OnlyOffice Document Server 下载修改后的文档
+        // OnlyOffice 返回的 URL 可能包含 localhost，需要在 Docker 环境中转换为容器名
+        let downloadUrl = url;
+
+        // 在 Docker 环境中，将 localhost 替换为 OnlyOffice 容器名
+        // 处理各种可能的格式：localhost, localhost:80, localhost:8080, 127.0.0.1
+        if (downloadUrl.includes("://localhost:8080")) {
+          // 宿主机8080映射到容器内部80
+          downloadUrl = downloadUrl.replace(
+            "://localhost:8080",
+            "://gdrive-onlyoffice",
+          );
+          logger.info(
+            { originalUrl: url, convertedUrl: downloadUrl },
+            "Converted localhost:8080 URL for Docker network",
+          );
+        } else if (downloadUrl.includes("://localhost:80")) {
+          downloadUrl = downloadUrl.replace(
+            "://localhost:80",
+            "://gdrive-onlyoffice",
+          );
+          logger.info(
+            { originalUrl: url, convertedUrl: downloadUrl },
+            "Converted localhost:80 URL for Docker network",
+          );
+        } else if (downloadUrl.includes("://localhost")) {
+          downloadUrl = downloadUrl.replace(
+            "://localhost",
+            "://gdrive-onlyoffice",
+          );
+          logger.info(
+            { originalUrl: url, convertedUrl: downloadUrl },
+            "Converted localhost URL for Docker network",
+          );
+        } else if (downloadUrl.includes("://127.0.0.1")) {
+          downloadUrl = downloadUrl.replace(
+            "://127.0.0.1",
+            "://gdrive-onlyoffice",
+          );
+          logger.info(
+            { originalUrl: url, convertedUrl: downloadUrl },
+            "Converted 127.0.0.1 URL for Docker network",
+          );
+        }
+
+        logger.info(
+          { fileId, downloadUrl },
+          "Downloading document from OnlyOffice",
+        );
+
+        const response = await fetch(downloadUrl);
+        if (!response.ok) {
+          logger.error(
+            {
+              fileId,
+              downloadUrl,
+              status: response.status,
+              statusText: response.statusText,
+            },
+            "Failed to download document from OnlyOffice",
+          );
+          return { error: 1 };
+        }
+
+        const arrayBuffer = await response.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+        const newSize = buffer.length;
+
+        // 获取文件信息
+        const fileObjectId = new mongoose.Types.ObjectId(fileId);
+        const file = await File.findById(fileObjectId).select(
+          "+key name mimeType size user",
+        );
+
+        if (!file) {
+          logger.error({ fileId }, "File not found for OnlyOffice callback");
+          return { error: 1 };
+        }
+
+        const oldSize = file.size;
+        const sizeDiff = newSize - oldSize;
+
+        // 更新存储配额
+        if (sizeDiff > 0) {
+          const updateUser = await User.findOneAndUpdate(
+            {
+              _id: file.user,
+              $expr: {
+                $lte: [{ $add: ["$storageUsage", sizeDiff] }, "$storageQuota"],
+              },
+            },
+            { $inc: { storageUsage: sizeDiff } },
+            { new: true },
+          );
+
+          if (!updateUser) {
+            logger.warn(
+              { fileId, userId, sizeDiff },
+              "Storage quota exceeded during OnlyOffice save",
+            );
+            return { error: 1 };
+          }
+        } else if (sizeDiff < 0) {
+          await User.updateOne(
+            { _id: file.user },
+            { $inc: { storageUsage: sizeDiff } },
+          );
+        }
+
+        // 上传到 MinIO
+        await StorageService.putObject(
+          BUCKETS.FILES,
+          file.key,
+          buffer,
+          newSize,
+          file.mimeType,
+        );
+
+        // 更新文件大小
+        file.size = newSize;
+        await file.save();
+
+        logger.info(
+          { fileId, userId, oldSize, newSize },
+          "OnlyOffice document saved successfully",
+        );
+
+        return { error: 0 };
+      } catch (err) {
+        logger.error(
+          {
+            fileId,
+            error: err instanceof Error ? err.message : String(err),
+            stack: err instanceof Error ? err.stack : undefined,
+            url: callbackBody.url,
+          },
+          "Error processing OnlyOffice callback",
+        );
+        return { error: 1 };
+      }
+    }
+
+    // 其他 status 直接返回成功
+    return { error: 0 };
   }
 }

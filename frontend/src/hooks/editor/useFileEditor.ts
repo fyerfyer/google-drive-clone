@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { fileService } from "@/services/file.service";
 import type { IFile } from "@/types/file.types";
+import type { OnlyOfficeConfig } from "@/types/onlyoffice.types";
 import { getEditorMode } from "@/lib/file-preview";
 import { toast } from "sonner";
 import { useOnlyOffice } from "./useOnlyOffice";
@@ -22,6 +23,8 @@ export interface UseFileEditorReturn {
   // OnlyOffice state
   onlyOfficeUrl: string | null;
   onlyOfficeToken: string | undefined;
+  /** Full OnlyOffice config from backend (includes callbackUrl for saving) */
+  onlyOfficeServerConfig: OnlyOfficeConfig | null;
 
   // Loading/error states
   isLoading: boolean;
@@ -55,9 +58,10 @@ export const useFileEditor = ({
   const hasUnsavedChanges = content !== originalContent;
 
   // Load OnlyOffice config for office files
-  const { config: onlyOfficeConfig } = useOnlyOffice(
-    file?.name && getEditorMode(file.name) === "onlyoffice" ? fileId : null,
-  );
+  const { config: onlyOfficeConfig, serverConfig: onlyOfficeServerConfig } =
+    useOnlyOffice(
+      file?.name && getEditorMode(file.name) === "onlyoffice" ? fileId : null,
+    );
 
   // Load file content
   useEffect(() => {
@@ -181,6 +185,7 @@ export const useFileEditor = ({
     setContent,
     onlyOfficeUrl: onlyOfficeConfig?.url || null,
     onlyOfficeToken: onlyOfficeConfig?.token,
+    onlyOfficeServerConfig,
     isLoading,
     isSaving,
     error,

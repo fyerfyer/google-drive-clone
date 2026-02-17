@@ -2,22 +2,24 @@ import { useEffect, useRef } from "react";
 import type {
   OnlyOfficeConfig,
   DocsAPIDocEditor,
-  DocumentType,
-  EditorMode,
 } from "@/types/onlyoffice.types";
 
 interface OnlyOfficeEditorProps {
   fileId: string;
   fileName: string;
-  fileUrl: string;
+  /** The full OnlyOffice config object from backend, or null to build a minimal one */
+  serverConfig?: OnlyOfficeConfig | null;
+  /** Fallback: direct file URL for OnlyOffice to load */
+  fileUrl?: string;
   documentServerUrl: string;
-  mode?: EditorMode;
+  mode?: "edit" | "view";
   token?: string;
 }
 
 export const OnlyOfficeEditor = ({
   fileId,
   fileName,
+  serverConfig,
   fileUrl,
   documentServerUrl,
   mode = "view",
@@ -29,55 +31,78 @@ export const OnlyOfficeEditor = ({
   useEffect(() => {
     if (!editorRef.current || !documentServerUrl) return;
 
-    // Determine document type based on file extension
-    const getDocumentType = (filename: string): DocumentType => {
-      const ext = filename.split(".").pop()?.toLowerCase() || "";
-      if (["doc", "docx", "odt", "rtf", "txt"].includes(ext)) return "word";
-      if (["xls", "xlsx", "ods", "csv"].includes(ext)) return "cell";
-      if (["ppt", "pptx", "odp"].includes(ext)) return "slide";
-      if (["pdf"].includes(ext)) return "word"; // PDF as word type for viewing
-      return "word";
-    };
+    // Use the server config if available, otherwise build a minimal one
+    let config: OnlyOfficeConfig;
 
-    const getFileType = (filename: string): string => {
-      return filename.split(".").pop()?.toLowerCase() || "docx";
-    };
+    if (serverConfig) {
+      // Use the backend-provided complete config (includes callbackUrl, etc.)
+      config = {
+        ...serverConfig,
+        height: "100%",
+        width: "100%",
+        type: mode === "edit" ? "desktop" : "embedded",
+      };
 
-    const config: OnlyOfficeConfig = {
-      document: {
-        fileType: getFileType(fileName),
-        key: `${fileId}_${Date.now()}`, // Unique key for document identification
-        title: fileName,
-        url: fileUrl,
-        permissions: {
-          comment: mode === "edit",
-          copy: true,
-          download: true,
-          edit: mode === "edit",
-          fillForms: mode === "edit",
-          modifyContentControl: mode === "edit",
-          modifyFilter: mode === "edit",
-          print: true,
-          review: mode === "edit",
+      // Override mode based on prop
+      if (config.editorConfig) {
+        config.editorConfig.mode = mode;
+      }
+
+      // Override permissions based on mode
+      if (config.document?.permissions) {
+        config.document.permissions.edit = mode === "edit";
+        config.document.permissions.comment = mode === "edit";
+        config.document.permissions.review = mode === "edit";
+        config.document.permissions.fillForms = mode === "edit";
+        config.document.permissions.modifyContentControl = mode === "edit";
+        config.document.permissions.modifyFilter = mode === "edit";
+      }
+    } else {
+      // Fallback: build minimal config (no save callback)
+      const getDocumentType = (filename: string): "word" | "cell" | "slide" => {
+        const ext = filename.split(".").pop()?.toLowerCase() || "";
+        if (["doc", "docx", "odt", "rtf", "txt"].includes(ext)) return "word";
+        if (["xls", "xlsx", "ods", "csv"].includes(ext)) return "cell";
+        if (["ppt", "pptx", "odp"].includes(ext)) return "slide";
+        return "word";
+      };
+
+      const getFileType = (filename: string): string => {
+        return filename.split(".").pop()?.toLowerCase() || "docx";
+      };
+
+      config = {
+        document: {
+          fileType: getFileType(fileName),
+          key: `${fileId}_${Date.now()}`,
+          title: fileName,
+          url: fileUrl || "",
+          permissions: {
+            comment: mode === "edit",
+            copy: true,
+            download: true,
+            edit: mode === "edit",
+            fillForms: mode === "edit",
+            modifyContentControl: mode === "edit",
+            modifyFilter: mode === "edit",
+            print: true,
+            review: mode === "edit",
+          },
         },
-      },
-      documentType: getDocumentType(fileName),
-      editorConfig: {
-        mode: mode, // "edit" or "view"
-        lang: "en",
-        customization: {
-          autosave: true,
-          forcesave: false,
-          compactHeader: false,
-          compactToolbar: false,
-          toolbarNoTabs: false,
-          hideRightMenu: false,
+        documentType: getDocumentType(fileName),
+        editorConfig: {
+          mode: mode,
+          lang: "en",
+          customization: {
+            autosave: true,
+            forcesave: true,
+          },
         },
-      },
-      height: "100%",
-      width: "100%",
-      type: mode === "edit" ? "desktop" : "embedded",
-    };
+        height: "100%",
+        width: "100%",
+        type: mode === "edit" ? "desktop" : "embedded",
+      };
+    }
 
     // Add token only if provided (for JWT authentication)
     if (token) {
@@ -131,7 +156,7 @@ export const OnlyOfficeEditor = ({
         docEditorRef.current = null;
       }
     };
-  }, [fileId, fileName, fileUrl, documentServerUrl, mode, token]);
+  }, [fileId, fileName, fileUrl, documentServerUrl, mode, token, serverConfig]);
 
   return (
     <div className="w-full h-full">
