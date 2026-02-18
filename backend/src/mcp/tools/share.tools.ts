@@ -1,11 +1,18 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { McpServices } from "../server";
+import { McpAuthContext, resolveUserId } from "../auth/auth";
 import { logger } from "../../lib/logger";
+
+const userIdParam = z
+  .string()
+  .optional()
+  .describe("The user ID. Optional if authenticated via 'authenticate' tool.");
 
 export function registerShareTools(
   server: McpServer,
   services: McpServices,
+  authContext: McpAuthContext,
 ): void {
   const { shareService } = services;
 
@@ -15,7 +22,7 @@ export function registerShareTools(
       description:
         "Create a shareable link for a file or folder. Anyone with the link can access the resource according to the specified role.",
       inputSchema: z.object({
-        userId: z.string().describe("The user ID (resource owner or admin)"),
+        userId: userIdParam,
         resourceId: z.string().describe("The file or folder ID to share"),
         resourceType: z
           .enum(["File", "Folder"])
@@ -38,8 +45,16 @@ export function registerShareTools(
           ),
       }),
     },
-    async ({ userId, resourceId, resourceType, role, password, expiresAt }) => {
+    async ({
+      userId: rawUserId,
+      resourceId,
+      resourceType,
+      role,
+      password,
+      expiresAt,
+    }) => {
       try {
+        const userId = resolveUserId(rawUserId, authContext);
         const link = await shareService.createShareLink({
           actorId: userId,
           resourceId,
@@ -73,7 +88,7 @@ export function registerShareTools(
         const message =
           error instanceof Error ? error.message : "Unknown error";
         logger.error(
-          { error: message, userId, resourceId },
+          { error: message, rawUserId, resourceId },
           "MCP create_share_link failed",
         );
         return {
@@ -89,15 +104,16 @@ export function registerShareTools(
     {
       description: "List all share links for a specific resource.",
       inputSchema: z.object({
-        userId: z.string().describe("The user ID"),
+        userId: userIdParam,
         resourceId: z.string().describe("The file or folder ID"),
         resourceType: z
           .enum(["File", "Folder"])
           .describe("Whether the resource is a File or Folder"),
       }),
     },
-    async ({ userId, resourceId, resourceType }) => {
+    async ({ userId: rawUserId, resourceId, resourceType }) => {
       try {
+        const userId = resolveUserId(rawUserId, authContext);
         const links = await shareService.listShareLinks(
           userId,
           resourceId,
@@ -134,12 +150,13 @@ export function registerShareTools(
     {
       description: "Revoke (disable) an existing share link.",
       inputSchema: z.object({
-        userId: z.string().describe("The user ID"),
+        userId: userIdParam,
         linkId: z.string().describe("The share link ID to revoke"),
       }),
     },
-    async ({ userId, linkId }) => {
+    async ({ userId: rawUserId, linkId }) => {
       try {
+        const userId = resolveUserId(rawUserId, authContext);
         await shareService.revokeShareLink({
           actorId: userId,
           linkId,
@@ -173,7 +190,7 @@ export function registerShareTools(
       description:
         "Share a resource directly with specific users by their email addresses.",
       inputSchema: z.object({
-        userId: z.string().describe("The user ID (resource owner)"),
+        userId: userIdParam,
         resourceId: z.string().describe("The file or folder ID to share"),
         resourceType: z
           .enum(["File", "Folder"])
@@ -186,8 +203,9 @@ export function registerShareTools(
           .describe("The permission role to give to the users"),
       }),
     },
-    async ({ userId, resourceId, resourceType, emails, role }) => {
+    async ({ userId: rawUserId, resourceId, resourceType, emails, role }) => {
       try {
+        const userId = resolveUserId(rawUserId, authContext);
         const result = await shareService.shareWithUsers({
           actorId: userId,
           resourceId,
@@ -227,15 +245,16 @@ export function registerShareTools(
       description:
         "Get the permission information for a resource, including who has access and their roles.",
       inputSchema: z.object({
-        userId: z.string().describe("The user ID"),
+        userId: userIdParam,
         resourceId: z.string().describe("The file or folder ID"),
         resourceType: z
           .enum(["File", "Folder"])
           .describe("Whether the resource is a File or Folder"),
       }),
     },
-    async ({ userId, resourceId, resourceType }) => {
+    async ({ userId: rawUserId, resourceId, resourceType }) => {
       try {
+        const userId = resolveUserId(rawUserId, authContext);
         const permissions = await shareService.getResourcePermissions(
           userId,
           resourceId,
@@ -265,18 +284,18 @@ export function registerShareTools(
     {
       description: "List resources that have been shared with the user.",
       inputSchema: z.object({
-        userId: z.string().describe("The user ID"),
+        userId: userIdParam,
         resourceType: z
           .enum(["File", "Folder", "all"])
           .optional()
           .describe("Filter by resource type. Defaults to 'all'."),
       }),
     },
-    async ({ userId, resourceType }) => {
+    async ({ userId: rawUserId, resourceType }) => {
       try {
+        const userId = resolveUserId(rawUserId, authContext);
         const result = await shareService.listSharedWithMe({
           userId,
-          // TODO：undefined 会有 Bug 吗？
           type: resourceType === "all" ? undefined : (resourceType as any),
         } as any);
         return {

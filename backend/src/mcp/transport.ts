@@ -22,7 +22,7 @@ export function createMcpRouter(createMcpServer: () => McpServer): Router {
         await transport.handleRequest(req, res, req.body);
       } catch (error) {
         logger.error(
-          { error, sessionId },
+          { err: error, sessionId },
           "Error handling MCP request for existing session",
         );
         if (!res.headersSent) {
@@ -57,7 +57,7 @@ export function createMcpRouter(createMcpServer: () => McpServer): Router {
         await server.connect(transport);
         await transport.handleRequest(req, res, req.body);
       } catch (error) {
-        logger.error({ error }, "Error initializing MCP session");
+        logger.error({ err: error }, "Error initializing MCP session");
         if (!res.headersSent) {
           res.status(500).json({ error: "Failed to initialize MCP session" });
         }
@@ -90,7 +90,7 @@ export function createMcpRouter(createMcpServer: () => McpServer): Router {
     try {
       await transport.handleRequest(req, res);
     } catch (error) {
-      logger.error({ error, sessionId }, "Error handling MCP GET request");
+      logger.error({ err: error, sessionId }, "Error handling MCP GET request");
       if (!res.headersSent) {
         res.status(500).json({ error: "Internal server error" });
       }
@@ -111,7 +111,10 @@ export function createMcpRouter(createMcpServer: () => McpServer): Router {
     try {
       await transport.handleRequest(req, res);
     } catch (error) {
-      logger.error({ error, sessionId }, "Error handling MCP DELETE request");
+      logger.error(
+        { err: error, sessionId },
+        "Error handling MCP DELETE request",
+      );
     }
     transports.delete(sessionId);
     logger.info({ sessionId }, "MCP session terminated via DELETE");

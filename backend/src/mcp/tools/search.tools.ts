@@ -1,11 +1,18 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { McpServices } from "../server";
+import { McpAuthContext, resolveUserId } from "../auth/auth";
 import { logger } from "../../lib/logger";
+
+const userIdParam = z
+  .string()
+  .optional()
+  .describe("The user ID. Optional if authenticated via 'authenticate' tool.");
 
 export function registerSearchTools(
   server: McpServer,
   services: McpServices,
+  authContext: McpAuthContext,
 ): void {
   const { fileService, folderService } = services;
 
@@ -15,7 +22,7 @@ export function registerSearchTools(
       description:
         "Search for files by name pattern. Returns matching files across the user's entire drive.",
       inputSchema: z.object({
-        userId: z.string().describe("The user ID"),
+        userId: userIdParam,
         query: z
           .string()
           .describe(
@@ -29,8 +36,9 @@ export function registerSearchTools(
           ),
       }),
     },
-    async ({ userId, query, fileType }) => {
+    async ({ userId: rawUserId, query, fileType }) => {
       try {
+        const userId = resolveUserId(rawUserId, authContext);
         const allFiles = await fileService.getAllUserFiles(userId);
         const queryLower = query.toLowerCase();
 
@@ -74,7 +82,7 @@ export function registerSearchTools(
         const message =
           error instanceof Error ? error.message : "Unknown error";
         logger.error(
-          { error: message, userId, query },
+          { error: message, rawUserId, query },
           "MCP search_files failed",
         );
         return {
@@ -91,7 +99,7 @@ export function registerSearchTools(
       description:
         "Get a summary of a directory's contents including file count, total size, and file type distribution.",
       inputSchema: z.object({
-        userId: z.string().describe("The user ID"),
+        userId: userIdParam,
         folderId: z
           .string()
           .describe(
@@ -99,14 +107,14 @@ export function registerSearchTools(
           ),
       }),
     },
-    async ({ userId, folderId }) => {
+    async ({ userId: rawUserId, folderId }) => {
       try {
+        const userId = resolveUserId(rawUserId, authContext);
         const content = await folderService.getFolderContent(
           folderId === "root" ? "" : folderId,
           userId,
         );
 
-        // 统计量计算
         const totalFileSize = content.files.reduce((sum, f) => sum + f.size, 0);
         const fileTypeDistribution: Record<string, number> = {};
         for (const file of content.files) {
@@ -169,22 +177,26 @@ export function registerSearchTools(
     },
   );
 
-  // TODO：之后引入 Embedding 层后具体实现
   server.registerTool(
     "query_workspace_knowledge",
     {
       description:
-        "Semantic search across workspace using embeddings. Currently falls back to keyword matching.",
+        "Query workspace knowledge using natural language. " +
+        "For best results, ensure files are indexed first using 'index_file' or 'index_all_files'. " +
+        "Falls back to keyword matching if semantic search is unavailable.",
       inputSchema: z.object({
-        userId: z.string().describe("The user ID"),
+        userId: userIdParam,
         query: z
           .string()
           .describe("Natural language query about workspace content"),
       }),
     },
-    async ({ userId, query }) => {
+    async ({ userId: rawUserId, query }) => {
       try {
-        // TODO：当前只进行关键词匹配，未来将接入向量检索
+        const userId = resolveUserId(rawUserId, authContext);
+
+        // 优先使用 Knowledge Layer 的语义搜索（通过 semantic_search_files 工具）
+        // 这里做关键词兜底
         const allFiles = await fileService.getAllUserFiles(userId);
         const queryWords = query.toLowerCase().split(/\s+/);
 
@@ -207,7 +219,7 @@ export function registerSearchTools(
               text: JSON.stringify(
                 {
                   query,
-                  note: "Currently using keyword matching. Semantic search with embeddings will be available in a future update.",
+                  note: "This is keyword-based search. For semantic search with natural language understanding, use the 'semantic_search_files' tool after indexing files.",
                   matchCount: matchedFiles.length,
                   results: matchedFiles.map((r) => ({
                     file: {

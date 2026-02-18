@@ -7,7 +7,6 @@ export function registerWorkspaceResources(
   _services: McpServices,
 ): void {
   // ─── drive://config ───
-  // 提供驱动器的能力配置信息
   server.registerResource(
     "drive-config",
     "drive://config",
@@ -60,7 +59,12 @@ export function registerWorkspaceResources(
                   "search_files",
                   "summarize_directory",
                   "query_workspace_knowledge",
+                  "semantic_search_files",
+                  "index_file",
+                  "index_all_files",
+                  "get_indexing_status",
                 ],
+                auth: ["authenticate", "whoami"],
                 workflow: [
                   // TODO：设计一些典型的工作流工具
                   // "create_report_from_folder",
@@ -76,8 +80,19 @@ export function registerWorkspaceResources(
               features: {
                 onlyoffice: true,
                 realTimeCollaboration: false,
-                vectorSearch: false,
-                embedding: false,
+                vectorSearch: true,
+                embedding: true,
+                knowledgeLayer: true,
+              },
+              ai: {
+                llmConfigured: !!config.llmApiKey,
+                llmModel: config.llmModel,
+                llmBaseUrl: config.llmBaseUrl,
+                embeddingConfigured: !!config.embeddingApiKey,
+                embeddingModel: config.embeddingModel,
+                embeddingBaseUrl: config.embeddingBaseUrl,
+                embeddingDimension: config.embeddingDimension,
+                qdrantUrl: config.qdrantUrl,
               },
               limits: {
                 trashRetentionDays: config.trashRetentionDays,

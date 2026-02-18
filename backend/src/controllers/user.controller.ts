@@ -1,5 +1,10 @@
 import { Request, Response, NextFunction } from "express";
-import { UserService, IUserPublic } from "../services/user.service";
+import {
+  UserService,
+  IUserPublic,
+  toPublicUser,
+} from "../services/user.service";
+import { IUser } from "../models/User.model";
 import { ResponseHelper } from "../utils/response.util";
 import { UserResponse, UsersSearchResponse } from "../types/response.types";
 import { AppError } from "../middlewares/errorHandler";
@@ -9,7 +14,7 @@ export class UserController {
   constructor(private userService: UserService) {}
 
   getCurrentUser(req: Request, res: Response) {
-    const user = req.user!.toJSON() as IUserPublic;
+    const user = toPublicUser(req.user! as IUser);
     return ResponseHelper.ok<UserResponse>(res, { user: user });
   }
 
@@ -25,7 +30,7 @@ export class UserController {
       email,
       currentUserId,
     );
-    const publicUsers = users.map((u) => u.toJSON() as IUserPublic);
+    const publicUsers = users.map((u) => toPublicUser(u));
     return ResponseHelper.ok<UsersSearchResponse>(res, { users: publicUsers });
   }
 
@@ -37,7 +42,7 @@ export class UserController {
     if (email) updates.email = email;
 
     const updatedUser = await this.userService.updateUser(userId, updates);
-    const user = updatedUser.toJSON() as IUserPublic;
+    const user = toPublicUser(updatedUser);
     return ResponseHelper.ok<UserResponse>(res, { user: user });
   }
 
@@ -50,7 +55,7 @@ export class UserController {
     }
 
     const updatedUser = await this.userService.updateAvatar(userId, key);
-    const user = updatedUser.toJSON() as IUserPublic;
+    const user = toPublicUser(updatedUser);
     return ResponseHelper.success<UserResponse>(
       res,
       { user: user },

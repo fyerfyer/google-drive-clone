@@ -1,11 +1,18 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { McpServices } from "../server";
+import { McpAuthContext, resolveUserId } from "../auth/auth";
 import { logger } from "../../lib/logger";
+
+const userIdParam = z
+  .string()
+  .optional()
+  .describe("The user ID. Optional if authenticated via 'authenticate' tool.");
 
 export function registerFolderTools(
   server: McpServer,
   services: McpServices,
+  authContext: McpAuthContext,
 ): void {
   const { folderService } = services;
 
@@ -15,14 +22,15 @@ export function registerFolderTools(
       description:
         "List the contents of a folder, including sub-folders and files. Use folderId='root' for the root directory.",
       inputSchema: z.object({
-        userId: z.string().describe("The user ID"),
+        userId: userIdParam,
         folderId: z
           .string()
           .describe("The folder ID. Use 'root' for the root directory."),
       }),
     },
-    async ({ userId, folderId }) => {
+    async ({ userId: rawUserId, folderId }) => {
       try {
+        const userId = resolveUserId(rawUserId, authContext);
         const content = await folderService.getFolderContent(
           folderId === "root" ? "" : folderId,
           userId,
@@ -67,7 +75,7 @@ export function registerFolderTools(
         const message =
           error instanceof Error ? error.message : "Unknown error";
         logger.error(
-          { error: message, userId, folderId },
+          { error: message, rawUserId, folderId },
           "MCP list_folder_contents failed",
         );
         return {
@@ -83,7 +91,7 @@ export function registerFolderTools(
     {
       description: "Create a new folder inside a parent folder.",
       inputSchema: z.object({
-        userId: z.string().describe("The user ID"),
+        userId: userIdParam,
         name: z.string().describe("The name of the new folder"),
         parentId: z
           .string()
@@ -93,8 +101,9 @@ export function registerFolderTools(
           ),
       }),
     },
-    async ({ userId, name, parentId }) => {
+    async ({ userId: rawUserId, name, parentId }) => {
       try {
+        const userId = resolveUserId(rawUserId, authContext);
         const folder = await folderService.createFolder({
           userId,
           name,
@@ -135,13 +144,14 @@ export function registerFolderTools(
     {
       description: "Rename an existing folder.",
       inputSchema: z.object({
-        userId: z.string().describe("The user ID"),
+        userId: userIdParam,
         folderId: z.string().describe("The folder ID to rename"),
         newName: z.string().describe("The new name for the folder"),
       }),
     },
-    async ({ userId, folderId, newName }) => {
+    async ({ userId: rawUserId, folderId, newName }) => {
       try {
+        const userId = resolveUserId(rawUserId, authContext);
         await folderService.renameFolder(folderId, userId, newName);
         return {
           content: [
@@ -171,7 +181,7 @@ export function registerFolderTools(
     {
       description: "Move a folder to a different parent folder.",
       inputSchema: z.object({
-        userId: z.string().describe("The user ID"),
+        userId: userIdParam,
         folderId: z.string().describe("The folder ID to move"),
         destinationId: z
           .string()
@@ -180,12 +190,12 @@ export function registerFolderTools(
           ),
       }),
     },
-    async ({ userId, folderId, destinationId }) => {
+    async ({ userId: rawUserId, folderId, destinationId }) => {
       try {
+        const userId = resolveUserId(rawUserId, authContext);
         await folderService.moveFolder({
           userId,
           folderId,
-          // TODO：这个处理逻辑会不会导致 Bug？
           destinationId: destinationId === "root" ? undefined : destinationId,
         } as any);
         return {
@@ -216,12 +226,13 @@ export function registerFolderTools(
     {
       description: "Move a folder and its contents to the trash.",
       inputSchema: z.object({
-        userId: z.string().describe("The user ID"),
+        userId: userIdParam,
         folderId: z.string().describe("The folder ID to trash"),
       }),
     },
-    async ({ userId, folderId }) => {
+    async ({ userId: rawUserId, folderId }) => {
       try {
+        const userId = resolveUserId(rawUserId, authContext);
         await folderService.trashFolder(folderId, userId);
         return {
           content: [
@@ -251,12 +262,13 @@ export function registerFolderTools(
     {
       description: "Restore a folder from the trash.",
       inputSchema: z.object({
-        userId: z.string().describe("The user ID"),
+        userId: userIdParam,
         folderId: z.string().describe("The folder ID to restore"),
       }),
     },
-    async ({ userId, folderId }) => {
+    async ({ userId: rawUserId, folderId }) => {
       try {
+        const userId = resolveUserId(rawUserId, authContext);
         await folderService.restoreFolder(folderId, userId);
         return {
           content: [
@@ -287,12 +299,13 @@ export function registerFolderTools(
       description:
         "Permanently delete a folder and all its contents. This action cannot be undone.",
       inputSchema: z.object({
-        userId: z.string().describe("The user ID"),
+        userId: userIdParam,
         folderId: z.string().describe("The folder ID to permanently delete"),
       }),
     },
-    async ({ userId, folderId }) => {
+    async ({ userId: rawUserId, folderId }) => {
       try {
+        const userId = resolveUserId(rawUserId, authContext);
         await folderService.deleteFolderPermanent(folderId, userId);
         return {
           content: [
@@ -323,12 +336,13 @@ export function registerFolderTools(
       description:
         "Get the breadcrumb path for a folder, showing its position in the folder hierarchy.",
       inputSchema: z.object({
-        userId: z.string().describe("The user ID"),
+        userId: userIdParam,
         folderId: z.string().describe("The folder ID to get the path for"),
       }),
     },
-    async ({ userId, folderId }) => {
+    async ({ userId: rawUserId, folderId }) => {
       try {
+        const userId = resolveUserId(rawUserId, authContext);
         const path = await folderService.getFolderPath(folderId, userId);
         return {
           content: [
@@ -361,15 +375,16 @@ export function registerFolderTools(
     {
       description: "Star or unstar a folder.",
       inputSchema: z.object({
-        userId: z.string().describe("The user ID"),
+        userId: userIdParam,
         folderId: z.string().describe("The folder ID"),
         star: z
           .boolean()
           .describe("Whether to star (true) or unstar (false) the folder"),
       }),
     },
-    async ({ userId, folderId, star }) => {
+    async ({ userId: rawUserId, folderId, star }) => {
       try {
+        const userId = resolveUserId(rawUserId, authContext);
         await folderService.starFolder(folderId, userId, star);
         return {
           content: [

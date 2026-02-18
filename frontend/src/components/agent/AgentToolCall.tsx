@@ -44,6 +44,14 @@ const TOOL_LABELS: Record<string, string> = {
   share_with_users: "Share with Users",
   get_permissions: "Get Permissions",
   list_shared_with_me: "Shared with Me",
+  // Knowledge Layer
+  index_file: "Index File",
+  index_all_files: "Index All Files",
+  semantic_search_files: "Semantic Search",
+  get_indexing_status: "Indexing Status",
+  // Auth
+  authenticate: "Authenticate",
+  whoami: "Who Am I",
 };
 
 export function AgentToolCall({ toolCall }: AgentToolCallProps) {

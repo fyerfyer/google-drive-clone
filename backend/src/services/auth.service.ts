@@ -1,7 +1,7 @@
 import { getReasonPhrase, StatusCodes } from "http-status-codes";
 import { AppError } from "../middlewares/errorHandler";
 import { generateToken } from "../utils/jwt.util";
-import { UserService, IUserPublic } from "./user.service";
+import { UserService, IUserPublic, toPublicUser } from "./user.service";
 
 interface RegisterDTO {
   email: string;
@@ -33,7 +33,7 @@ export class AuthService {
 
     const token = generateToken({ id: user.id, email: user.email });
     return {
-      user: user.toJSON() as IUserPublic,
+      user: toPublicUser(user),
       token: token,
     };
   }
@@ -43,7 +43,7 @@ export class AuthService {
     if (!user) {
       throw new AppError(
         StatusCodes.UNAUTHORIZED,
-        getReasonPhrase(StatusCodes.UNAUTHORIZED)
+        getReasonPhrase(StatusCodes.UNAUTHORIZED),
       );
     }
 
@@ -51,13 +51,13 @@ export class AuthService {
     if (!isPasswordValid) {
       throw new AppError(
         StatusCodes.UNAUTHORIZED,
-        getReasonPhrase(StatusCodes.UNAUTHORIZED)
+        getReasonPhrase(StatusCodes.UNAUTHORIZED),
       );
     }
 
     const token = generateToken({ id: user.id, email: user.email });
     return {
-      user: user.toJSON() as IUserPublic,
+      user: toPublicUser(user),
       token: token,
     };
   }

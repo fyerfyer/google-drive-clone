@@ -7,6 +7,7 @@ import { ResponseHelper } from "../utils/response.util";
 import { FileUploadResponse } from "../types/response.types";
 import { StorageService } from "../services/storage.service";
 import { BUCKETS } from "../config/s3";
+import { extractParam } from "../utils/request.util";
 
 export class FileController {
   constructor(private fileService: FileService) {}
@@ -51,7 +52,7 @@ export class FileController {
     const user = req.user as IUser;
     const result = await this.fileService.getPresignedDownloadUrl({
       userId: String(user._id),
-      fileId: req.params.fileId,
+      fileId: extractParam(req.params.fileId),
       expirySeconds: 3600,
     });
 
@@ -78,7 +79,7 @@ export class FileController {
     const user = req.user as IUser;
     const result = await this.fileService.getPreviewStream({
       userId: String(user._id),
-      fileId: req.params.fileId,
+      fileId: extractParam(req.params.fileId),
     });
 
     // 支持浏览器内预览
@@ -112,7 +113,7 @@ export class FileController {
     const user = req.user;
     const result = await this.fileService.getPreviewUrl({
       userId: String(user._id),
-      fileId: req.params.fileId,
+      fileId: extractParam(req.params.fileId),
       expirySeconds: 3600,
     });
 
@@ -136,7 +137,7 @@ export class FileController {
     }
 
     const userId = req.user.id;
-    const { fileId } = req.params;
+    const fileId = extractParam(req.params.fileId);
     const { newName } = req.body;
 
     if (!fileId) {
@@ -188,7 +189,7 @@ export class FileController {
 
     const result = await this.fileService.getFileContent({
       userId: req.user.id,
-      fileId,
+      fileId: extractParam(fileId),
     });
 
     return ResponseHelper.success(res, result);
@@ -212,7 +213,7 @@ export class FileController {
 
     const file = await this.fileService.updateFileContent({
       userId: req.user.id,
-      fileId,
+      fileId: extractParam(fileId),
       content,
     });
 
@@ -230,7 +231,7 @@ export class FileController {
       throw new AppError(StatusCodes.UNAUTHORIZED, "User not authenticated");
     }
 
-    const { fileId } = req.params;
+    const fileId = extractParam(req.params.fileId);
     if (!fileId) {
       throw new AppError(StatusCodes.BAD_REQUEST, "File ID is required");
     }
@@ -323,7 +324,7 @@ export class FileController {
     }
 
     const userId = req.user.id;
-    const { fileId } = req.params;
+    const fileId = extractParam(req.params.fileId);
     const { destinationId } = req.body;
     if (!fileId) {
       throw new AppError(StatusCodes.BAD_REQUEST, "File not exist");
@@ -345,7 +346,7 @@ export class FileController {
     }
 
     const userId = req.user.id;
-    const { fileId } = req.params;
+    const fileId = extractParam(req.params.fileId);
     if (!fileId) {
       throw new AppError(StatusCodes.BAD_REQUEST, "File not exist");
     }
@@ -360,7 +361,7 @@ export class FileController {
     }
 
     const userId = req.user.id;
-    const { fileId } = req.params;
+    const fileId = extractParam(req.params.fileId);
     if (!fileId) {
       throw new AppError(StatusCodes.BAD_REQUEST, "File not exist");
     }
@@ -375,7 +376,7 @@ export class FileController {
     }
 
     const userId = req.user.id;
-    const { fileId } = req.params;
+    const fileId = extractParam(req.params.fileId);
     if (!fileId) {
       throw new AppError(StatusCodes.BAD_REQUEST, "File not exist");
     }
@@ -390,7 +391,7 @@ export class FileController {
     }
 
     const userId = req.user.id;
-    const { fileId } = req.params;
+    const fileId = extractParam(req.params.fileId);
     if (!fileId) {
       throw new AppError(StatusCodes.BAD_REQUEST, "File not exist");
     }
@@ -405,7 +406,7 @@ export class FileController {
     }
 
     const userId = req.user.id;
-    const { fileId } = req.params;
+    const fileId = extractParam(req.params.fileId);
     if (!fileId) {
       throw new AppError(StatusCodes.BAD_REQUEST, "File not exist");
     }

@@ -32,10 +32,18 @@ interface EnvConfig {
   onlyofficeJwtSecret: string;
   onlyofficeJwtEnabled: boolean;
 
-  // AI Agent (LLM) configuration
+  // LLM AI Agent
   llmApiKey: string;
   llmBaseUrl: string;
   llmModel: string;
+
+  // Embedding Model
+  embeddingApiKey: string;
+  embeddingBaseUrl: string;
+  embeddingModel: string;
+  embeddingDimension: number;
+  qdrantUrl: string;
+  qdrantApiKey: string;
 }
 
 export const config: EnvConfig = {
@@ -65,6 +73,18 @@ export const config: EnvConfig = {
   llmApiKey: process.env.LLM_API_KEY || "",
   llmBaseUrl: process.env.LLM_BASE_URL || "https://api.openai.com/v1",
   llmModel: process.env.LLM_MODEL || "gpt-4o-mini",
+
+  // Embedding configuration (Knowledge Layer)
+  embeddingApiKey:
+    process.env.EMBEDDING_API_KEY || process.env.LLM_API_KEY || "",
+  embeddingBaseUrl:
+    process.env.EMBEDDING_BASE_URL ||
+    process.env.LLM_BASE_URL ||
+    "https://api.openai.com/v1",
+  embeddingModel: process.env.EMBEDDING_MODEL || "text-embedding-3-small",
+  embeddingDimension: parseInt(process.env.EMBEDDING_DIMENSION || "1536", 10),
+  qdrantUrl: process.env.QDRANT_URL || "http://localhost:6333",
+  qdrantApiKey: process.env.QDRANT_API_KEY || "",
 };
 
 const requiredEnvVars = ["MONGODB_URI", "JWT_SECRET"];

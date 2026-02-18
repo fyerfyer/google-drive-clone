@@ -5,7 +5,7 @@ import type { ApiError, ApiResponse } from "../types/api.types";
 
 export const apiClient = axios.create({
   baseURL: "/",
-  timeout: 10000,
+  timeout: 30000, // TODO：有时候 LLM 调用返回时间过旧，可以采用监督是否有返回内容？
   headers: {
     "Content-Type": "application/json",
   },

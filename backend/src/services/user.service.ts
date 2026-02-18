@@ -3,6 +3,7 @@ import { AppError } from "../middlewares/errorHandler";
 import User, { IUser } from "../models/User.model";
 import { ImageService, ImageType, ImageResource } from "./image.service";
 import { BUCKETS } from "../config/s3";
+import { IAvatar } from "../models/Avatar.schema";
 
 interface CreateUserDTO {
   email: string;
@@ -20,6 +21,27 @@ export interface IUserPublic {
   storageQuota: number;
   createdAt: Date;
   updatedAt: Date;
+}
+
+// 解决 ToJSON 类型不匹配问题
+export function toPublicUser(user: IUser): IUserPublic {
+  const avatar: IAvatar | undefined = user.avatar;
+  return {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    avatar: avatar
+      ? {
+          publicId: avatar.publicId,
+          thumbnailId: avatar.thumbnailId,
+          thumbnail: avatar.thumbnail,
+        }
+      : { publicId: "", thumbnailId: "", thumbnail: "" },
+    storageUsage: user.storageUsage,
+    storageQuota: user.storageQuota,
+    createdAt: user.createdAt,
+    updatedAt: user.updatedAt,
+  };
 }
 
 export class UserService {

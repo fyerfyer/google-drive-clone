@@ -4,6 +4,7 @@ import { connectDB } from "./config/database";
 import { initializeBuckets } from "./config/s3";
 import { logger } from "./lib/logger";
 import { initScheduledJobs } from "./lib/cron";
+import { ensureCollection as ensureQdrantCollection } from "./config/qdrant";
 
 const startServer = async () => {
   try {
@@ -15,6 +16,13 @@ const startServer = async () => {
       logger.warn({ err: e }, "Failed to initialize MinIO buckets");
     }
 
+    // 初始化 Qdrant 向量数据库 collection
+    try {
+      await ensureQdrantCollection();
+    } catch (e) {
+      logger.warn({ err: e }, "Failed to initialize Qdrant collection");
+    }
+
     // 初始化定时任务
     await initScheduledJobs();
 
@@ -24,7 +32,7 @@ const startServer = async () => {
           port: config.port,
           env: config.nodeEnv,
         },
-        `Server is running on port ${config.port}`
+        `Server is running on port ${config.port}`,
       );
     });
   } catch (error) {

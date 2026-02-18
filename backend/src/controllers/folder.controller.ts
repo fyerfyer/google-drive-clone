@@ -7,6 +7,7 @@ import {
   FolderCreateResponse,
   FolderContentResponse,
 } from "../types/response.types";
+import { extractParam } from "../utils/request.util";
 
 export class FolderController {
   constructor(private folderService: FolderService) {}
@@ -32,7 +33,7 @@ export class FolderController {
     return ResponseHelper.created<FolderCreateResponse>(
       res,
       { folder },
-      "Folder created successfully"
+      "Folder created successfully",
     );
   }
 
@@ -42,7 +43,7 @@ export class FolderController {
     }
 
     const userId = req.user.id;
-    const { folderId } = req.params;
+    const folderId = extractParam(req.params.folderId);
     const { destinationId } = req.body;
     await this.folderService.moveFolder({ folderId, destinationId, userId });
     return ResponseHelper.message(res, "Folder moved successfully");
@@ -54,7 +55,7 @@ export class FolderController {
     }
 
     const userId = req.user.id;
-    const { folderId } = req.params;
+    const folderId = extractParam(req.params.folderId);
     if (!folderId) {
       throw new AppError(StatusCodes.BAD_REQUEST, "Folder not exist");
     }
@@ -69,7 +70,7 @@ export class FolderController {
     }
 
     const userId = req.user.id;
-    const { folderId } = req.params;
+    const folderId = extractParam(req.params.folderId);
     const { newName } = req.body;
     if (!folderId) {
       throw new AppError(StatusCodes.BAD_REQUEST, "Folder not exist");
@@ -78,7 +79,7 @@ export class FolderController {
     if (!newName) {
       throw new AppError(
         StatusCodes.BAD_REQUEST,
-        "New folder name is required"
+        "New folder name is required",
       );
     }
 
@@ -92,7 +93,7 @@ export class FolderController {
     }
 
     const userId = req.user.id;
-    const { folderId } = req.params;
+    const folderId = extractParam(req.params.folderId);
     if (!folderId) {
       throw new AppError(StatusCodes.BAD_REQUEST, "Folder not exist");
     }
@@ -107,7 +108,7 @@ export class FolderController {
     }
 
     const userId = req.user.id;
-    const { folderId } = req.params;
+    const folderId = extractParam(req.params.folderId);
     if (!folderId) {
       throw new AppError(StatusCodes.BAD_REQUEST, "Folder not exist");
     }
@@ -122,7 +123,7 @@ export class FolderController {
     }
 
     const userId = req.user.id;
-    const { folderId } = req.params;
+    const folderId = extractParam(req.params.folderId);
     if (!folderId) {
       throw new AppError(StatusCodes.BAD_REQUEST, "Folder not exist");
     }
@@ -137,7 +138,7 @@ export class FolderController {
     }
 
     const userId = req.user.id;
-    const { folderId } = req.params;
+    const folderId = extractParam(req.params.folderId);
     if (!folderId) {
       throw new AppError(StatusCodes.BAD_REQUEST, "Folder not exist");
     }
@@ -152,7 +153,7 @@ export class FolderController {
     }
 
     const userId = req.user.id;
-    const folderId = req.params.folderId;
+    const folderId = extractParam(req.params.folderId);
 
     const result = await this.folderService.getFolderContent(folderId, userId);
 
@@ -196,13 +197,13 @@ export class FolderController {
     }
 
     const userId = req.user.id;
-    const { folderId } = req.params;
+    const folderId = extractParam(req.params.folderId);
     if (!folderId) {
       throw new AppError(StatusCodes.BAD_REQUEST, "Folder ID is required");
     }
     const breadcrumbs = await this.folderService.getFolderPath(
       folderId,
-      userId
+      userId,
     );
     return ResponseHelper.ok(res, { breadcrumbs });
   }

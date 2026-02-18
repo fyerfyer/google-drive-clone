@@ -4,6 +4,7 @@ import { ResponseHelper } from "../utils/response.util";
 import { AppError } from "../middlewares/errorHandler";
 import { StatusCodes } from "http-status-codes";
 import { config } from "../config/env";
+import { extractParam } from "../utils/request.util";
 
 export class AgentController {
   constructor(private agentService: AgentService) {}
@@ -44,7 +45,7 @@ export class AgentController {
 
   async getConversation(req: Request, res: Response, next: NextFunction) {
     const userId = req.user!._id.toString();
-    const { conversationId } = req.params;
+    const conversationId = extractParam(req.params.conversationId);
     const conversation = await this.agentService.getConversation(
       conversationId,
       userId,
@@ -61,7 +62,7 @@ export class AgentController {
 
   async deleteConversation(req: Request, res: Response, next: NextFunction) {
     const userId = req.user!._id.toString();
-    const { conversationId } = req.params;
+    const conversationId = extractParam(req.params.conversationId);
     await this.agentService.deleteConversation(conversationId, userId);
     return ResponseHelper.message(res, "Conversation deleted");
   }

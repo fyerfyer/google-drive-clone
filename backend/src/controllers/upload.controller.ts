@@ -6,6 +6,7 @@ import { v4 as uuidv4 } from "uuid";
 import User from "../models/User.model";
 import { StorageService } from "../services/storage.service";
 import { ResponseHelper } from "../utils/response.util";
+import { extractParam } from "../utils/request.util";
 
 export class UploadController {
   async presignAvatar(req: Request, res: Response, next: NextFunction) {
@@ -23,13 +24,13 @@ export class UploadController {
     if (size > 5 * 1024 * 1024) {
       throw new AppError(
         StatusCodes.BAD_REQUEST,
-        "Avatar size exceeds 5MB limit"
+        "Avatar size exceeds 5MB limit",
       );
     }
     if (!contentType.startsWith("image/")) {
       throw new AppError(
         StatusCodes.BAD_REQUEST,
-        "Invalid avatar content type"
+        "Invalid avatar content type",
       );
     }
 
@@ -39,7 +40,7 @@ export class UploadController {
     const url = await StorageService.getPutUrl(
       BUCKETS.AVATARS,
       key,
-      contentType
+      contentType,
     );
 
     // Return in standard API response format
@@ -117,7 +118,7 @@ export class UploadController {
     const uploadId = await StorageService.createMultipartUpload(
       BUCKETS.FILES,
       objectKey,
-      mimeType
+      mimeType,
     );
 
     // Return in standard API response format
@@ -128,13 +129,14 @@ export class UploadController {
   }
 
   async signPart(req: Request, res: Response, next: NextFunction) {
-    const { uploadId, partNumber } = req.params;
+    const uploadId = extractParam(req.params.uploadId);
+    const partNumber = extractParam(req.params.partNumber);
     const { key } = req.query;
 
     if (!uploadId || !key || !partNumber) {
       throw new AppError(
         StatusCodes.BAD_REQUEST,
-        "Missing required parameters: uploadId, key, partNumber"
+        "Missing required parameters: uploadId, key, partNumber",
       );
     }
 
@@ -142,26 +144,26 @@ export class UploadController {
       BUCKETS.FILES,
       key as string,
       uploadId,
-      parseInt(partNumber, 10)
+      parseInt(partNumber, 10),
     );
     return ResponseHelper.success(res, { url });
   }
 
   async listParts(req: Request, res: Response, next: NextFunction) {
-    const { uploadId } = req.params;
+    const uploadId = extractParam(req.params.uploadId);
     const { key } = req.query;
 
     if (!uploadId || !key) {
       throw new AppError(
         StatusCodes.BAD_REQUEST,
-        "Missing required parameters: uploadId, key"
+        "Missing required parameters: uploadId, key",
       );
     }
 
     const parts = await StorageService.listParts(
       BUCKETS.FILES,
       key as string,
-      uploadId
+      uploadId,
     );
     return ResponseHelper.success(res, { parts });
   }
@@ -169,15 +171,15 @@ export class UploadController {
   async completeMultipartUpload(
     req: Request,
     res: Response,
-    next: NextFunction
+    next: NextFunction,
   ) {
-    const { uploadId } = req.params;
+    const uploadId = extractParam(req.params.uploadId);
     const { key, parts } = req.body;
 
     if (!uploadId || !key || !parts) {
       throw new AppError(
         StatusCodes.BAD_REQUEST,
-        "Missing required parameters: uploadId, key, parts"
+        "Missing required parameters: uploadId, key, parts",
       );
     }
 
@@ -185,27 +187,27 @@ export class UploadController {
       BUCKETS.FILES,
       key,
       uploadId,
-      parts
+      parts,
     );
 
     return ResponseHelper.success(res, { location: result.Location, key });
   }
 
   async abortMultipartUpload(req: Request, res: Response, next: NextFunction) {
-    const { uploadId } = req.params;
+    const uploadId = extractParam(req.params.uploadId);
     const { key } = req.query;
 
     if (!uploadId || !key) {
       throw new AppError(
         StatusCodes.BAD_REQUEST,
-        "Missing required parameters: uploadId, key"
+        "Missing required parameters: uploadId, key",
       );
     }
 
     await StorageService.abortMultipartUpload(
       BUCKETS.FILES,
       key as string,
-      uploadId
+      uploadId,
     );
 
     return res.status(StatusCodes.NO_CONTENT).send();

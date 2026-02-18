@@ -26,12 +26,16 @@ import { PermissionService } from "./services/permission.service";
 import { ShareService } from "./services/share.service";
 import { ShareController } from "./controllers/share.controller";
 import { createShareRouter } from "./routes/share.route";
-import { createMcpServer } from "./mcp/server";
 import { createMcpRouter } from "./mcp/transport";
 import { McpClientService } from "./services/mcp-client.service";
 import { AgentService } from "./services/agent.service";
 import { AgentController } from "./controllers/agent.controller";
 import { createAgentRouter } from "./routes/agent.route";
+import { ApiKeyService } from "./services/apikey.service";
+import { ApiKeyController } from "./controllers/apikey.controller";
+import { createApiKeyRouter } from "./routes/apikey.route";
+import { createMcpServer } from "./mcp";
+import { KnowledgeService } from "./services/knowledge.service";
 
 const userService = new UserService();
 const authService = new AuthService(userService);
@@ -117,12 +121,18 @@ app.use("/api/upload", createUploadRouter(uploadController));
 app.use("/api/batch", createBatchRouter(batchController));
 app.use("/api/share", createShareRouter(shareController));
 
-// === MCP Server (AI Agent 能力暴露层) ===
+const apiKeyService = new ApiKeyService();
+const apiKeyController = new ApiKeyController(apiKeyService);
+app.use("/api/apikeys", createApiKeyRouter(apiKeyController));
+
+// MCP Server
+const knowledgeService = new KnowledgeService();
 const mcpServices = {
   fileService,
   folderService,
   shareService,
   permissionService,
+  knowledgeService,
 };
 const mcpRouter = createMcpRouter(() => createMcpServer(mcpServices));
 app.use("/api/mcp", mcpRouter);

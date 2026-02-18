@@ -2,11 +2,18 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { McpServices } from "../server";
+import { McpAuthContext, resolveUserId } from "../auth/auth";
 import { logger } from "../../lib/logger";
+
+const userIdParam = z
+  .string()
+  .optional()
+  .describe("The user ID. Optional if authenticated via 'authenticate' tool.");
 
 export function registerFileTools(
   server: McpServer,
   services: McpServices,
+  authContext: McpAuthContext,
 ): void {
   const { fileService } = services;
 
@@ -16,7 +23,7 @@ export function registerFileTools(
       description:
         "List all files for the authenticated user. Returns file metadata including name, size, type, and timestamps.",
       inputSchema: z.object({
-        userId: z.string().describe("The user ID to list files for"),
+        userId: userIdParam,
         filter: z
           .enum(["all", "starred", "trashed", "recent"])
           .optional()
@@ -29,8 +36,9 @@ export function registerFileTools(
           ),
       }),
     },
-    async ({ userId, filter = "all", limit }) => {
+    async ({ userId: rawUserId, filter = "all", limit }) => {
       try {
+        const userId = resolveUserId(rawUserId, authContext);
         let files;
         switch (filter) {
           case "starred":
@@ -76,7 +84,7 @@ export function registerFileTools(
       } catch (error) {
         const message =
           error instanceof Error ? error.message : "Unknown error";
-        logger.error({ error: message, userId }, "MCP list_files failed");
+        logger.error({ error: message, rawUserId }, "MCP list_files failed");
         return {
           content: [{ type: "text" as const, text: `Error: ${message}` }],
           isError: true,
@@ -91,12 +99,13 @@ export function registerFileTools(
       description:
         "Get detailed information about a specific file, including metadata and permissions.",
       inputSchema: z.object({
-        userId: z.string().describe("The user ID"),
+        userId: userIdParam,
         fileId: z.string().describe("The file ID to get information for"),
       }),
     },
-    async ({ userId, fileId }) => {
+    async ({ userId: rawUserId, fileId }) => {
       try {
+        const userId = resolveUserId(rawUserId, authContext);
         const file = await fileService.getFileById(fileId, userId);
         return {
           content: [
@@ -119,21 +128,31 @@ export function registerFileTools(
 
   server.registerTool(
     "read_file",
-
     {
       description:
         "Read the text content of a file. Only works for text-based files (txt, md, json, csv, etc.).",
       inputSchema: z.object({
-        userId: z.string().describe("The user ID"),
+        userId: userIdParam,
         fileId: z.string().describe("The file ID to read"),
       }),
     },
-    async ({ userId, fileId }) => {
+    async ({ userId: rawUserId, fileId }) => {
       try {
+        const userId = resolveUserId(rawUserId, authContext);
         const result = await fileService.getFileContent({
           userId,
           fileId,
         });
+
+        // 裁剪内容避免过长导致失败
+        const MAX_CONTENT_CHARS = 30000; // ~8K tokens
+        let content = result.content;
+        let truncated = false;
+        if (content && content.length > MAX_CONTENT_CHARS) {
+          content = content.slice(0, MAX_CONTENT_CHARS);
+          truncated = true;
+        }
+
         return {
           content: [
             {
@@ -146,7 +165,13 @@ export function registerFileTools(
                     size: result.file.size,
                     mimeType: result.file.mimeType,
                   },
-                  content: result.content,
+                  content,
+                  ...(truncated
+                    ? {
+                        truncated: true,
+                        note: `Content truncated to ${MAX_CONTENT_CHARS} characters (original: ${result.content.length}). Use semantic_search_files for targeted queries on large files.`,
+                      }
+                    : {}),
                 },
                 null,
                 2,
@@ -171,13 +196,14 @@ export function registerFileTools(
       description:
         "Update the text content of an existing file. Only works for text-based files.",
       inputSchema: z.object({
-        userId: z.string().describe("The user ID"),
+        userId: userIdParam,
         fileId: z.string().describe("The file ID to write to"),
         content: z.string().describe("The new text content for the file"),
       }),
     },
-    async ({ userId, fileId, content }) => {
+    async ({ userId: rawUserId, fileId, content }) => {
       try {
+        const userId = resolveUserId(rawUserId, authContext);
         const file = await fileService.updateFileContent({
           userId,
           fileId,
@@ -220,7 +246,7 @@ export function registerFileTools(
       description:
         "Create a new blank file in the user's drive. Supports txt, md, docx, xlsx, pptx, and other formats.",
       inputSchema: z.object({
-        userId: z.string().describe("The user ID"),
+        userId: userIdParam,
         folderId: z
           .string()
           .describe(
@@ -237,8 +263,9 @@ export function registerFileTools(
           .describe("Optional initial text content for text-based files"),
       }),
     },
-    async ({ userId, folderId, fileName, content }) => {
+    async ({ userId: rawUserId, folderId, fileName, content }) => {
       try {
+        const userId = resolveUserId(rawUserId, authContext);
         const file = await fileService.createBlankFile({
           userId,
           folderId: folderId === "root" ? "" : folderId,
@@ -282,13 +309,14 @@ export function registerFileTools(
     {
       description: "Rename an existing file.",
       inputSchema: z.object({
-        userId: z.string().describe("The user ID"),
+        userId: userIdParam,
         fileId: z.string().describe("The file ID to rename"),
         newName: z.string().describe("The new name for the file"),
       }),
     },
-    async ({ userId, fileId, newName }) => {
+    async ({ userId: rawUserId, fileId, newName }) => {
       try {
+        const userId = resolveUserId(rawUserId, authContext);
         await fileService.renameFile(fileId, userId, newName);
         return {
           content: [
@@ -314,7 +342,7 @@ export function registerFileTools(
     {
       description: "Move a file to a different folder.",
       inputSchema: z.object({
-        userId: z.string().describe("The user ID"),
+        userId: userIdParam,
         fileId: z.string().describe("The file ID to move"),
         destinationFolderId: z
           .string()
@@ -323,8 +351,9 @@ export function registerFileTools(
           ),
       }),
     },
-    async ({ userId, fileId, destinationFolderId }) => {
+    async ({ userId: rawUserId, fileId, destinationFolderId }) => {
       try {
+        const userId = resolveUserId(rawUserId, authContext);
         await fileService.moveFile(
           fileId,
           userId,
@@ -358,12 +387,13 @@ export function registerFileTools(
     {
       description: "Move a file to the trash. The file can be restored later.",
       inputSchema: z.object({
-        userId: z.string().describe("The user ID"),
+        userId: userIdParam,
         fileId: z.string().describe("The file ID to trash"),
       }),
     },
-    async ({ userId, fileId }) => {
+    async ({ userId: rawUserId, fileId }) => {
       try {
+        const userId = resolveUserId(rawUserId, authContext);
         await fileService.trashFile(fileId, userId);
         return {
           content: [
@@ -393,12 +423,13 @@ export function registerFileTools(
     {
       description: "Restore a file from the trash.",
       inputSchema: z.object({
-        userId: z.string().describe("The user ID"),
+        userId: userIdParam,
         fileId: z.string().describe("The file ID to restore"),
       }),
     },
-    async ({ userId, fileId }) => {
+    async ({ userId: rawUserId, fileId }) => {
       try {
+        const userId = resolveUserId(rawUserId, authContext);
         await fileService.restoreFile(fileId, userId);
         return {
           content: [
@@ -428,12 +459,13 @@ export function registerFileTools(
     {
       description: "Permanently delete a file. This action cannot be undone.",
       inputSchema: z.object({
-        userId: z.string().describe("The user ID"),
+        userId: userIdParam,
         fileId: z.string().describe("The file ID to permanently delete"),
       }),
     },
-    async ({ userId, fileId }) => {
+    async ({ userId: rawUserId, fileId }) => {
       try {
+        const userId = resolveUserId(rawUserId, authContext);
         await fileService.deleteFilePermanent(fileId, userId);
         return {
           content: [
@@ -463,15 +495,16 @@ export function registerFileTools(
     {
       description: "Star or unstar a file to mark it as important.",
       inputSchema: z.object({
-        userId: z.string().describe("The user ID"),
+        userId: userIdParam,
         fileId: z.string().describe("The file ID"),
         star: z
           .boolean()
           .describe("Whether to star (true) or unstar (false) the file"),
       }),
     },
-    async ({ userId, fileId, star }) => {
+    async ({ userId: rawUserId, fileId, star }) => {
       try {
+        const userId = resolveUserId(rawUserId, authContext);
         await fileService.starFile(fileId, userId, star);
         return {
           content: [
@@ -502,12 +535,13 @@ export function registerFileTools(
       description:
         "Get a presigned download URL for a file. The URL is valid for a limited time.",
       inputSchema: z.object({
-        userId: z.string().describe("The user ID"),
+        userId: userIdParam,
         fileId: z.string().describe("The file ID to download"),
       }),
     },
-    async ({ userId, fileId }) => {
+    async ({ userId: rawUserId, fileId }) => {
       try {
+        const userId = resolveUserId(rawUserId, authContext);
         const result = await fileService.getPresignedDownloadUrl({
           userId,
           fileId,

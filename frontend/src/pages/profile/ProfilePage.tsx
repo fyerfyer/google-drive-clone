@@ -3,6 +3,7 @@ import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/ui/app-sidebar";
 import { SiteHeader } from "@/components/ui/site-header";
 import { ProfilePanel } from "@/components/profile/ProfilePanel";
+import { ApiKeyPanel } from "@/components/profile/ApiKeyPanel";
 
 const ProfilePage = () => {
   return (
@@ -18,8 +19,9 @@ const ProfilePage = () => {
       <SidebarInset>
         <SiteHeader />
         <div className="flex flex-1 flex-col px-4 py-6 lg:px-10">
-          <div className="w-full max-w-4xl mx-auto">
+          <div className="w-full max-w-4xl mx-auto space-y-6">
             <ProfilePanel />
+            <ApiKeyPanel />
           </div>
         </div>
       </SidebarInset>

@@ -217,5 +217,6 @@ const SUGGESTIONS = [
   "Show me my recent files",
   "List all files in my drive",
   "Search for PDF documents",
-  "Show my starred items",
+  "Index all my files for semantic search",
+  "Show my indexing status",
 ];

@@ -7,6 +7,7 @@ import { ResourceType } from "../types/model.types";
 import { ResponseHelper } from "../utils/response.util";
 import { AppError } from "../middlewares/errorHandler";
 import { logger } from "../lib/logger";
+import { extractParam } from "../utils/request.util";
 
 import {
   ShareResourceResponse,
@@ -80,7 +81,7 @@ export class ShareController {
       throw new AppError(StatusCodes.UNAUTHORIZED, "User not authenticated");
     }
 
-    const { resourceId } = req.params;
+    const resourceId = extractParam(req.params.resourceId);
     const resourceType = this.normalizeResourceType(req.query.resourceType);
 
     const permissions = await this.shareService.getResourcePermissions(
@@ -98,7 +99,8 @@ export class ShareController {
     }
 
     const userId = req.user.id;
-    const { resourceId, targetUserId } = req.params;
+    const resourceId = extractParam(req.params.resourceId);
+    const targetUserId = extractParam(req.params.targetUserId);
     const resourceType = this.normalizeResourceType(req.query.resourceType);
 
     await this.shareService.unshareWithUser({
@@ -119,7 +121,8 @@ export class ShareController {
     }
 
     const userId = req.user.id;
-    const { resourceId, targetUserId } = req.params;
+    const resourceId = extractParam(req.params.resourceId);
+    const targetUserId = extractParam(req.params.targetUserId);
     const { resourceType, newRole } = req.body;
 
     const normalizedResourceType = this.normalizeResourceType(resourceType);
@@ -142,7 +145,7 @@ export class ShareController {
       throw new AppError(StatusCodes.UNAUTHORIZED, "User not authenticated");
     }
 
-    const { resourceId } = req.params;
+    const resourceId = extractParam(req.params.resourceId);
     const { resourceType, options } = req.body;
 
     const normalizedResourceType = this.normalizeResourceType(resourceType);
@@ -173,7 +176,7 @@ export class ShareController {
       throw new AppError(StatusCodes.UNAUTHORIZED, "User not authenticated");
     }
 
-    const { resourceId } = req.params;
+    const resourceId = extractParam(req.params.resourceId);
     const resourceType = this.normalizeResourceType(req.query.resourceType);
 
     const links = await this.shareService.listShareLinks(
@@ -190,7 +193,7 @@ export class ShareController {
       throw new AppError(StatusCodes.UNAUTHORIZED, "User not authenticated");
     }
 
-    const { linkId } = req.params;
+    const linkId = extractParam(req.params.linkId);
     const { options } = req.body;
 
     const updatedLink = await this.shareService.updateShareLink({
@@ -217,7 +220,7 @@ export class ShareController {
       throw new AppError(StatusCodes.UNAUTHORIZED, "User not authenticated");
     }
 
-    const { linkId } = req.params;
+    const linkId = extractParam(req.params.linkId);
 
     await this.shareService.revokeShareLink({
       actorId: req.user.id,
@@ -234,7 +237,7 @@ export class ShareController {
       throw new AppError(StatusCodes.UNAUTHORIZED, "User not authenticated");
     }
 
-    const { linkId } = req.params;
+    const linkId = extractParam(req.params.linkId);
 
     const updatedLink = await this.shareService.rotateShareLinkToken(
       req.user.id,
@@ -283,7 +286,8 @@ export class ShareController {
   }
 
   async getSharedByToken(req: Request, res: Response) {
-    const { token, resourceType } = req.params;
+    const token = extractParam(req.params.token);
+    const resourceType = extractParam(req.params.resourceType);
     const { password } = req.query;
 
     const normalizedResourceType = this.normalizeResourceType(resourceType);
@@ -298,7 +302,7 @@ export class ShareController {
   }
 
   async downloadSharedFile(req: Request, res: Response) {
-    const { token } = req.params;
+    const token = extractParam(req.params.token);
     const { password } = req.query;
 
     const file = await this.shareService.getSharedFileForDownload(
@@ -336,7 +340,7 @@ export class ShareController {
   }
 
   async previewSharedFile(req: Request, res: Response) {
-    const { token } = req.params;
+    const token = extractParam(req.params.token);
     const { password } = req.query;
 
     const file = await this.shareService.getSharedFileForDownload(
@@ -379,7 +383,7 @@ export class ShareController {
   }
 
   async getSharedFilePreviewUrl(req: Request, res: Response) {
-    const { token } = req.params;
+    const token = extractParam(req.params.token);
     const { password } = req.query;
 
     const file = await this.shareService.getSharedFileForDownload(
@@ -410,7 +414,7 @@ export class ShareController {
   }
 
   async getSharedFolderContent(req: Request, res: Response) {
-    const { token } = req.params;
+    const token = extractParam(req.params.token);
     const { subfolderId, password } = req.query;
 
     const content = await this.shareService.getSharedFolderContent(
@@ -423,7 +427,8 @@ export class ShareController {
   }
 
   async getSharedFolderPath(req: Request, res: Response) {
-    const { token, folderId } = req.params;
+    const token = extractParam(req.params.token);
+    const folderId = extractParam(req.params.folderId);
     const { password } = req.query;
 
     const path = await this.shareService.getSharedFolderPath(
@@ -443,7 +448,8 @@ export class ShareController {
       );
     }
 
-    const { token, resourceType } = req.params;
+    const token = extractParam(req.params.token);
+    const resourceType = extractParam(req.params.resourceType);
     const { targetFolderId, password } = req.body;
 
     const normalizedResourceType = this.normalizeResourceType(resourceType);
