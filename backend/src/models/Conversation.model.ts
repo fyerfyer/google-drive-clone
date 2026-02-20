@@ -14,9 +14,18 @@ export interface IMessage {
   timestamp: Date;
 }
 
+export interface IConversationContext {
+  type?: "drive" | "document";
+  folderId?: string;
+  fileId?: string;
+  fileName?: string;
+}
+
 export interface IConversation extends Document {
   userId: Types.ObjectId;
   title: string;
+  agentType: "drive" | "document";
+  context: IConversationContext;
   messages: IMessage[];
   isActive: boolean;
   createdAt: Date;
@@ -47,6 +56,16 @@ const messageSchema = new Schema<IMessage>(
   { _id: false },
 );
 
+const conversationContextSchema = new Schema(
+  {
+    type: { type: String, enum: ["drive", "document"] },
+    folderId: { type: String },
+    fileId: { type: String },
+    fileName: { type: String },
+  },
+  { _id: false },
+);
+
 const conversationSchema = new Schema<IConversation>(
   {
     userId: {
@@ -56,6 +75,12 @@ const conversationSchema = new Schema<IConversation>(
       index: true,
     },
     title: { type: String, default: "New Conversation" },
+    agentType: {
+      type: String,
+      enum: ["drive", "document"],
+      default: "drive",
+    },
+    context: { type: conversationContextSchema, default: {} },
     messages: { type: [messageSchema], default: [] },
     isActive: { type: Boolean, default: true },
   },

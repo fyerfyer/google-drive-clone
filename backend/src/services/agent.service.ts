@@ -1,106 +1,91 @@
+/**
+ * Agent Service — Multi-Agent Orchestrator
+ *
+ * Routes requests to specialized agents (Drive Agent / Document Agent)
+ * based on user context and intent. Manages conversations, approval flow,
+ * and WebSocket integration.
+ *
+ * Architecture:
+ *   User Message → Router → Context Enrichment → Agent Loop → Gateway → Response
+ *                                                   ↑
+ *                                          Capability Gateway
+ *                                        (ACL + Risk + Approval)
+ */
+
 import Conversation, {
   IConversation,
   IMessage,
-  IToolCall,
 } from "../models/Conversation.model";
-import { McpClientService, McpToolDefinition } from "./mcp-client.service";
+import { McpClientService } from "./mcp-client.service";
+import { DriveAgent } from "./agent/drive-agent";
+import { DocumentAgent } from "./agent/document-agent";
+import { CapabilityGateway } from "./agent/capability-gateway";
+import { routeToAgent } from "./agent/agent-router";
+import { AgentType, AgentContext, ApprovalRequest } from "./agent/agent.types";
+import { BaseAgent } from "./agent/base-agent";
 import { logger } from "../lib/logger";
 import { AppError } from "../middlewares/errorHandler";
 import { StatusCodes } from "http-status-codes";
-import { config } from "../config/env";
+import { getSocket } from "../lib/socket";
 
-// 上下文管理常量
-const CHARS_PER_TOKEN = 4;
-const MAX_CONTEXT_TOKENS = 120_000; // 120k
-const MAX_CONTEXT_CHARS = MAX_CONTEXT_TOKENS * CHARS_PER_TOKEN;
-const MAX_TOOL_RESULT_CHARS = 20_000;
-const MAX_HISTORY_MESSAGES = 20;
-
-interface LlmMessage {
-  role: "system" | "user" | "assistant" | "tool";
-  content: string | null;
-  tool_calls?: LlmToolCall[];
-  tool_call_id?: string;
-}
-
-interface LlmToolCall {
-  id: string;
-  type: "function";
-  function: {
-    name: string;
-    arguments: string;
+export interface AgentChatRequest {
+  message: string;
+  conversationId?: string;
+  context?: {
+    type?: AgentType;
+    folderId?: string;
+    fileId?: string;
   };
-}
-
-interface LlmTool {
-  type: "function";
-  function: {
-    name: string;
-    description: string;
-    parameters: Record<string, unknown>;
-  };
-}
-
-interface LlmChoice {
-  message: LlmMessage;
-  finish_reason: string;
-}
-
-interface LlmResponse {
-  choices: LlmChoice[];
 }
 
 export interface AgentChatResponse {
   conversationId: string;
+  agentType: AgentType;
   message: IMessage;
+  pendingApprovals?: Array<{
+    approvalId: string;
+    toolName: string;
+    reason: string;
+  }>;
+}
+
+export interface ApprovalResponse {
+  success: boolean;
+  result?: {
+    toolName: string;
+    output: string;
+    isError: boolean;
+  };
+  message: string;
 }
 
 export interface ConversationSummary {
   id: string;
   title: string;
+  agentType: AgentType;
   lastMessage: string;
   messageCount: number;
   updatedAt: Date;
 }
 
-const SYSTEM_PROMPT = `You are an AI assistant for Google Drive Clone — a cloud storage platform. You help users manage their files, folders, and sharing through natural language.
-
-## Your Capabilities
-You have access to tools that can:
-- **File Operations**: List, read, write, create, rename, move, trash, restore, delete, star files, and get download URLs
-- **Folder Operations**: List contents, create, rename, move, trash, restore, delete, star folders, and get folder paths  
-- **Search**: Search files by name/extension, summarize directory statistics, and query workspace knowledge
-- **Sharing**: Create share links, list share links, revoke share links, share with users, get permissions, list items shared with the user
-- **Knowledge Layer**: Index files for semantic search, perform semantic searches across file contents, check indexing status
-- **Authentication**: Authenticate users, check current authentication status
-
-## Important Rules
-1. ALWAYS use the user's ID (provided in the system context) as the \`userId\` parameter when calling tools.
-2. When the user asks to perform actions, use the appropriate tools. Don't just describe what you would do.
-3. For multi-step operations (like "move all PDF files to folder X"), break them down into individual tool calls.
-4. Present results clearly and concisely. Summarize lists instead of dumping raw JSON.
-5. If a tool call fails, explain the error in a user-friendly way and suggest alternatives.
-6. When listing files or folders, format them in a readable way (use names, sizes, dates).
-7. For file sizes, convert bytes to human-readable format (KB, MB, GB).
-8. Respond in the same language the user uses.
-9. For semantic search, suggest indexing files first if the user hasn't done so.
-
-## Context
-- This is a full-featured cloud drive with MinIO (S3-compatible) storage, MongoDB, and Redis
-- Files support OnlyOffice editing for documents, spreadsheets, and presentations
-- The system supports permission-based sharing with viewer/editor/commenter roles
-- The Knowledge Layer provides semantic search capabilities using vector embeddings`;
-
-const MAX_TOOL_CALLS_PER_TURN = 10;
-
+// Multi Agent 调度
 export class AgentService {
-  constructor(private mcpClient: McpClientService) {}
+  private driveAgent: DriveAgent;
+  private documentAgent: DocumentAgent;
+  private gateway: CapabilityGateway;
+
+  constructor(private mcpClient: McpClientService) {
+    this.gateway = new CapabilityGateway();
+    this.driveAgent = new DriveAgent(mcpClient, this.gateway);
+    this.documentAgent = new DocumentAgent(mcpClient, this.gateway);
+  }
 
   async chat(
     userId: string,
-    message: string,
-    conversationId?: string,
+    request: AgentChatRequest,
   ): Promise<AgentChatResponse> {
+    const { message, conversationId, context } = request;
+
     let conversation: IConversation;
     if (conversationId) {
       conversation = await this.getConversationOrThrow(conversationId, userId);
@@ -108,8 +93,34 @@ export class AgentService {
       conversation = new Conversation({
         userId,
         messages: [],
+        agentType: "drive",
+        context: {},
       });
     }
+
+    // 路由到所需的 Agent
+    const agentType = routeToAgent({
+      explicitType: context?.type,
+      conversationAgentType: (conversation as any).agentType,
+      message,
+    });
+
+    conversation.agentType = agentType;
+    if (context) {
+      conversation.context = {
+        type: agentType,
+        folderId: context.folderId,
+        fileId: context.fileId,
+      };
+    }
+
+    // 构建 Agent 上下文
+    const agentContext: AgentContext = {
+      type: agentType,
+      userId,
+      folderId: context?.folderId || conversation.context?.folderId,
+      fileId: context?.fileId || conversation.context?.fileId,
+    };
 
     const userMessage: IMessage = {
       role: "user",
@@ -118,31 +129,141 @@ export class AgentService {
     };
     conversation.messages.push(userMessage);
 
-    const tools = await this.mcpClient.listTools();
-    const llmTools = this.buildLlmTools(tools);
-    const llmMessages = this.buildLlmMessages(conversation.messages, userId);
+    const agent = this.selectAgent(agentType);
 
-    // 运行 Agent Loop (tool calls → LLM → tool calls → ...)
-    const { content, toolCalls } = await this.runAgentLoop(
-      llmMessages,
-      llmTools,
-      userId,
+    logger.info(
+      {
+        agentType,
+        userId,
+        conversationId: conversation._id?.toString(),
+        hasFolder: !!agentContext.folderId,
+        hasFile: !!agentContext.fileId,
+      },
+      "Running agent",
+    );
+
+    const result = await agent.run(
+      agentContext,
+      conversation.messages,
+      conversation._id?.toString() || "new",
     );
 
     const assistantMessage: IMessage = {
       role: "assistant",
-      content,
-      toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+      content: result.content,
+      toolCalls: result.toolCalls.length > 0 ? result.toolCalls : undefined,
       timestamp: new Date(),
     };
     conversation.messages.push(assistantMessage);
 
     await conversation.save();
 
-    return {
+    const response: AgentChatResponse = {
       conversationId: conversation._id.toString(),
+      agentType,
       message: assistantMessage,
     };
+
+    // 如果有待确认操作，附加到响应中
+    if (result.pendingApprovals.length > 0) {
+      response.pendingApprovals = result.pendingApprovals.map((a) => ({
+        approvalId: a.approvalId,
+        toolName: a.toolName,
+        reason: a.reason,
+      }));
+
+      // Emit approval requests via WebSocket
+      this.emitApprovalRequests(userId, result.pendingApprovals);
+    }
+
+    return response;
+  }
+
+  async resolveApproval(
+    userId: string,
+    approvalId: string,
+    approved: boolean,
+  ): Promise<ApprovalResponse> {
+    const result = this.gateway.resolveApproval(approvalId, userId, approved);
+
+    if (!result) {
+      throw new AppError(
+        StatusCodes.NOT_FOUND,
+        "Approval request not found or already resolved",
+      );
+    }
+
+    if (result.status === "expired") {
+      return {
+        success: false,
+        message: "Approval request has expired. Please retry the operation.",
+      };
+    }
+
+    if (result.status === "rejected") {
+      this.gateway.consumeApproval(approvalId);
+      return {
+        success: true,
+        message: `Operation '${result.toolName}' was rejected.`,
+      };
+    }
+
+    // 执行操作
+    if (result.status === "approved") {
+      try {
+        const toolResult = await this.mcpClient.callTool(result.toolName, {
+          ...result.args,
+          userId,
+        });
+
+        const output = toolResult.content.map((c) => c.text).join("\n");
+        const isError = toolResult.isError || false;
+
+        this.gateway.consumeApproval(approvalId);
+        this.emitApprovalResolved(
+          userId,
+          approvalId,
+          result.toolName,
+          !isError,
+        );
+
+        return {
+          success: true,
+          result: {
+            toolName: result.toolName,
+            output,
+            isError,
+          },
+          message: isError
+            ? `Operation '${result.toolName}' failed: ${output}`
+            : `Operation '${result.toolName}' completed successfully.`,
+        };
+      } catch (error) {
+        const errMsg = error instanceof Error ? error.message : "Unknown error";
+        logger.error(
+          { error, approvalId, toolName: result.toolName },
+          "Approved tool execution failed",
+        );
+
+        this.gateway.consumeApproval(approvalId);
+
+        return {
+          success: false,
+          result: {
+            toolName: result.toolName,
+            output: errMsg,
+            isError: true,
+          },
+          message: `Operation failed: ${errMsg}`,
+        };
+      }
+    }
+
+    return { success: false, message: "Unexpected approval state" };
+  }
+
+  getPendingApprovals(userId: string): ApprovalRequest[] {
+    return this.gateway.getPendingApprovals(userId);
   }
 
   async listConversations(userId: string): Promise<ConversationSummary[]> {
@@ -156,6 +277,7 @@ export class AgentService {
       return {
         id: c._id.toString(),
         title: c.title,
+        agentType: ((c as any).agentType as AgentType) || "drive",
         lastMessage: lastMsg ? lastMsg.content.slice(0, 100) : "",
         messageCount: c.messages.length,
         updatedAt: c.updatedAt,
@@ -182,6 +304,16 @@ export class AgentService {
     await conversation.save();
   }
 
+  private selectAgent(type: AgentType): BaseAgent {
+    switch (type) {
+      case "document":
+        return this.documentAgent;
+      case "drive":
+      default:
+        return this.driveAgent;
+    }
+  }
+
   private async getConversationOrThrow(
     conversationId: string,
     userId: string,
@@ -197,257 +329,49 @@ export class AgentService {
     return conversation;
   }
 
-  private async runAgentLoop(
-    messages: LlmMessage[],
-    tools: LlmTool[],
+  // 使用 WebSocket 向用户发送确认请求
+  private emitApprovalRequests(
     userId: string,
-  ): Promise<{ content: string; toolCalls: IToolCall[] }> {
-    const allToolCalls: IToolCall[] = [];
-    let iteration = 0;
-
-    while (iteration < MAX_TOOL_CALLS_PER_TURN) {
-      iteration++;
-
-      // 压缩上下文
-      this.compressMessagesIfNeeded(messages);
-
-      const response = await this.callLlm(messages, tools);
-      const choice = response.choices[0];
-
-      if (!choice) {
-        return {
-          content:
-            "I apologize, but I received an empty response. Please try again.",
-          toolCalls: allToolCalls,
-        };
-      }
-
-      const assistantMsg = choice.message;
-
-      if (!assistantMsg.tool_calls || assistantMsg.tool_calls.length === 0) {
-        return {
-          content: assistantMsg.content || "Done.",
-          toolCalls: allToolCalls,
-        };
-      }
-
-      messages.push(assistantMsg);
-
-      // 执行工具调用
-      for (const toolCall of assistantMsg.tool_calls) {
-        const { name, arguments: argsStr } = toolCall.function;
-
-        let args: Record<string, unknown>;
-        try {
-          args = JSON.parse(argsStr);
-        } catch {
-          args = {};
-        }
-
-        args.userId = userId;
-
-        let result: string;
-        let isError = false;
-
-        try {
-          const toolResult = await this.mcpClient.callTool(name, args);
-          result = toolResult.content.map((c) => c.text).join("\n");
-          isError = toolResult.isError || false;
-        } catch (error) {
-          result = `Tool execution error: ${error instanceof Error ? error.message : "Unknown error"}`;
-          isError = true;
-          logger.error({ error, tool: name, args }, "Agent tool call failed");
-        }
-
-        // 裁剪工具调用结果
-        if (result.length > MAX_TOOL_RESULT_CHARS) {
-          const originalLen = result.length;
-          result =
-            result.slice(0, MAX_TOOL_RESULT_CHARS) +
-            `\n\n[Content truncated: showing ${MAX_TOOL_RESULT_CHARS} of ${originalLen} characters. Use semantic_search_files for targeted queries on large files.]`;
-          logger.debug(
-            { tool: name, originalLen, truncatedTo: MAX_TOOL_RESULT_CHARS },
-            "Truncated oversized tool result",
-          );
-        }
-
-        allToolCalls.push({
-          toolName: name,
-          args,
-          result,
-          isError,
-        });
-
-        messages.push({
-          role: "tool",
-          content: result,
-          tool_call_id: toolCall.id,
-        });
-      }
+    approvals: Array<{
+      approvalId: string;
+      toolName: string;
+      args: Record<string, unknown>;
+      reason: string;
+    }>,
+  ): void {
+    try {
+      const io = getSocket();
+      io.to(`user:${userId}`).emit("agent:approval_needed", {
+        approvals: approvals.map((a) => ({
+          approvalId: a.approvalId,
+          toolName: a.toolName,
+          reason: a.reason,
+          args: a.args,
+        })),
+        timestamp: new Date().toISOString(),
+      });
+    } catch {
+      // WebSocket may not be initialized
     }
-
-    return {
-      content:
-        "I've reached the maximum number of operations in a single turn. Please continue with additional instructions.",
-      toolCalls: allToolCalls,
-    };
   }
 
-  private estimateMessageChars(messages: LlmMessage[]): number {
-    let total = 0;
-    for (const msg of messages) {
-      if (msg.content) total += msg.content.length;
-      if (msg.tool_calls) {
-        for (const tc of msg.tool_calls) {
-          total += tc.function.arguments.length + tc.function.name.length;
-        }
-      }
+  private emitApprovalResolved(
+    userId: string,
+    approvalId: string,
+    toolName: string,
+    success: boolean,
+  ): void {
+    try {
+      const { getSocket } = require("../lib/socket");
+      const io = getSocket();
+      io.to(`user:${userId}`).emit("agent:approval_resolved", {
+        approvalId,
+        toolName,
+        success,
+        timestamp: new Date().toISOString(),
+      });
+    } catch {
+      // WebSocket may not be initialized
     }
-    return total;
-  }
-
-  // 如果消息总长度接近上下文限制，优先压缩工具调用结果，再删除最旧的消息对话
-  private compressMessagesIfNeeded(messages: LlmMessage[]): void {
-    let totalChars = this.estimateMessageChars(messages);
-
-    if (totalChars <= MAX_CONTEXT_CHARS) return;
-
-    logger.info(
-      { totalChars, limit: MAX_CONTEXT_CHARS },
-      "Context approaching limit, compressing message history",
-    );
-
-    // 压缩工具调用结果
-    const KEEP_RECENT = 6;
-    const shrinkBound = Math.max(1, messages.length - KEEP_RECENT);
-
-    for (let i = 1; i < shrinkBound && totalChars > MAX_CONTEXT_CHARS; i++) {
-      const msg = messages[i];
-      if (msg.role === "tool" && msg.content && msg.content.length > 200) {
-        const oldLen = msg.content.length;
-        msg.content =
-          msg.content.slice(0, 150) +
-          "\n[...compressed — original " +
-          oldLen +
-          " chars]";
-        totalChars -= oldLen - msg.content.length;
-      }
-    }
-
-    if (totalChars <= MAX_CONTEXT_CHARS) return;
-
-    // 删除旧消息
-    while (
-      messages.length > KEEP_RECENT + 1 &&
-      totalChars > MAX_CONTEXT_CHARS
-    ) {
-      const removed = messages.splice(1, 1)[0];
-      if (removed.content) totalChars -= removed.content.length;
-    }
-
-    logger.info(
-      { newTotalChars: totalChars, messageCount: messages.length },
-      "Context compressed",
-    );
-  }
-
-  // 将 MCP 工具定义转换为 LLM 可识别的工具格式
-  private buildLlmTools(tools: McpToolDefinition[]): LlmTool[] {
-    return tools.map((tool) => {
-      // 我们之后会手动注入 userId
-      const schema = { ...tool.inputSchema };
-      if (schema.properties && typeof schema.properties === "object") {
-        const props = { ...(schema.properties as Record<string, unknown>) };
-        delete props.userId;
-        schema.properties = props;
-      }
-      if (Array.isArray(schema.required)) {
-        schema.required = (schema.required as string[]).filter(
-          (r) => r !== "userId",
-        );
-      }
-
-      return {
-        type: "function" as const,
-        function: {
-          name: tool.name,
-          description: tool.description,
-          parameters: schema,
-        },
-      };
-    });
-  }
-
-  private buildLlmMessages(messages: IMessage[], userId: string): LlmMessage[] {
-    const llmMessages: LlmMessage[] = [
-      {
-        role: "system",
-        content: `${SYSTEM_PROMPT}\n\n## Current User Context\n- User ID: ${userId}\n- Timestamp: ${new Date().toISOString()}`,
-      },
-    ];
-
-    for (const msg of messages) {
-      if (msg.role === "user") {
-        llmMessages.push({ role: "user", content: msg.content });
-      } else if (msg.role === "assistant") {
-        llmMessages.push({ role: "assistant", content: msg.content });
-      }
-    }
-
-    return llmMessages;
-  }
-
-  private async callLlm(
-    messages: LlmMessage[],
-    tools: LlmTool[],
-  ): Promise<LlmResponse> {
-    const apiKey = config.llmApiKey;
-    const baseUrl = config.llmBaseUrl;
-    const model = config.llmModel;
-
-    if (!apiKey) {
-      throw new AppError(
-        StatusCodes.SERVICE_UNAVAILABLE,
-        "AI Agent is not configured. Please set LLM_API_KEY environment variable.",
-      );
-    }
-
-    const body = {
-      model,
-      messages,
-      tools: tools.length > 0 ? tools : undefined,
-      tool_choice: tools.length > 0 ? "auto" : undefined,
-      temperature: 0.3,
-      max_tokens: 4096,
-    };
-
-    logger.debug(
-      { model, messageCount: messages.length, toolCount: tools.length },
-      "Calling LLM",
-    );
-
-    const response = await fetch(`${baseUrl}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify(body),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      logger.error(
-        { status: response.status, error: errorText },
-        "LLM API error",
-      );
-      throw new AppError(
-        StatusCodes.BAD_GATEWAY,
-        `AI service returned error: ${response.status}`,
-      );
-    }
-
-    const data = (await response.json()) as LlmResponse;
-    return data;
   }
 }

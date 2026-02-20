@@ -11,7 +11,14 @@ import {
 } from "./auth/auth";
 import { logger } from "../lib/logger";
 import { KnowledgeService } from "../services/knowledge.service";
-import { registerKnowledgeTools, registerFileTools , registerFolderTools, registerSearchTools, registerShareTools} from "./tools";
+import {
+  registerKnowledgeTools,
+  registerFileTools,
+  registerFolderTools,
+  registerSearchTools,
+  registerShareTools,
+  registerDocumentTools,
+} from "./tools";
 
 export interface McpServices {
   fileService: FileService;
@@ -45,6 +52,8 @@ export function createMcpServer(
 
   // Knowledge Layer
   registerKnowledgeTools(server, services.knowledgeService, ctx);
+
+  registerDocumentTools(server, services, ctx);
 
   registerWorkspaceResources(server, services);
 
