@@ -2,7 +2,7 @@
  * 能力执行 gateway
  *
  * 对代理工具调用实施三层安全措施：
- *   1. ACL — 按代理类型（drive 与 document）限制可用工具
+ *   1. ACL — 按 Agent 类型限制可用工具
  *   2. 操作风险 — 将工具分类为安全 / 中等 / 危险
  *   3. 人工审批 — 危险操作需要用户明确批准
  */
@@ -17,6 +17,7 @@ import {
   OPERATION_RISK,
   DRIVE_AGENT_TOOLS,
   DOCUMENT_AGENT_TOOLS,
+  SEARCH_AGENT_TOOLS,
   APPROVAL_TTL_SECONDS,
 } from "./agent.types";
 
@@ -56,8 +57,12 @@ export class CapabilityGateway {
     args: Record<string, unknown>,
   ): GatewayDecision {
     // ACL
-    const allowedTools =
-      agentType === "drive" ? DRIVE_AGENT_TOOLS : DOCUMENT_AGENT_TOOLS;
+    const toolSets: Record<AgentType, Set<string>> = {
+      drive: DRIVE_AGENT_TOOLS,
+      document: DOCUMENT_AGENT_TOOLS,
+      search: SEARCH_AGENT_TOOLS,
+    };
+    const allowedTools = toolSets[agentType] || DRIVE_AGENT_TOOLS;
 
     if (!allowedTools.has(toolName)) {
       logger.warn(
@@ -70,12 +75,14 @@ export class CapabilityGateway {
         reason: `Tool '${toolName}' is not available for the ${agentType} agent. ${
           agentType === "document"
             ? "File/folder management operations should be performed in the Drive workspace."
-            : "Document editing operations should be performed in the Document editor."
+            : agentType === "search"
+              ? "File modification operations should be performed by the Drive Agent or Document Agent."
+              : "Document editing operations should be performed in the Document editor."
         }`,
       };
     }
 
-    // Rate limiting
+    // Rate limit
     if (!this.checkRateLimit(userId)) {
       return {
         allowed: false,

@@ -15,18 +15,49 @@ export interface IMessage {
 }
 
 export interface IConversationContext {
-  type?: "drive" | "document";
+  type?: "drive" | "document" | "search";
   folderId?: string;
   fileId?: string;
   fileName?: string;
 }
 
+export interface IConversationSummary {
+  summary: string;
+  messageRange: { from: number; to: number };
+  createdAt: Date;
+}
+
+export interface ITaskStep {
+  id: number;
+  title: string;
+  description: string;
+  status: "pending" | "in-progress" | "completed" | "failed" | "skipped";
+  agentType?: "drive" | "document" | "search";
+  result?: string;
+  error?: string;
+}
+
+export interface ITaskPlan {
+  goal: string;
+  steps: ITaskStep[];
+  currentStep: number;
+  isComplete: boolean;
+  summary?: string;
+}
+
 export interface IConversation extends Document {
   userId: Types.ObjectId;
   title: string;
-  agentType: "drive" | "document";
+  agentType: "drive" | "document" | "search";
   context: IConversationContext;
   messages: IMessage[];
+  summaries: IConversationSummary[];
+  activePlan?: ITaskPlan;
+  routeDecision?: {
+    confidence: number;
+    source: string;
+    reason: string;
+  };
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -58,10 +89,50 @@ const messageSchema = new Schema<IMessage>(
 
 const conversationContextSchema = new Schema(
   {
-    type: { type: String, enum: ["drive", "document"] },
+    type: { type: String, enum: ["drive", "document", "search"] },
     folderId: { type: String },
     fileId: { type: String },
     fileName: { type: String },
+  },
+  { _id: false },
+);
+
+const conversationSummarySchema = new Schema(
+  {
+    summary: { type: String, required: true },
+    messageRange: {
+      from: { type: Number, required: true },
+      to: { type: Number, required: true },
+    },
+    createdAt: { type: Date, default: Date.now },
+  },
+  { _id: false },
+);
+
+const taskStepSchema = new Schema(
+  {
+    id: { type: Number, required: true },
+    title: { type: String, required: true },
+    description: { type: String, required: true },
+    status: {
+      type: String,
+      enum: ["pending", "in-progress", "completed", "failed", "skipped"],
+      default: "pending",
+    },
+    agentType: { type: String, enum: ["drive", "document", "search"] },
+    result: { type: String },
+    error: { type: String },
+  },
+  { _id: false },
+);
+
+const taskPlanSchema = new Schema(
+  {
+    goal: { type: String, required: true },
+    steps: { type: [taskStepSchema], default: [] },
+    currentStep: { type: Number, default: 1 },
+    isComplete: { type: Boolean, default: false },
+    summary: { type: String },
   },
   { _id: false },
 );
@@ -77,11 +148,24 @@ const conversationSchema = new Schema<IConversation>(
     title: { type: String, default: "New Conversation" },
     agentType: {
       type: String,
-      enum: ["drive", "document"],
+      enum: ["drive", "document", "search"],
       default: "drive",
     },
     context: { type: conversationContextSchema, default: {} },
     messages: { type: [messageSchema], default: [] },
+    summaries: { type: [conversationSummarySchema], default: [] },
+    activePlan: { type: taskPlanSchema, default: undefined },
+    routeDecision: {
+      type: new Schema(
+        {
+          confidence: { type: Number },
+          source: { type: String },
+          reason: { type: String },
+        },
+        { _id: false },
+      ),
+      default: undefined,
+    },
     isActive: { type: Boolean, default: true },
   },
   {

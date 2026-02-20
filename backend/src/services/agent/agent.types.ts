@@ -1,12 +1,10 @@
-export type AgentType = "drive" | "document";
+import { IMessage } from "../../models/Conversation.model";
+
+export type AgentType = "drive" | "document" | "search";
 
 export type OperationRisk = "safe" | "moderate" | "dangerous";
 
-/**
- * 从前端注入的上下文，让 Agent 了解用户所在的位置。
- *   - drive：用户正在浏览文件管理器 -> folderId 是当前文件夹的 ID
- *   - document：用户正在编辑文档 -> fileId 是当前打开文件的 ID
- */
+// 从前端注入的上下文，让 Agent 了解用户所在的位置。
 export interface AgentContext {
   type: AgentType;
   userId: string;
@@ -19,7 +17,97 @@ export interface AgentContext {
   relatedContext?: string;
 }
 
-// Approve Flow
+export interface RouteDecision {
+  route_to: AgentType;
+  confidence: number;
+  reason: string;
+  source: "explicit" | "conversation" | "pattern" | "llm" | "default";
+}
+
+// Agent meta 描述，注册到 Router 中用于 LLM 判定路由
+export interface AgentMeta {
+  type: AgentType;
+  description: string;
+  capabilities: string[];
+}
+
+export const AGENT_REGISTRY: AgentMeta[] = [
+  {
+    type: "drive",
+    description:
+      "Responsible for file and folder management operations, including creating, deleting, moving, renaming, sharing, and permission management.",
+    capabilities: [
+      "File/folder CRUD (create, rename, move, delete, recycle bin)",
+      "Sharing and permission management (share links, direct sharing, permission viewing)",
+      "File starring, obtaining download links",
+      "Directory summarization",
+    ],
+  },
+  {
+    type: "document",
+    description:
+      "Responsible for document content writing and editing tasks, including reading, writing, and patch-modifying document content.",
+    capabilities: [
+      "Document content read and write",
+      "Precise patch editing (replace, insert, append, delete text)",
+      "Article writing, polishing, translation, rewriting",
+    ],
+  },
+  {
+    type: "search",
+    description:
+      "Responsible for search, knowledge retrieval, and information query tasks, including file search, semantic search, knowledge-base QA, and index management.",
+    capabilities: [
+      "Filename/extension search",
+      "Semantic search (embedding-based similar content retrieval)",
+      "Knowledge-base QA (RAG queries)",
+      "File index management",
+      "Indexing status inspection",
+    ],
+  },
+];
+
+export type TaskStatus =
+  | "pending"
+  | "in-progress"
+  | "completed"
+  | "failed"
+  | "skipped";
+
+export interface TaskStep {
+  id: number;
+  title: string;
+  description: string;
+  status: TaskStatus;
+  agentType?: AgentType;
+  result?: string;
+  error?: string;
+}
+
+export interface TaskPlan {
+  goal: string;
+  steps: TaskStep[];
+  currentStep: number;
+  isComplete: boolean;
+  summary?: string;
+}
+
+export interface ConversationSummary {
+  summary: string;
+  messageRange: { from: number; to: number };
+  createdAt: Date;
+}
+
+export interface MemoryState {
+  // 压缩后的历史摘要
+  summaries: ConversationSummary[];
+  // 滑动窗口内的原始消息
+  recentMessages: IMessage[];
+  //  当前活跃的任务计划
+  activePlan?: TaskPlan;
+  // 总消息数
+  totalMessageCount: number;
+}
 
 export type ApprovalStatus = "pending" | "approved" | "rejected" | "expired";
 
@@ -118,10 +206,6 @@ export const DRIVE_AGENT_TOOLS = new Set([
   "delete_folder",
   "get_folder_path",
   "star_folder",
-  // Search
-  "search_files",
-  "summarize_directory",
-  "query_workspace_knowledge",
   // Sharing
   "create_share_link",
   "list_share_links",
@@ -129,11 +213,9 @@ export const DRIVE_AGENT_TOOLS = new Set([
   "share_with_users",
   "get_permissions",
   "list_shared_with_me",
-  // Knowledge Layer
-  "index_file",
-  "index_all_files",
-  "semantic_search_files",
-  "get_indexing_status",
+
+  "search_files",
+  "list_files",
 ]);
 
 export const DOCUMENT_AGENT_TOOLS = new Set([
@@ -142,12 +224,26 @@ export const DOCUMENT_AGENT_TOOLS = new Set([
   "write_file",
   "patch_file",
   "get_file_info",
-  // Context enrichment (read-only)
+  // Context 增强
   "list_folder_contents",
+  "search_files",
+]);
+
+export const SEARCH_AGENT_TOOLS = new Set([
+  // search
   "search_files",
   "semantic_search_files",
   "query_workspace_knowledge",
+  "summarize_directory",
+  // Knowledge Layer 管理
+  "index_file",
+  "index_all_files",
   "get_indexing_status",
+  "get_file_info",
+  "read_file",
+  "list_folder_contents",
+  "get_folder_path",
+  "list_files",
 ]);
 
 export const OPERATION_RISK: Record<string, OperationRisk> = {
@@ -198,12 +294,22 @@ export const OPERATION_RISK: Record<string, OperationRisk> = {
 // 限流
 export const MAX_TOOL_CALLS_PER_TURN = 15;
 
-/** Maximum chars for context window */
 export const CHARS_PER_TOKEN = 4;
 export const MAX_CONTEXT_TOKENS = 120_000;
 export const MAX_CONTEXT_CHARS = MAX_CONTEXT_TOKENS * CHARS_PER_TOKEN;
 export const MAX_TOOL_RESULT_CHARS = 20_000;
 export const MAX_HISTORY_MESSAGES = 20;
 
-/** Approval TTL (5 minutes) */
 export const APPROVAL_TTL_SECONDS = 300;
+
+// 当 regex 匹配置信度低于此阈值时，调用 LLM Router
+export const PATTERN_CONFIDENCE_THRESHOLD = 0.6;
+
+// 滑动窗口保留的最近消息数
+export const MEMORY_SLIDING_WINDOW = 10;
+
+// 超过多少条消息后开始生成摘要
+export const MEMORY_SUMMARY_THRESHOLD = 16;
+
+// 判定为复杂任务的阈值（需要拆分的步骤数）
+export const TASK_COMPLEXITY_THRESHOLD = 2;

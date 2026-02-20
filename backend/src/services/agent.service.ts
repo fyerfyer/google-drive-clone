@@ -1,27 +1,43 @@
 /**
- * Agent Service — Multi-Agent Orchestrator
+ * Agent Service
  *
- * Routes requests to specialized agents (Drive Agent / Document Agent)
- * based on user context and intent. Manages conversations, approval flow,
- * and WebSocket integration.
+ * 管理会话、确认流程、任务计划和 WebSocket 集成。
  *
- * Architecture:
- *   User Message → Router → Context Enrichment → Agent Loop → Gateway → Response
- *                                                   ↑
- *                                          Capability Gateway
- *                                        (ACL + Risk + Approval)
+ *   User Message
+ *     -> shouldPlanTask
+ *     -> TaskPlanner
+ *     -> MemoryManager
+ *     -> Hybrid Router
+ *     -> TaskOrchestrator / 单 Agent 执行
+ *     -> CapabilityGateway
+ *     -> Response（任务进度 + 路由决策信息）
  */
 
 import Conversation, {
   IConversation,
   IMessage,
+  IToolCall,
 } from "../models/Conversation.model";
 import { McpClientService } from "./mcp-client.service";
 import { DriveAgent } from "./agent/drive-agent";
 import { DocumentAgent } from "./agent/document-agent";
+import { SearchAgent } from "./agent/search-agent";
 import { CapabilityGateway } from "./agent/capability-gateway";
+import { MemoryManager } from "./agent/memory-manager";
 import { routeToAgent } from "./agent/agent-router";
-import { AgentType, AgentContext, ApprovalRequest } from "./agent/agent.types";
+import {
+  shouldPlanTask,
+  generateTaskPlan,
+  TaskPlanTracker,
+} from "./agent/task-planner";
+import { TaskOrchestrator } from "./agent/task-orchestrator";
+import {
+  AgentType,
+  AgentContext,
+  ApprovalRequest,
+  RouteDecision,
+  TaskPlan,
+} from "./agent/agent.types";
 import { BaseAgent } from "./agent/base-agent";
 import { logger } from "../lib/logger";
 import { AppError } from "../middlewares/errorHandler";
@@ -42,6 +58,12 @@ export interface AgentChatResponse {
   conversationId: string;
   agentType: AgentType;
   message: IMessage;
+  routeDecision?: {
+    confidence: number;
+    source: string;
+    reason: string;
+  };
+  taskPlan?: TaskPlan;
   pendingApprovals?: Array<{
     approvalId: string;
     toolName: string;
@@ -59,7 +81,7 @@ export interface ApprovalResponse {
   message: string;
 }
 
-export interface ConversationSummary {
+export interface ConversationListItem {
   id: string;
   title: string;
   agentType: AgentType;
@@ -68,16 +90,27 @@ export interface ConversationSummary {
   updatedAt: Date;
 }
 
-// Multi Agent 调度
 export class AgentService {
   private driveAgent: DriveAgent;
   private documentAgent: DocumentAgent;
+  private searchAgent: SearchAgent;
   private gateway: CapabilityGateway;
+  private memoryManager: MemoryManager;
+  private taskTracker: TaskPlanTracker;
+  private orchestrator: TaskOrchestrator;
 
   constructor(private mcpClient: McpClientService) {
     this.gateway = new CapabilityGateway();
+    this.memoryManager = new MemoryManager();
+    this.taskTracker = new TaskPlanTracker();
     this.driveAgent = new DriveAgent(mcpClient, this.gateway);
     this.documentAgent = new DocumentAgent(mcpClient, this.gateway);
+    this.searchAgent = new SearchAgent(mcpClient, this.gateway);
+    this.orchestrator = new TaskOrchestrator({
+      drive: this.driveAgent,
+      document: this.documentAgent,
+      search: this.searchAgent,
+    });
   }
 
   async chat(
@@ -95,17 +128,53 @@ export class AgentService {
         messages: [],
         agentType: "drive",
         context: {},
+        summaries: [],
       });
     }
 
-    // 路由到所需的 Agent
-    const agentType = routeToAgent({
+    // 构建 MemoryState 用于 Router 上下文
+    const memoryState = await this.memoryManager.buildMemoryState(
+      conversation.messages,
+      (conversation.summaries || []).map((s) => ({
+        summary: s.summary,
+        messageRange: s.messageRange,
+        createdAt: s.createdAt,
+      })),
+      conversation.activePlan
+        ? {
+            goal: conversation.activePlan.goal,
+            steps: conversation.activePlan.steps.map((s) => ({ ...s })),
+            currentStep: conversation.activePlan.currentStep,
+            isComplete: conversation.activePlan.isComplete,
+            summary: conversation.activePlan.summary,
+          }
+        : undefined,
+    );
+
+    const routerContext = this.memoryManager.getRouterContext(memoryState);
+
+    // 当前面的 plan 已结束或首次对话时，不锁定会话类型
+    const previousPlanDone =
+      !conversation.activePlan || conversation.activePlan.isComplete;
+
+    const routeDecision: RouteDecision = await routeToAgent({
       explicitType: context?.type,
-      conversationAgentType: (conversation as any).agentType,
+      // 仅在有活跃 plan 未完成时继承会话类型，否则让 Router 重新判断
+      conversationAgentType: previousPlanDone
+        ? undefined
+        : (conversation.agentType as AgentType),
       message,
+      conversationContext: routerContext,
     });
 
+    const agentType = routeDecision.route_to;
     conversation.agentType = agentType;
+    conversation.routeDecision = {
+      confidence: routeDecision.confidence,
+      source: routeDecision.source,
+      reason: routeDecision.reason,
+    };
+
     if (context) {
       conversation.context = {
         type: agentType,
@@ -114,7 +183,40 @@ export class AgentService {
       };
     }
 
-    // 构建 Agent 上下文
+    // Task Planning
+    let activePlan: TaskPlan | undefined = conversation.activePlan
+      ? {
+          goal: conversation.activePlan.goal,
+          steps: conversation.activePlan.steps.map((s) => ({ ...s })),
+          currentStep: conversation.activePlan.currentStep,
+          isComplete: conversation.activePlan.isComplete,
+          summary: conversation.activePlan.summary,
+        }
+      : undefined;
+
+    // 只在新会话或无活跃计划时触发任务分解
+    if (!activePlan || activePlan.isComplete) {
+      const contextInfo = context?.folderId
+        ? `Current folder: ${context.folderId}`
+        : context?.fileId
+          ? `Current file: ${context.fileId}`
+          : undefined;
+
+      const planNeeded = await shouldPlanTask(message, contextInfo);
+
+      if (planNeeded) {
+        const plan = await generateTaskPlan(message, contextInfo);
+        if (plan) {
+          activePlan = plan;
+          logger.info(
+            { goal: plan.goal, steps: plan.steps.length },
+            "Task plan created for request",
+          );
+        }
+      }
+    }
+
+    // Agent Context
     const agentContext: AgentContext = {
       type: agentType,
       userId,
@@ -129,32 +231,126 @@ export class AgentService {
     };
     conversation.messages.push(userMessage);
 
-    const agent = this.selectAgent(agentType);
+    const existingSummaries = (conversation.summaries || []).map((s) => ({
+      summary: s.summary,
+      messageRange: s.messageRange,
+      createdAt: s.createdAt,
+    }));
 
     logger.info(
       {
         agentType,
         userId,
         conversationId: conversation._id?.toString(),
-        hasFolder: !!agentContext.folderId,
-        hasFile: !!agentContext.fileId,
+        routeSource: routeDecision.source,
+        routeConfidence: routeDecision.confidence,
+        hasPlan: !!activePlan,
+        useOrchestrator:
+          activePlan &&
+          !activePlan.isComplete &&
+          this.orchestrator.needsOrchestration(activePlan),
       },
       "Running agent",
     );
 
-    const result = await agent.run(
-      agentContext,
-      conversation.messages,
-      conversation._id?.toString() || "new",
-    );
+    let responseContent: string;
+    let toolCalls: IToolCall[] = [];
+    let pendingApprovals: Array<{
+      approvalId: string;
+      toolName: string;
+      args: Record<string, unknown>;
+      reason: string;
+    }> = [];
+    let updatedSummaries = existingSummaries;
+
+    if (
+      activePlan &&
+      !activePlan.isComplete &&
+      this.orchestrator.needsOrchestration(activePlan)
+    ) {
+      const orchResult = await this.orchestrator.executePlan(
+        activePlan,
+        agentContext,
+        conversation.messages,
+        conversation._id?.toString() || "new",
+        existingSummaries,
+      );
+
+      activePlan = orchResult.plan;
+      responseContent = orchResult.content;
+      toolCalls = orchResult.toolCalls;
+      pendingApprovals = orchResult.pendingApprovals;
+      updatedSummaries = orchResult.updatedSummaries;
+    } else {
+      if (activePlan && !activePlan.isComplete) {
+        activePlan = this.taskTracker.startCurrentStep(activePlan);
+      }
+
+      const agent = this.selectAgent(agentType);
+
+      const result = await agent.run(
+        agentContext,
+        conversation.messages,
+        conversation._id?.toString() || "new",
+        {
+          existingSummaries,
+          activePlan,
+        },
+      );
+
+      if (activePlan && !activePlan.isComplete) {
+        const hasErrors = result.toolCalls.some((tc) => tc.isError);
+        if (hasErrors) {
+          activePlan = this.taskTracker.failCurrentStep(
+            activePlan,
+            result.toolCalls
+              .filter((tc) => tc.isError)
+              .map((tc) => tc.result || "Unknown error")
+              .join("; "),
+          );
+        } else {
+          activePlan = this.taskTracker.completeCurrentStep(
+            activePlan,
+            result.content.slice(0, 200),
+          );
+        }
+      }
+
+      responseContent = result.content;
+      toolCalls = result.toolCalls;
+      pendingApprovals = result.pendingApprovals;
+      updatedSummaries = result.updatedSummaries;
+    }
+
+    // 如果有活跃的任务计划，附加进度信息
+    if (activePlan && activePlan.steps.length > 1) {
+      const progress = this.taskTracker.getProgressSummary(activePlan);
+      responseContent += `\n\n---\n${progress}`;
+    }
 
     const assistantMessage: IMessage = {
       role: "assistant",
-      content: result.content,
-      toolCalls: result.toolCalls.length > 0 ? result.toolCalls : undefined,
+      content: responseContent,
+      toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
       timestamp: new Date(),
     };
     conversation.messages.push(assistantMessage);
+
+    // 持久化摘要和计划
+    conversation.summaries = updatedSummaries.map((s) => ({
+      summary: s.summary,
+      messageRange: s.messageRange,
+      createdAt: s.createdAt,
+    }));
+    conversation.activePlan = activePlan
+      ? {
+          goal: activePlan.goal,
+          steps: activePlan.steps,
+          currentStep: activePlan.currentStep,
+          isComplete: activePlan.isComplete,
+          summary: activePlan.summary,
+        }
+      : undefined;
 
     await conversation.save();
 
@@ -162,18 +358,24 @@ export class AgentService {
       conversationId: conversation._id.toString(),
       agentType,
       message: assistantMessage,
+      routeDecision: {
+        confidence: routeDecision.confidence,
+        source: routeDecision.source,
+        reason: routeDecision.reason,
+      },
     };
 
-    // 如果有待确认操作，附加到响应中
-    if (result.pendingApprovals.length > 0) {
-      response.pendingApprovals = result.pendingApprovals.map((a) => ({
+    if (activePlan) {
+      response.taskPlan = activePlan;
+    }
+
+    if (pendingApprovals.length > 0) {
+      response.pendingApprovals = pendingApprovals.map((a) => ({
         approvalId: a.approvalId,
         toolName: a.toolName,
         reason: a.reason,
       }));
-
-      // Emit approval requests via WebSocket
-      this.emitApprovalRequests(userId, result.pendingApprovals);
+      this.emitApprovalRequests(userId, pendingApprovals);
     }
 
     return response;
@@ -208,7 +410,6 @@ export class AgentService {
       };
     }
 
-    // 执行操作
     if (result.status === "approved") {
       try {
         const toolResult = await this.mcpClient.callTool(result.toolName, {
@@ -229,11 +430,7 @@ export class AgentService {
 
         return {
           success: true,
-          result: {
-            toolName: result.toolName,
-            output,
-            isError,
-          },
+          result: { toolName: result.toolName, output, isError },
           message: isError
             ? `Operation '${result.toolName}' failed: ${output}`
             : `Operation '${result.toolName}' completed successfully.`,
@@ -244,16 +441,10 @@ export class AgentService {
           { error, approvalId, toolName: result.toolName },
           "Approved tool execution failed",
         );
-
         this.gateway.consumeApproval(approvalId);
-
         return {
           success: false,
-          result: {
-            toolName: result.toolName,
-            output: errMsg,
-            isError: true,
-          },
+          result: { toolName: result.toolName, output: errMsg, isError: true },
           message: `Operation failed: ${errMsg}`,
         };
       }
@@ -266,7 +457,7 @@ export class AgentService {
     return this.gateway.getPendingApprovals(userId);
   }
 
-  async listConversations(userId: string): Promise<ConversationSummary[]> {
+  async listConversations(userId: string): Promise<ConversationListItem[]> {
     const conversations = await Conversation.find({ userId, isActive: true })
       .sort({ updatedAt: -1 })
       .limit(50)
@@ -308,6 +499,8 @@ export class AgentService {
     switch (type) {
       case "document":
         return this.documentAgent;
+      case "search":
+        return this.searchAgent;
       case "drive":
       default:
         return this.driveAgent;
@@ -329,7 +522,6 @@ export class AgentService {
     return conversation;
   }
 
-  // 使用 WebSocket 向用户发送确认请求
   private emitApprovalRequests(
     userId: string,
     approvals: Array<{
@@ -362,7 +554,6 @@ export class AgentService {
     success: boolean,
   ): void {
     try {
-      const { getSocket } = require("../lib/socket");
       const io = getSocket();
       io.to(`user:${userId}`).emit("agent:approval_resolved", {
         approvalId,

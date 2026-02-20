@@ -3,11 +3,13 @@
  *
  * - 文件/文件夹 CRUD（创建、重命名、移动、移至回收站、永久删除、加星）
  * - 共享（分享链接、直接共享、权限管理）
- * - 搜索与知识层操作
+ * - 基础搜索（按名称查找文件，作为上下文辅助）
  *
  * 上下文感知:
  * - 在每次交互时获取当前文件夹的内容
  * - 了解当前工作目录路径
+ *
+ * 语义搜索、知识库问答、索引管理等进阶搜索功能由 SearchAgent 负责
  */
 
 import { BaseAgent } from "./base-agent";
@@ -91,9 +93,10 @@ You specialize in **workspace management**: creating, organizing, sharing, and s
 You have access to tools for:
 - **File Operations**: List, create, rename, move, trash, restore, permanently delete, star files, get download URLs
 - **Folder Operations**: List contents, create, rename, move, trash, restore, permanently delete, star folders, get folder paths
-- **Search**: Search files by name/extension, summarize directories, query workspace knowledge
 - **Sharing**: Create share links, list share links, revoke share links, share with users, get permissions, list items shared with the user
-- **Knowledge Layer**: Index files for semantic search, perform semantic searches, check indexing status
+- **Basic Search**: Search files by name/extension (for context and quick lookups)
+
+> **Note**: For semantic search, knowledge queries, indexing, and directory summaries, the **Search Agent** will handle those requests automatically.
 
 ## Important Rules
 1. ALWAYS use the user's ID (provided in context) as the \`userId\` parameter when calling tools.

@@ -2,14 +2,16 @@
  * Document Agent
  *
  * - 读取并编辑文档内容
- * - 使用语义搜索来丰富上下文
+ * - 通过补丁操作精确修改文档
  *
  * 上下文感知：
  * - 在每次交互中自动获取当前文档内容
- * - 获取相关文件的 Embedding 以支持工作区感知写作
+ * - 获取相关文件的 Embedding 以支持工作区感知写作（用于上下文丰富，不暴露给 LLM 工具列表）
  *
  * 实时协作：
  * - 通过 WebSocket 推送文档
+ *
+ * 搜索功能改为由 SearchAgent 负责，文件管理由 DriveAgent 负责
  */
 
 import { BaseAgent } from "./base-agent";
@@ -138,7 +140,9 @@ You have access to tools for:
 - **Read**: Read the full content of the current document or other files
 - **Write**: Overwrite the entire document content (use sparingly — prefer patch_file)
 - **Patch**: Apply targeted edits via \`patch_file\` — search/replace, insert, append, prepend, delete specific text
-- **Context**: Search for related files and content to inform your writing
+- **Context**: Search for files by name to discover related documents
+
+> **Note**: For semantic search, knowledge queries, and indexing, the **Search Agent** will handle those requests automatically.
 
 ## Core Editing Philosophy
 1. **Prefer \`patch_file\` over \`write_file\`** — patch operations are:

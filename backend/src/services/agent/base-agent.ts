@@ -1,15 +1,15 @@
 /**
  * Base Agent 基类
  *
- * - 从会话历史构建 LLM 消息
+ * - 使用 MemoryManager 构建 LLM 消息（含摘要 + 滑动窗口 + 任务计划）
  * - 将 MCP 工具转换为 OpenAI 的函数调用格式
- * - 运行Agent循环（LLM -> 工具 -> LLM -> …）
- * - 上下文窗口压缩
+ * - 运行 Agent 循环（LLM -> 工具 -> LLM -> …）
  * - Gateway 集成
  */
 
 import { McpClientService, McpToolDefinition } from "../mcp-client.service";
 import { CapabilityGateway } from "./capability-gateway";
+import { MemoryManager } from "./memory-manager";
 import { IMessage, IToolCall } from "../../models/Conversation.model";
 import { AppError } from "../../middlewares/errorHandler";
 import { StatusCodes } from "http-status-codes";
@@ -22,10 +22,16 @@ import {
   LlmTool,
   LlmResponse,
   GatewayDecision,
+  ConversationSummary,
+  TaskPlan,
   MAX_TOOL_CALLS_PER_TURN,
-  MAX_CONTEXT_CHARS,
   MAX_TOOL_RESULT_CHARS,
 } from "./agent.types";
+
+export interface AgentRunOptions {
+  existingSummaries?: ConversationSummary[];
+  activePlan?: TaskPlan;
+}
 
 export interface AgentLoopResult {
   content: string;
@@ -36,13 +42,28 @@ export interface AgentLoopResult {
     args: Record<string, unknown>;
     reason: string;
   }>;
+  /** 更新后的摘要（用于持久化） */
+  updatedSummaries: ConversationSummary[];
+  /** 更新后的任务计划 */
+  updatedPlan?: TaskPlan;
+}
+
+/** runAgentLoop 内部返回类型（不含 memory 信息） */
+interface LoopResult {
+  content: string;
+  toolCalls: IToolCall[];
+  pendingApprovals: AgentLoopResult["pendingApprovals"];
 }
 
 export abstract class BaseAgent {
+  protected memoryManager: MemoryManager;
+
   constructor(
     protected mcpClient: McpClientService,
     protected gateway: CapabilityGateway,
-  ) {}
+  ) {
+    this.memoryManager = new MemoryManager();
+  }
 
   abstract readonly agentType: AgentType;
 
@@ -50,28 +71,47 @@ export abstract class BaseAgent {
 
   abstract getAllowedTools(): Set<string>;
 
-  // 根据当前上下文丰富信息
   abstract enrichContext(context: AgentContext): Promise<AgentContext>;
 
   async run(
     context: AgentContext,
     messages: IMessage[],
     conversationId: string,
+    options?: AgentRunOptions,
   ): Promise<AgentLoopResult> {
     const enrichedCtx = await this.enrichContext(context);
+
+    // 通过 MemoryManager 构建记忆状态
+    const memoryState = await this.memoryManager.buildMemoryState(
+      messages,
+      options?.existingSummaries || [],
+      options?.activePlan,
+    );
 
     const allTools = await this.mcpClient.listTools();
     const allowedNames = this.getAllowedTools();
     const agentTools = allTools.filter((t) => allowedNames.has(t.name));
     const llmTools = this.buildLlmTools(agentTools);
-    const llmMessages = this.buildLlmMessages(messages, enrichedCtx);
 
-    return this.runAgentLoop(
+    // 使用 MemoryManager 组装消息
+    const systemPrompt = this.getSystemPrompt(enrichedCtx);
+    const llmMessages = this.memoryManager.assembleLlmMessages(
+      systemPrompt,
+      memoryState,
+    );
+
+    const result = await this.runAgentLoop(
       llmMessages,
       llmTools,
       enrichedCtx,
       conversationId,
     );
+
+    return {
+      ...result,
+      updatedSummaries: memoryState.summaries,
+      updatedPlan: memoryState.activePlan,
+    };
   }
 
   // Agent Loop
@@ -80,14 +120,14 @@ export abstract class BaseAgent {
     tools: LlmTool[],
     context: AgentContext,
     conversationId: string,
-  ): Promise<AgentLoopResult> {
+  ): Promise<LoopResult> {
     const allToolCalls: IToolCall[] = [];
     const pendingApprovals: AgentLoopResult["pendingApprovals"] = [];
     let iteration = 0;
 
     while (iteration < MAX_TOOL_CALLS_PER_TURN) {
       iteration++;
-      this.compressMessagesIfNeeded(messages);
+      this.memoryManager.compressIfNeeded(messages);
 
       const response = await this.callLlm(messages, tools);
       const choice = response.choices[0];
@@ -250,30 +290,6 @@ export abstract class BaseAgent {
     return (await response.json()) as LlmResponse;
   }
 
-  protected buildLlmMessages(
-    messages: IMessage[],
-    context: AgentContext,
-  ): LlmMessage[] {
-    const systemPrompt = this.getSystemPrompt(context);
-
-    const llmMessages: LlmMessage[] = [
-      {
-        role: "system",
-        content: systemPrompt,
-      },
-    ];
-
-    for (const msg of messages) {
-      if (msg.role === "user") {
-        llmMessages.push({ role: "user", content: msg.content });
-      } else if (msg.role === "assistant") {
-        llmMessages.push({ role: "assistant", content: msg.content });
-      }
-    }
-
-    return llmMessages;
-  }
-
   protected buildLlmTools(tools: McpToolDefinition[]): LlmTool[] {
     return tools.map((tool) => {
       const schema = { ...tool.inputSchema };
@@ -297,58 +313,5 @@ export abstract class BaseAgent {
         },
       };
     });
-  }
-
-  private estimateMessageChars(messages: LlmMessage[]): number {
-    let total = 0;
-    for (const msg of messages) {
-      if (msg.content) total += msg.content.length;
-      if (msg.tool_calls) {
-        for (const tc of msg.tool_calls) {
-          total += tc.function.arguments.length + tc.function.name.length;
-        }
-      }
-    }
-    return total;
-  }
-
-  private compressMessagesIfNeeded(messages: LlmMessage[]): void {
-    let totalChars = this.estimateMessageChars(messages);
-
-    if (totalChars <= MAX_CONTEXT_CHARS) return;
-
-    logger.info(
-      { totalChars, limit: MAX_CONTEXT_CHARS },
-      "Context approaching limit, compressing message history",
-    );
-
-    const KEEP_RECENT = 6;
-    const shrinkBound = Math.max(1, messages.length - KEEP_RECENT);
-
-    for (let i = 1; i < shrinkBound && totalChars > MAX_CONTEXT_CHARS; i++) {
-      const msg = messages[i];
-      if (msg.role === "tool" && msg.content && msg.content.length > 200) {
-        const oldLen = msg.content.length;
-        msg.content =
-          msg.content.slice(0, 150) +
-          `\n[...compressed — original ${oldLen} chars]`;
-        totalChars -= oldLen - msg.content.length;
-      }
-    }
-
-    if (totalChars <= MAX_CONTEXT_CHARS) return;
-
-    while (
-      messages.length > KEEP_RECENT + 1 &&
-      totalChars > MAX_CONTEXT_CHARS
-    ) {
-      const removed = messages.splice(1, 1)[0];
-      if (removed.content) totalChars -= removed.content.length;
-    }
-
-    logger.info(
-      { newTotalChars: totalChars, messageCount: messages.length },
-      "Context compressed",
-    );
   }
 }

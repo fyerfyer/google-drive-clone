@@ -31,14 +31,11 @@ export class AgentController {
 
     let validatedContext: AgentChatRequest["context"];
     if (context) {
-      if (
-        context.type &&
-        context.type !== "drive" &&
-        context.type !== "document"
-      ) {
+      const validTypes: AgentType[] = ["drive", "document", "search"];
+      if (context.type && !validTypes.includes(context.type)) {
         throw new AppError(
           StatusCodes.BAD_REQUEST,
-          "Invalid context type. Must be 'drive' or 'document'.",
+          `Invalid context type. Must be one of: ${validTypes.join(", ")}.`,
         );
       }
       validatedContext = {
@@ -116,6 +113,9 @@ export class AgentController {
       agentType: (conversation as any).agentType || "drive",
       context: (conversation as any).context || {},
       messages: conversation.messages,
+      summaries: (conversation as any).summaries || [],
+      activePlan: (conversation as any).activePlan || null,
+      routeDecision: (conversation as any).routeDecision || null,
       createdAt: conversation.createdAt,
       updatedAt: conversation.updatedAt,
     });
@@ -134,9 +134,12 @@ export class AgentController {
       enabled: isConfigured,
       model: config.llmModel,
       provider: config.llmBaseUrl,
-      agents: ["drive", "document"],
+      agents: ["drive", "document", "search"],
       features: {
         multiAgent: true,
+        hybridRouter: true,
+        memoryManager: true,
+        taskPlanning: true,
         capabilityGateway: true,
         documentPatching: true,
         humanApproval: true,
