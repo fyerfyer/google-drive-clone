@@ -16,6 +16,7 @@
 import Conversation, {
   IConversation,
   IMessage,
+  ITaskPlan,
   IToolCall,
 } from "../models/Conversation.model";
 import { McpClientService } from "./mcp-client.service";
@@ -37,12 +38,13 @@ import {
   ApprovalRequest,
   RouteDecision,
   TaskPlan,
+  AgentEventCallback,
+  AGENT_EVENT_TYPE,
 } from "./agent/agent.types";
 import { BaseAgent } from "./agent/base-agent";
 import { logger } from "../lib/logger";
 import { AppError } from "../middlewares/errorHandler";
 import { StatusCodes } from "http-status-codes";
-import { getSocket } from "../lib/socket";
 
 export interface AgentChatRequest {
   message: string;
@@ -79,6 +81,8 @@ export interface ApprovalResponse {
     isError: boolean;
   };
   message: string;
+  // Approve 后还有没有需要执行的步骤
+  hasRemainingSteps?: boolean;
 }
 
 export interface ConversationListItem {
@@ -113,9 +117,39 @@ export class AgentService {
     });
   }
 
+  // 将 Mongoose 的计划子文档转换为普通的 TaskPlan 对象。
+  // Mongoose 的子文档不能使用展开运算符 ({...s}) —— 它们的字段内部
+  // 存储在 _doc 中，只能通过 getter 或 toObject() 访问。
+  private toPlainPlan(plan: ITaskPlan): TaskPlan {
+    const raw =
+      typeof (plan as any).toObject === "function"
+        ? (plan as any).toObject()
+        : plan;
+    return {
+      goal: raw.goal,
+      steps: (raw.steps || []).map((s: any) => {
+        const step = typeof s.toObject === "function" ? s.toObject() : s;
+        return {
+          id: step.id,
+          title: step.title,
+          description: step.description,
+          status: step.status,
+          agentType: step.agentType,
+          result: step.result,
+          error: step.error,
+        };
+      }),
+      currentStep: raw.currentStep,
+      isComplete: raw.isComplete,
+      summary: raw.summary,
+    };
+  }
+
   async chat(
     userId: string,
     request: AgentChatRequest,
+    onEvent?: AgentEventCallback,
+    signal?: AbortSignal,
   ): Promise<AgentChatResponse> {
     const { message, conversationId, context } = request;
 
@@ -141,13 +175,7 @@ export class AgentService {
         createdAt: s.createdAt,
       })),
       conversation.activePlan
-        ? {
-            goal: conversation.activePlan.goal,
-            steps: conversation.activePlan.steps.map((s) => ({ ...s })),
-            currentStep: conversation.activePlan.currentStep,
-            isComplete: conversation.activePlan.isComplete,
-            summary: conversation.activePlan.summary,
-          }
+        ? this.toPlainPlan(conversation.activePlan)
         : undefined,
     );
 
@@ -185,22 +213,16 @@ export class AgentService {
 
     // Task Planning
     let activePlan: TaskPlan | undefined = conversation.activePlan
-      ? {
-          goal: conversation.activePlan.goal,
-          steps: conversation.activePlan.steps.map((s) => ({ ...s })),
-          currentStep: conversation.activePlan.currentStep,
-          isComplete: conversation.activePlan.isComplete,
-          summary: conversation.activePlan.summary,
-        }
+      ? this.toPlainPlan(conversation.activePlan)
       : undefined;
 
     // 只在新会话或无活跃计划时触发任务分解
     if (!activePlan || activePlan.isComplete) {
-      const contextInfo = context?.folderId
-        ? `Current folder: ${context.folderId}`
-        : context?.fileId
-          ? `Current file: ${context.fileId}`
-          : undefined;
+      const contextInfo = context?.fileId
+        ? `Environment: Document Editor. The user is currently viewing/editing a specific file.\ncurrentFileId: ${context.fileId}\nThe "document" agent should edit THIS file only. Do NOT plan steps to create new files for writing tasks.`
+        : context?.folderId
+          ? `Environment: Drive Browser. The user is currently browsing a specific folder in their drive.\ncurrentFolderId: ${context.folderId}\nThe "drive" agent should operate within this folder context. When the task requires gathering information from the drive and then editing a document, plan steps to first collect drive information, then navigate to and edit the target document. File operations like create, move, rename should default to this folder unless specified otherwise.`
+          : `Environment: Drive Browser. No specific file or folder selected. The user is at the root of their drive.`;
 
       const planNeeded = await shouldPlanTask(message, contextInfo);
 
@@ -212,9 +234,25 @@ export class AgentService {
             { goal: plan.goal, steps: plan.steps.length },
             "Task plan created for request",
           );
+
+          onEvent?.({
+            type: AGENT_EVENT_TYPE.TASK_PLAN,
+            data: { plan },
+          });
         }
       }
     }
+
+    // 发送 Event 给 SSE Stream
+    onEvent?.({
+      type: AGENT_EVENT_TYPE.ROUTE_DECISION,
+      data: {
+        agentType,
+        confidence: routeDecision.confidence,
+        source: routeDecision.source,
+        reason: routeDecision.reason,
+      },
+    });
 
     // Agent Context
     const agentContext: AgentContext = {
@@ -255,31 +293,28 @@ export class AgentService {
 
     let responseContent: string;
     let toolCalls: IToolCall[] = [];
-    let pendingApprovals: Array<{
-      approvalId: string;
-      toolName: string;
-      args: Record<string, unknown>;
-      reason: string;
-    }> = [];
     let updatedSummaries = existingSummaries;
+    let didUseOrchestrator = false;
 
     if (
       activePlan &&
       !activePlan.isComplete &&
       this.orchestrator.needsOrchestration(activePlan)
     ) {
+      didUseOrchestrator = true;
       const orchResult = await this.orchestrator.executePlan(
         activePlan,
         agentContext,
         conversation.messages,
         conversation._id?.toString() || "new",
         existingSummaries,
+        onEvent,
+        signal,
       );
 
       activePlan = orchResult.plan;
       responseContent = orchResult.content;
       toolCalls = orchResult.toolCalls;
-      pendingApprovals = orchResult.pendingApprovals;
       updatedSummaries = orchResult.updatedSummaries;
     } else {
       if (activePlan && !activePlan.isComplete) {
@@ -295,6 +330,8 @@ export class AgentService {
         {
           existingSummaries,
           activePlan,
+          onEvent,
+          signal,
         },
       );
 
@@ -318,12 +355,12 @@ export class AgentService {
 
       responseContent = result.content;
       toolCalls = result.toolCalls;
-      pendingApprovals = result.pendingApprovals;
       updatedSummaries = result.updatedSummaries;
     }
 
     // 如果有活跃的任务计划，附加进度信息
-    if (activePlan && activePlan.steps.length > 1) {
+    // 仅在非 Orchestrator 模式下追加（Orchestrator 的 buildFinalResponse 已包含进度）
+    if (activePlan && activePlan.steps.length > 1 && !didUseOrchestrator) {
       const progress = this.taskTracker.getProgressSummary(activePlan);
       responseContent += `\n\n---\n${progress}`;
     }
@@ -369,24 +406,22 @@ export class AgentService {
       response.taskPlan = activePlan;
     }
 
-    if (pendingApprovals.length > 0) {
-      response.pendingApprovals = pendingApprovals.map((a) => ({
-        approvalId: a.approvalId,
-        toolName: a.toolName,
-        reason: a.reason,
-      }));
-      this.emitApprovalRequests(userId, pendingApprovals);
-    }
-
     return response;
   }
 
+  // 不再直接执行工具 — 工具执行由 Agent 循环中的 waitForApproval 负责。
   async resolveApproval(
     userId: string,
     approvalId: string,
     approved: boolean,
+    modifiedArgs?: Record<string, unknown>,
   ): Promise<ApprovalResponse> {
-    const result = this.gateway.resolveApproval(approvalId, userId, approved);
+    const result = this.gateway.resolveApproval(
+      approvalId,
+      userId,
+      approved,
+      modifiedArgs,
+    );
 
     if (!result) {
       throw new AppError(
@@ -403,7 +438,6 @@ export class AgentService {
     }
 
     if (result.status === "rejected") {
-      this.gateway.consumeApproval(approvalId);
       return {
         success: true,
         message: `Operation '${result.toolName}' was rejected.`,
@@ -411,43 +445,19 @@ export class AgentService {
     }
 
     if (result.status === "approved") {
-      try {
-        const toolResult = await this.mcpClient.callTool(result.toolName, {
-          ...result.args,
-          userId,
-        });
-
-        const output = toolResult.content.map((c) => c.text).join("\n");
-        const isError = toolResult.isError || false;
-
-        this.gateway.consumeApproval(approvalId);
-        this.emitApprovalResolved(
-          userId,
+      logger.info(
+        {
           approvalId,
-          result.toolName,
-          !isError,
-        );
+          toolName: result.toolName,
+          hasModifiedArgs: !!modifiedArgs,
+        },
+        "Approval resolved — agent loop will execute the tool",
+      );
 
-        return {
-          success: true,
-          result: { toolName: result.toolName, output, isError },
-          message: isError
-            ? `Operation '${result.toolName}' failed: ${output}`
-            : `Operation '${result.toolName}' completed successfully.`,
-        };
-      } catch (error) {
-        const errMsg = error instanceof Error ? error.message : "Unknown error";
-        logger.error(
-          { error, approvalId, toolName: result.toolName },
-          "Approved tool execution failed",
-        );
-        this.gateway.consumeApproval(approvalId);
-        return {
-          success: false,
-          result: { toolName: result.toolName, output: errMsg, isError: true },
-          message: `Operation failed: ${errMsg}`,
-        };
-      }
+      return {
+        success: true,
+        message: `Operation '${result.toolName}' approved. Executing...`,
+      };
     }
 
     return { success: false, message: "Unexpected approval state" };
@@ -520,49 +530,5 @@ export class AgentService {
       throw new AppError(StatusCodes.NOT_FOUND, "Conversation not found");
     }
     return conversation;
-  }
-
-  private emitApprovalRequests(
-    userId: string,
-    approvals: Array<{
-      approvalId: string;
-      toolName: string;
-      args: Record<string, unknown>;
-      reason: string;
-    }>,
-  ): void {
-    try {
-      const io = getSocket();
-      io.to(`user:${userId}`).emit("agent:approval_needed", {
-        approvals: approvals.map((a) => ({
-          approvalId: a.approvalId,
-          toolName: a.toolName,
-          reason: a.reason,
-          args: a.args,
-        })),
-        timestamp: new Date().toISOString(),
-      });
-    } catch {
-      // WebSocket may not be initialized
-    }
-  }
-
-  private emitApprovalResolved(
-    userId: string,
-    approvalId: string,
-    toolName: string,
-    success: boolean,
-  ): void {
-    try {
-      const io = getSocket();
-      io.to(`user:${userId}`).emit("agent:approval_resolved", {
-        approvalId,
-        toolName,
-        success,
-        timestamp: new Date().toISOString(),
-      });
-    } catch {
-      // WebSocket may not be initialized
-    }
   }
 }

@@ -8,13 +8,11 @@ export function createAgentRouter(agentController: AgentController): Router {
   // Agent 需要认证
   router.use(jwtAuth);
 
-  // Status & capabilities
   router.get("/status", agentController.getStatus.bind(agentController));
 
-  // Chat (supports context: { type, folderId, fileId })
   router.post("/chat", agentController.chat.bind(agentController));
+  router.post("/chat/stream", agentController.chatStream.bind(agentController));
 
-  // Approval flow for dangerous operations
   router.get(
     "/approvals",
     agentController.getPendingApprovals.bind(agentController),
@@ -24,7 +22,6 @@ export function createAgentRouter(agentController: AgentController): Router {
     agentController.resolveApproval.bind(agentController),
   );
 
-  // Conversation management
   router.get(
     "/conversations",
     agentController.listConversations.bind(agentController),

@@ -31,10 +31,7 @@ export function registerFolderTools(
     async ({ userId: rawUserId, folderId }) => {
       try {
         const userId = resolveUserId(rawUserId, authContext);
-        const content = await folderService.getFolderContent(
-          folderId === "root" ? "" : folderId,
-          userId,
-        );
+        const content = await folderService.getFolderContent(folderId, userId);
         return {
           content: [
             {

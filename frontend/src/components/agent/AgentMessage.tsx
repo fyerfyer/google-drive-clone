@@ -2,6 +2,8 @@ import { cn } from "@/lib/utils";
 import { IconUser, IconRobot } from "@tabler/icons-react";
 import type { AgentMessage as AgentMessageType } from "@/types/agent.types";
 import { AgentToolCall } from "./AgentToolCall";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 interface AgentMessageProps {
   message: AgentMessageType;
@@ -14,7 +16,7 @@ export function AgentMessage({ message }: AgentMessageProps) {
     <div className={cn("flex gap-3 py-3", isUser ? "justify-end" : "")}>
       {/* Avatar */}
       {!isUser && (
-        <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+        <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary mt-0.5">
           <IconRobot className="size-4" />
         </div>
       )}
@@ -35,16 +37,17 @@ export function AgentMessage({ message }: AgentMessageProps) {
         )}
 
         {/* Message content */}
-        <div
-          className={cn(
-            "rounded-xl px-3.5 py-2.5 text-sm leading-relaxed whitespace-pre-wrap",
-            isUser
-              ? "bg-primary text-primary-foreground"
-              : "bg-muted text-foreground",
-          )}
-        >
-          {message.content}
-        </div>
+        {isUser ? (
+          <div className="rounded-xl bg-primary text-primary-foreground px-3.5 py-2.5 text-sm leading-relaxed whitespace-pre-wrap">
+            {message.content}
+          </div>
+        ) : (
+          <div className="rounded-xl bg-muted text-foreground px-3.5 py-2.5 text-sm leading-relaxed prose prose-sm dark:prose-invert max-w-none prose-p:my-1 prose-pre:my-2 prose-pre:bg-background prose-pre:border prose-pre:text-[12px] prose-code:text-[12px] prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:bg-background prose-code:before:content-none prose-code:after:content-none prose-headings:my-2 prose-ul:my-1 prose-ol:my-1 prose-li:my-0.5 prose-hr:my-2 prose-table:text-xs">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              {message.content}
+            </ReactMarkdown>
+          </div>
+        )}
 
         {/* Timestamp */}
         <span className="text-[10px] text-muted-foreground px-1">
@@ -54,7 +57,7 @@ export function AgentMessage({ message }: AgentMessageProps) {
 
       {/* User avatar */}
       {isUser && (
-        <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-secondary text-secondary-foreground">
+        <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-secondary text-secondary-foreground mt-0.5">
           <IconUser className="size-4" />
         </div>
       )}

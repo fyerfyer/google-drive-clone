@@ -1,7 +1,9 @@
+import { useState, useCallback } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { fileService } from "@/services/file.service";
 import { TextEditor } from "@/components/editor/TextEditor";
 import { OnlyOfficeEditor } from "@/components/editor/OnlyOfficeEditor";
+import { DocumentAgentPanel } from "@/components/agent/DocumentAgentPanel";
 import { triggerDownload } from "@/lib/download";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -23,6 +25,7 @@ import {
 } from "@/components/ui/tooltip";
 import { useFileEditor } from "@/hooks/editor/useFileEditor";
 import { useKeyboardShortcuts } from "@/hooks/editor/useKeyboardShortcuts";
+import { useAgentStore } from "@/stores/useAgentStore";
 
 const ONLYOFFICE_URL = import.meta.env.VITE_ONLYOFFICE_URL || "";
 
@@ -31,6 +34,8 @@ const EditorPage = () => {
   const navigate = useNavigate();
   const fileId = searchParams.get("fileId");
   const initialMode = searchParams.get("mode") || "edit"; // "edit" | "view"
+  const [showDocAgent, setShowDocAgent] = useState(false);
+  const newConversation = useAgentStore((s) => s.newConversation);
 
   const {
     file,
@@ -47,6 +52,7 @@ const EditorPage = () => {
     resolvedEditorMode,
     handleSave,
     hasUnsavedChanges,
+    reloadContent,
   } = useFileEditor({
     fileId,
     initialMode: initialMode as "edit" | "view",
@@ -85,6 +91,22 @@ const EditorPage = () => {
     }
     navigate(-1);
   };
+
+  const handleToggleDocAgent = () => {
+    if (!showDocAgent) {
+      // Open a fresh conversation when toggling on
+      newConversation();
+    }
+    setShowDocAgent(!showDocAgent);
+  };
+
+  /** Called when the Document Agent modifies the file — reload content */
+  const handleAgentContentUpdate = useCallback(() => {
+    if (reloadContent) {
+      reloadContent();
+      toast.info("Document updated by AI Agent");
+    }
+  }, [reloadContent]);
 
   if (isLoading) {
     return (
@@ -138,16 +160,24 @@ const EditorPage = () => {
 
         <div className="flex items-center gap-2">
           <TooltipProvider>
-            {/* AI Assistant placeholder */}
+            {/* AI Assistant toggle */}
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="outline" size="sm" disabled>
+                <Button
+                  variant={showDocAgent ? "default" : "outline"}
+                  size="sm"
+                  onClick={handleToggleDocAgent}
+                >
                   <Bot className="h-4 w-4 mr-1" />
                   AI Assist
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
-                <p>AI editing assistant (coming soon)</p>
+                <p>
+                  {showDocAgent
+                    ? "Close AI editing assistant"
+                    : "Open AI editing assistant"}
+                </p>
               </TooltipContent>
             </Tooltip>
 
@@ -220,42 +250,55 @@ const EditorPage = () => {
         </div>
       </header>
 
-      {/* Editor Body */}
-      <main className="flex-1 overflow-hidden">
-        {resolvedEditorMode === "text" && (
-          <TextEditor
-            value={content}
-            onChange={setContent}
+      {/* Editor Body + Document Agent Panel */}
+      <div className="flex flex-1 overflow-hidden">
+        <main className="flex-1 overflow-hidden">
+          {resolvedEditorMode === "text" && (
+            <TextEditor
+              value={content}
+              onChange={setContent}
+              fileName={file.name}
+              readOnly={editorMode === "view"}
+              height="100%"
+            />
+          )}
+
+          {resolvedEditorMode === "onlyoffice" && onlyOfficeUrl && file && (
+            <OnlyOfficeEditor
+              fileId={file.id}
+              fileName={file.name}
+              fileUrl={onlyOfficeUrl}
+              serverConfig={onlyOfficeServerConfig}
+              documentServerUrl={ONLYOFFICE_URL}
+              mode={editorMode}
+              token={onlyOfficeToken}
+            />
+          )}
+
+          {resolvedEditorMode === "none" && (
+            <div className="flex flex-col items-center justify-center h-full p-8 text-center">
+              <p className="text-muted-foreground mb-4">
+                This file type cannot be edited in the browser.
+              </p>
+              <Button onClick={handleDownload}>
+                <Download className="mr-2 h-4 w-4" />
+                Download to view
+              </Button>
+            </div>
+          )}
+        </main>
+
+        {/* Document Agent Sidebar */}
+        {showDocAgent && fileId && file && (
+          <DocumentAgentPanel
+            fileId={fileId}
             fileName={file.name}
-            readOnly={editorMode === "view"}
-            height="100%"
+            isOpen={showDocAgent}
+            onClose={() => setShowDocAgent(false)}
+            onContentUpdate={handleAgentContentUpdate}
           />
         )}
-
-        {resolvedEditorMode === "onlyoffice" && onlyOfficeUrl && file && (
-          <OnlyOfficeEditor
-            fileId={file.id}
-            fileName={file.name}
-            fileUrl={onlyOfficeUrl}
-            serverConfig={onlyOfficeServerConfig}
-            documentServerUrl={ONLYOFFICE_URL}
-            mode={editorMode}
-            token={onlyOfficeToken}
-          />
-        )}
-
-        {resolvedEditorMode === "none" && (
-          <div className="flex flex-col items-center justify-center h-full p-8 text-center">
-            <p className="text-muted-foreground mb-4">
-              This file type cannot be edited in the browser.
-            </p>
-            <Button onClick={handleDownload}>
-              <Download className="mr-2 h-4 w-4" />
-              Download to view
-            </Button>
-          </div>
-        )}
-      </main>
+      </div>
     </div>
   );
 };

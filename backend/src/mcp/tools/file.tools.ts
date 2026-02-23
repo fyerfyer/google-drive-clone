@@ -268,7 +268,8 @@ export function registerFileTools(
         const userId = resolveUserId(rawUserId, authContext);
         const file = await fileService.createBlankFile({
           userId,
-          folderId: folderId === "root" ? "" : folderId,
+          // root 特殊处理（前端的一个固定设定）
+          folderId: folderId === "root" ? "root" : folderId,
           fileName,
           content,
         });
@@ -357,7 +358,7 @@ export function registerFileTools(
         await fileService.moveFile(
           fileId,
           userId,
-          destinationFolderId === "root" ? "" : destinationFolderId,
+          destinationFolderId === "root" ? "root" : destinationFolderId,
         );
         return {
           content: [

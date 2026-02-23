@@ -585,42 +585,61 @@ export class FileService {
   async moveFile(fileId: string, userId: string, targetFolderId: string) {
     const fileObjectId = new mongoose.Types.ObjectId(fileId);
     const userObjectId = new mongoose.Types.ObjectId(userId);
-    const targetFolderObjectId = new mongoose.Types.ObjectId(targetFolderId);
 
-    const [fileToMove, targetFolder] = await Promise.all([
-      File.findOne({
-        _id: fileObjectId,
-        user: userObjectId,
-        isTrashed: false,
-      }),
-      Folder.findOne({
-        _id: targetFolderObjectId,
-        user: userObjectId,
-        isTrashed: false,
-      }),
-    ]);
+    // Handle "root" folder — move file to root directory
+    const isRoot = targetFolderId === "root";
+    const targetFolderObjectId = isRoot
+      ? null
+      : new mongoose.Types.ObjectId(targetFolderId);
+
+    const fileToMove = await File.findOne({
+      _id: fileObjectId,
+      user: userObjectId,
+      isTrashed: false,
+    });
 
     if (!fileToMove) {
       logger.error({ fileId, userId }, "File not found");
       throw new AppError(StatusCodes.NOT_FOUND, "File not found");
     }
 
-    if (!targetFolder) {
-      logger.error({ targetFolderId, userId }, "Target folder not found");
-      throw new AppError(StatusCodes.NOT_FOUND, "Target folder not found");
-    }
+    if (isRoot) {
+      if (!fileToMove.folder) {
+        logger.info({ fileId }, "File is already in root");
+        return;
+      }
+    } else {
+      const targetFolder = await Folder.findOne({
+        _id: targetFolderObjectId,
+        user: userObjectId,
+        isTrashed: false,
+      });
 
-    if (fileToMove.folder?.equals(targetFolderObjectId)) {
-      logger.info(
-        { fileId, targetFolderId },
-        "File is already in the target folder",
-      );
-      return;
+      if (!targetFolder) {
+        logger.error({ targetFolderId, userId }, "Target folder not found");
+        throw new AppError(StatusCodes.NOT_FOUND, "Target folder not found");
+      }
+
+      if (fileToMove.folder?.equals(targetFolderObjectId!)) {
+        logger.info(
+          { fileId, targetFolderId },
+          "File is already in the target folder",
+        );
+        return;
+      }
     }
 
     // 更新文件夹与祖先路径
     fileToMove.folder = targetFolderObjectId;
-    fileToMove.ancestors = [...targetFolder.ancestors, targetFolderObjectId];
+    if (isRoot) {
+      fileToMove.ancestors = [];
+    } else {
+      const targetFolder = await Folder.findOne({ _id: targetFolderObjectId });
+      fileToMove.ancestors = [
+        ...(targetFolder?.ancestors || []),
+        targetFolderObjectId!,
+      ];
+    }
     await fileToMove.save();
 
     logger.info({ fileId, targetFolderId, userId }, "File moved successfully");

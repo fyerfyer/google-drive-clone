@@ -110,10 +110,7 @@ export function registerSearchTools(
     async ({ userId: rawUserId, folderId }) => {
       try {
         const userId = resolveUserId(rawUserId, authContext);
-        const content = await folderService.getFolderContent(
-          folderId === "root" ? "" : folderId,
-          userId,
-        );
+        const content = await folderService.getFolderContent(folderId, userId);
 
         const totalFileSize = content.files.reduce((sum, f) => sum + f.size, 0);
         const fileTypeDistribution: Record<string, number> = {};

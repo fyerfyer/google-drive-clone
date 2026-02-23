@@ -6,6 +6,7 @@ import {
   IconTool,
   IconCheck,
   IconX,
+  IconLoader2,
 } from "@tabler/icons-react";
 import type { ToolCall } from "@/types/agent.types";
 
@@ -35,6 +36,7 @@ const TOOL_LABELS: Record<string, string> = {
   delete_folder: "Delete Folder",
   get_folder_path: "Get Folder Path",
   star_folder: "Star Folder",
+  patch_file: "Patch File",
   search_files: "Search Files",
   summarize_directory: "Summarize Directory",
   query_workspace_knowledge: "Query Knowledge",
@@ -57,9 +59,16 @@ const TOOL_LABELS: Record<string, string> = {
 export function AgentToolCall({ toolCall }: AgentToolCallProps) {
   const [expanded, setExpanded] = useState(false);
   const label = TOOL_LABELS[toolCall.toolName] || toolCall.toolName;
+  const isPending = toolCall.result === undefined || toolCall.result === null;
 
   return (
-    <div className="my-1.5 rounded-md border bg-muted/40 text-xs">
+    <div
+      className={cn(
+        "my-1.5 rounded-md border bg-muted/40 text-xs",
+        isPending && "border-blue-500/30",
+        toolCall.isError && "border-destructive/30",
+      )}
+    >
       <button
         onClick={() => setExpanded(!expanded)}
         className="flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-muted/60 transition-colors"
@@ -71,7 +80,9 @@ export function AgentToolCall({ toolCall }: AgentToolCallProps) {
         )}
         <IconTool className="size-3.5 shrink-0 text-muted-foreground" />
         <span className="font-medium">{label}</span>
-        {toolCall.isError ? (
+        {isPending ? (
+          <IconLoader2 className="ml-auto size-3.5 text-blue-500 animate-spin" />
+        ) : toolCall.isError ? (
           <IconX className="ml-auto size-3.5 text-destructive" />
         ) : (
           <IconCheck className="ml-auto size-3.5 text-emerald-500" />
@@ -95,6 +106,11 @@ export function AgentToolCall({ toolCall }: AgentToolCallProps) {
               )}
             </pre>
           </div>
+
+          {/* Pending state */}
+          {isPending && (
+            <div className="text-[11px] text-blue-500 italic">Executing...</div>
+          )}
 
           {/* Result */}
           {toolCall.result && (

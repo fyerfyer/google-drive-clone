@@ -18,6 +18,7 @@ import {
   MEMORY_SLIDING_WINDOW,
   MEMORY_SUMMARY_THRESHOLD,
   MAX_CONTEXT_CHARS,
+  TASK_STATUS,
 } from "./agent.types";
 
 const SUMMARY_PROMPT = `You are a conversation summarizer. Given a series of messages from a chat between a user and an AI assistant for a cloud drive platform, create a concise summary that captures:
@@ -235,13 +236,13 @@ export class MemoryManager {
 
     for (const step of plan.steps) {
       const statusIcon =
-        step.status === "completed"
+        step.status === TASK_STATUS.COMPLETED
           ? "✅"
-          : step.status === "in-progress"
+          : step.status === TASK_STATUS.IN_PROGRESS
             ? "🔄"
-            : step.status === "failed"
+            : step.status === TASK_STATUS.FAILED
               ? "❌"
-              : step.status === "skipped"
+              : step.status === TASK_STATUS.SKIPPED
                 ? "⏭️"
                 : "⬜";
 

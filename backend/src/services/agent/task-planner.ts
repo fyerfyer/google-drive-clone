@@ -27,6 +27,7 @@ import {
   TaskPlan,
   TaskStep,
   TaskStatus,
+  TASK_STATUS,
   TASK_COMPLEXITY_THRESHOLD,
 } from "./agent.types";
 
@@ -67,10 +68,14 @@ function isSimpleRequest(message: string): boolean {
   return SIMPLE_REQUEST_PATTERNS.some((p) => p.test(trimmed));
 }
 
-// LLM 复杂分类器 
+// LLM 复杂分类器
 
 const COMPLEXITY_CLASSIFIER_PROMPT = `You are a task complexity classifier for a cloud drive AI assistant.
 Determine whether the user's request requires a MULTI-STEP plan or can be handled as a SINGLE action.
+
+IMPORTANT CONTEXT: The user may be in one of two environments:
+- **Document Editor**: Currently viewing/editing a specific file. Context will include "currentFileId".
+- **Drive Browser**: Browsing files/folders. No currentFileId.
 
 A request NEEDS task planning (multi-step) when:
 - It implicitly requires operations across different domains. Examples:
@@ -85,7 +90,7 @@ A request NEEDS task planning (multi-step) when:
 A request does NOT need planning (single action) when:
 - It's a direct, self-contained operation: "list my files", "create a folder called X", "search for report.pdf"
 - It's a simple question: "how many files do I have?"
-- It's a direct edit on the CURRENT document: "add a title to this document", "translate this text"
+- It's a direct edit on the CURRENT document (when currentFileId is present): "add a title", "translate this", "append a paragraph"
 - The target file/folder is explicitly identified by name or ID
 
 Respond with ONLY a JSON object. No extra text.
@@ -169,14 +174,7 @@ async function llmNeedsPlan(
     return false;
   }
 }
-/**
- * 综合判断是否需要任务拆分。
- *
- * 判断优先级：
- *   1. 简单请求快速放行
- *   2. Regex 多步模式命中 
- *   3. 最后使用 LLM 复杂分类器
- */
+
 export async function shouldPlanTask(
   message: string,
   context?: string,
@@ -206,6 +204,12 @@ Rules:
 4. Keep step titles short (under 50 chars) and descriptions clear
 5. Maximum 8 steps per plan
 6. Respond ONLY with valid JSON
+
+IMPORTANT CONTEXT RULES:
+- If the user is currently in the Document Editor (context includes "currentFileId"), the "document" agent can ONLY edit THAT file. NEVER create a step that creates a new file via the document agent. If the user wants to write content, it goes into the CURRENT document.
+- The "document" agent does NOT create, delete, move or share files. Only the "drive" agent does that.
+- If the user asks to "write a summary" while in the Document Editor, the summary should be written INTO the current document (via "document" agent), NOT into a new file.
+- When editing the current document, prefer fewer steps. A simple "edit current document" task is usually 1-2 steps, not 5.
 
 Output format:
 {
@@ -293,7 +297,7 @@ export async function generateTaskPlan(
       id: i + 1,
       title: s.title,
       description: s.description,
-      status: "pending" as TaskStatus,
+      status: TASK_STATUS.PENDING,
       agentType: (["drive", "document", "search"].includes(s.agentType || "")
         ? s.agentType
         : undefined) as AgentType | undefined,
@@ -323,7 +327,7 @@ export class TaskPlanTracker {
     const updated = { ...plan, steps: [...plan.steps] };
     const step = updated.steps.find((s) => s.id === plan.currentStep);
     if (step) {
-      step.status = "in-progress";
+      step.status = TASK_STATUS.IN_PROGRESS;
     }
     return updated;
   }
@@ -333,12 +337,12 @@ export class TaskPlanTracker {
     const step = updated.steps.find((s) => s.id === plan.currentStep);
 
     if (step) {
-      step.status = "completed";
+      step.status = TASK_STATUS.COMPLETED;
       step.result = result;
     }
 
     // 推进到下一步
-    const nextPending = updated.steps.find((s) => s.status === "pending");
+    const nextPending = updated.steps.find((s) => s.status === TASK_STATUS.PENDING);
     if (nextPending) {
       updated.currentStep = nextPending.id;
     } else {
@@ -353,12 +357,12 @@ export class TaskPlanTracker {
     const step = updated.steps.find((s) => s.id === plan.currentStep);
 
     if (step) {
-      step.status = "failed";
+      step.status = TASK_STATUS.FAILED;
       step.error = error;
     }
 
     // 继续尝试下一步
-    const nextPending = updated.steps.find((s) => s.status === "pending");
+    const nextPending = updated.steps.find((s) => s.status === TASK_STATUS.PENDING);
     if (nextPending) {
       updated.currentStep = nextPending.id;
     } else {
@@ -373,11 +377,11 @@ export class TaskPlanTracker {
     const step = updated.steps.find((s) => s.id === plan.currentStep);
 
     if (step) {
-      step.status = "skipped";
+      step.status = TASK_STATUS.SKIPPED;
       step.result = reason || "Skipped";
     }
 
-    const nextPending = updated.steps.find((s) => s.status === "pending");
+    const nextPending = updated.steps.find((s) => s.status === TASK_STATUS.PENDING);
     if (nextPending) {
       updated.currentStep = nextPending.id;
     } else {
@@ -388,8 +392,8 @@ export class TaskPlanTracker {
   }
 
   getProgressSummary(plan: TaskPlan): string {
-    const completed = plan.steps.filter((s) => s.status === "completed").length;
-    const failed = plan.steps.filter((s) => s.status === "failed").length;
+    const completed = plan.steps.filter((s) => s.status === TASK_STATUS.COMPLETED).length;
+    const failed = plan.steps.filter((s) => s.status === TASK_STATUS.FAILED).length;
     const total = plan.steps.length;
 
     const parts = [`Progress: ${completed}/${total} completed`];
@@ -414,21 +418,21 @@ export class TaskPlanTracker {
 
     for (const step of plan.steps) {
       const icon =
-        step.status === "completed"
+        step.status === TASK_STATUS.COMPLETED
           ? "✅"
-          : step.status === "in-progress"
+          : step.status === TASK_STATUS.IN_PROGRESS
             ? "🔄"
-            : step.status === "failed"
+            : step.status === TASK_STATUS.FAILED
               ? "❌"
-              : step.status === "skipped"
+              : step.status === TASK_STATUS.SKIPPED
                 ? "⏭️"
                 : "⬜";
 
       let line = `${icon} **Step ${step.id}**: ${step.title}`;
-      if (step.status === "completed" && step.result) {
+      if (step.status === TASK_STATUS.COMPLETED && step.result) {
         line += `\n   _${step.result.slice(0, 120)}_`;
       }
-      if (step.status === "failed" && step.error) {
+      if (step.status === TASK_STATUS.FAILED && step.error) {
         line += `\n   ⚠️ _${step.error.slice(0, 120)}_`;
       }
       lines.push(line);

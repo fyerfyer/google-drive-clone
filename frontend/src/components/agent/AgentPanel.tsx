@@ -7,6 +7,9 @@ import {
   IconArrowLeft,
   IconSparkles,
   IconAlertTriangle,
+  IconFolder,
+  IconFileText,
+  IconSearch,
 } from "@tabler/icons-react";
 import { useAgentStore } from "@/stores/useAgentStore";
 import {
@@ -16,27 +19,95 @@ import {
   useDeleteConversation,
   useAgentStatus,
 } from "@/hooks/agent/useAgent";
+import { useQueryClient } from "@tanstack/react-query";
+import { queryKeys } from "@/lib/queryClient";
 import { AgentMessage } from "./AgentMessage";
 import { AgentInput } from "./AgentInput";
 import { AgentConversationList } from "./AgentConversationList";
+import { AgentTypeBadge } from "./AgentTypeBadge";
+import { TaskPlanDisplay } from "./TaskPlanDisplay";
+import { ApprovalList } from "./ApprovalCard";
+import { StreamingResponse } from "./StreamingResponse";
+import type { AgentType } from "@/types/agent.types";
+import { AGENT_REGISTRY } from "@/types/agent.types";
+import { cn } from "@/lib/utils";
+
+const AGENT_ICON_MAP: Record<AgentType, typeof IconFolder> = {
+  drive: IconFolder,
+  document: IconFileText,
+  search: IconSearch,
+};
 
 export function AgentPanel() {
-  const { isOpen, close } = useAgentStore();
-  const { messages, isLoading, conversationId, sendMessage, newConversation } =
+  const {
+    isOpen,
+    close,
+    agentType,
+    taskPlan,
+    pendingApprovals,
+    isLoading,
+    isStreaming,
+  } = useAgentStore();
+  const { messages, conversationId, sendMessage, newConversation } =
     useAgentChat();
   const { data: conversations, isLoading: conversationsLoading } =
     useAgentConversations();
   const { loadConversation } = useLoadConversation();
   const deleteConversation = useDeleteConversation();
   const { data: agentStatus } = useAgentStatus();
+  const queryClient = useQueryClient();
 
   const [showHistory, setShowHistory] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll to bottom on new messages
+  // Auto-scroll to bottom on new messages or streaming updates
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [messages, isLoading, isStreaming]);
+
+  // Also scroll when streaming content changes
+  const { streamingContent, streamingToolCalls } = useAgentStore();
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [streamingContent, streamingToolCalls]);
+
+  // Watch for drive-modifying tool calls to refresh folder queries
+  useEffect(() => {
+    if (messages.length === 0) return;
+    const lastMsg = messages[messages.length - 1];
+    if (lastMsg.role === "assistant" && lastMsg.toolCalls) {
+      const driveModifyingTools = [
+        "create_file",
+        "delete_file",
+        "move_file",
+        "rename_file",
+        "create_folder",
+        "delete_folder",
+        "move_folder",
+        "rename_folder",
+        "trash_file",
+        "trash_folder",
+        "restore_file",
+        "restore_folder",
+        "star_file",
+        "star_folder",
+        "unstar_file",
+        "unstar_folder",
+        "write_file",
+        "patch_file",
+        "upload_file",
+      ];
+      const hasModification = lastMsg.toolCalls.some(
+        (tc) => driveModifyingTools.includes(tc.toolName) && !tc.isError,
+      );
+      if (hasModification) {
+        // Invalidate all folder content queries so any open folder view refreshes
+        setTimeout(() => {
+          queryClient.invalidateQueries({ queryKey: queryKeys.folders.all });
+        }, 500);
+      }
+    }
+  }, [messages, queryClient]);
 
   if (!isOpen) return null;
 
@@ -62,7 +133,12 @@ export function AgentPanel() {
               <IconRobot className="size-5" />
             </div>
             <div className="flex-1 min-w-0">
-              <h3 className="text-sm font-semibold">AI Assistant</h3>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-semibold">AI Assistant</h3>
+                {conversationId && (
+                  <AgentTypeBadge type={agentType} size="sm" />
+                )}
+              </div>
               <p className="text-[11px] text-muted-foreground truncate">
                 {isConfigured
                   ? `${agentStatus?.model} via MCP`
@@ -139,33 +215,12 @@ export function AgentPanel() {
             )}
 
             {/* Empty state */}
-            {messages.length === 0 && (
-              <div className="flex flex-col items-center justify-center py-12 text-center">
-                <div className="flex size-12 items-center justify-center rounded-full bg-primary/10 text-primary mb-4">
-                  <IconSparkles className="size-6" />
-                </div>
-                <h4 className="text-sm font-semibold mb-1">
-                  How can I help you?
-                </h4>
-                <p className="text-xs text-muted-foreground max-w-xs mb-6">
-                  I can help you manage files, folders, search your drive, and
-                  handle sharing — all through natural language.
-                </p>
-
-                {/* Suggested prompts */}
-                <div className="flex flex-col gap-2 w-full max-w-xs">
-                  {SUGGESTIONS.map((s) => (
-                    <button
-                      key={s}
-                      onClick={() => sendMessage(s)}
-                      disabled={!isConfigured || isLoading}
-                      className="rounded-lg border px-3 py-2 text-left text-xs hover:bg-muted transition-colors disabled:opacity-50"
-                    >
-                      {s}
-                    </button>
-                  ))}
-                </div>
-              </div>
+            {messages.length === 0 && !isLoading && (
+              <EmptyState
+                isConfigured={isConfigured}
+                isLoading={isLoading}
+                onSend={sendMessage}
+              />
             )}
 
             {/* Messages */}
@@ -173,26 +228,23 @@ export function AgentPanel() {
               <AgentMessage key={`${msg.role}-${i}`} message={msg} />
             ))}
 
-            {/* Loading indicator */}
-            {isLoading && (
-              <div className="flex items-center gap-2 py-3 px-1">
-                <div className="flex size-7 items-center justify-center rounded-full bg-primary/10 text-primary">
-                  <IconRobot className="size-4" />
+            {/* Streaming response - appears inline after the last user message */}
+            {(isLoading || isStreaming) && <StreamingResponse />}
+
+            {/* Non-streaming: show persisted task plan for loaded conversations */}
+            {!isLoading &&
+              !isStreaming &&
+              taskPlan &&
+              taskPlan.steps.length > 0 && (
+                <div className="mb-3">
+                  <TaskPlanDisplay plan={taskPlan} />
                 </div>
-                <div className="flex gap-1">
-                  <span
-                    className="size-2 rounded-full bg-muted-foreground/40 animate-bounce"
-                    style={{ animationDelay: "0ms" }}
-                  />
-                  <span
-                    className="size-2 rounded-full bg-muted-foreground/40 animate-bounce"
-                    style={{ animationDelay: "150ms" }}
-                  />
-                  <span
-                    className="size-2 rounded-full bg-muted-foreground/40 animate-bounce"
-                    style={{ animationDelay: "300ms" }}
-                  />
-                </div>
+              )}
+
+            {/* Non-streaming: show pending approvals */}
+            {!isLoading && !isStreaming && pendingApprovals.length > 0 && (
+              <div className="mb-3">
+                <ApprovalList approvals={pendingApprovals} />
               </div>
             )}
 
@@ -213,10 +265,82 @@ export function AgentPanel() {
   );
 }
 
-const SUGGESTIONS = [
-  "Show me my recent files",
-  "List all files in my drive",
-  "Search for PDF documents",
-  "Index all my files for semantic search",
-  "Show my indexing status",
+function EmptyState({
+  isConfigured,
+  isLoading,
+  onSend,
+}: {
+  isConfigured: boolean;
+  isLoading: boolean;
+  onSend: (text: string, contextType?: AgentType) => void;
+}) {
+  return (
+    <div className="flex flex-col items-center justify-center py-10 text-center">
+      <div className="flex size-14 items-center justify-center rounded-2xl bg-linear-to-br from-primary/20 to-primary/5 text-primary mb-4">
+        <IconSparkles className="size-7" />
+      </div>
+      <h4 className="text-sm font-semibold mb-1">How can I help you?</h4>
+      <p className="text-xs text-muted-foreground max-w-xs mb-6">
+        I can manage files, edit documents, search your drive, and handle
+        sharing — all through natural language.
+      </p>
+
+      {/* Agent capability cards */}
+      <div className="w-full max-w-xs space-y-2 mb-6">
+        {(Object.keys(AGENT_REGISTRY) as AgentType[]).map((type) => {
+          const info = AGENT_REGISTRY[type];
+          const Icon = AGENT_ICON_MAP[type];
+          return (
+            <div
+              key={type}
+              className="flex items-start gap-3 rounded-lg border p-3 text-left"
+            >
+              <div
+                className={cn(
+                  "flex size-8 items-center justify-center rounded-lg shrink-0",
+                  type === "drive" && "bg-blue-500/10 text-blue-500",
+                  type === "document" && "bg-emerald-500/10 text-emerald-500",
+                  type === "search" && "bg-violet-500/10 text-violet-500",
+                )}
+              >
+                <Icon className="size-4" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs font-medium">{info.label}</p>
+                <p className="text-[11px] text-muted-foreground">
+                  {info.description}
+                </p>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Suggested prompts */}
+      <div className="flex flex-col gap-2 w-full max-w-xs">
+        <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+          Try asking
+        </span>
+        {SUGGESTIONS.map((s) => (
+          <button
+            key={s.text}
+            onClick={() => onSend(s.text, s.type)}
+            disabled={!isConfigured || isLoading}
+            className="group flex items-center gap-2 rounded-lg border px-3 py-2 text-left text-xs hover:bg-muted transition-colors disabled:opacity-50"
+          >
+            <AgentTypeBadge type={s.type} size="sm" showLabel={false} />
+            <span className="group-hover:text-foreground">{s.text}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+const SUGGESTIONS: Array<{ text: string; type: AgentType }> = [
+  { text: "Show me my recent files", type: "drive" },
+  { text: "Search for PDF documents", type: "search" },
+  { text: "Summarize the document in my current folder", type: "document" },
+  { text: "Index all my files for semantic search", type: "search" },
+  { text: "Create a share link for my project folder", type: "drive" },
 ];

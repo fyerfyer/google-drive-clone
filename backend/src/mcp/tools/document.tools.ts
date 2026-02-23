@@ -78,6 +78,41 @@ interface PatchOp {
   content?: string;
 }
 
+// 将字符串中的空白规范化以用于模糊匹配
+function normalizeWhitespace(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
+}
+
+// 尝试在内容中查找搜索文本，使用逐步放宽的匹配策略：
+// 1. 精确匹配
+// 2. 去除首尾空白后的匹配（去除前后空白）
+// 3. 规范化空白的匹配（将所有连续空白折叠为单个空格）
+// 返回内容中实际匹配的子字符串，若未找到则返回 null。
+function fuzzyFind(content: string, search: string): string | null {
+  if (content.includes(search)) {
+    return search;
+  }
+
+  const trimmedSearch = search.trim();
+  if (trimmedSearch && content.includes(trimmedSearch)) {
+    return trimmedSearch;
+  }
+
+  const normalizedSearch = normalizeWhitespace(search);
+  if (!normalizedSearch) return null;
+
+  const escapedParts = normalizedSearch
+    .split(" ")
+    .map((word) => word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  const flexPattern = new RegExp(escapedParts.join("\\s+"));
+  const match = content.match(flexPattern);
+  if (match) {
+    return match[0];
+  }
+
+  return null;
+}
+
 function applyPatches(
   content: string,
   patches: PatchOp[],
@@ -96,8 +131,9 @@ function applyPatches(
             details.push(`replace: missing search or replace text`);
             break;
           }
-          if (result.includes(patch.search)) {
-            result = result.replace(patch.search, patch.replace);
+          const found = fuzzyFind(result, patch.search);
+          if (found) {
+            result = result.replace(found, patch.replace);
             applied++;
             details.push(
               `replace: "${patch.search.slice(0, 50)}${patch.search.length > 50 ? "..." : ""}" → "${patch.replace.slice(0, 50)}${patch.replace.length > 50 ? "..." : ""}"`,
@@ -116,9 +152,10 @@ function applyPatches(
             details.push(`insert_after: missing search or content`);
             break;
           }
-          const afterIdx = result.indexOf(patch.search);
-          if (afterIdx >= 0) {
-            const insertPos = afterIdx + patch.search.length;
+          const afterFound = fuzzyFind(result, patch.search);
+          if (afterFound) {
+            const afterIdx = result.indexOf(afterFound);
+            const insertPos = afterIdx + afterFound.length;
             result =
               result.slice(0, insertPos) +
               patch.content +
@@ -141,8 +178,9 @@ function applyPatches(
             details.push(`insert_before: missing search or content`);
             break;
           }
-          const beforeIdx = result.indexOf(patch.search);
-          if (beforeIdx >= 0) {
+          const beforeFound = fuzzyFind(result, patch.search);
+          if (beforeFound) {
+            const beforeIdx = result.indexOf(beforeFound);
             result =
               result.slice(0, beforeIdx) +
               patch.content +
@@ -187,8 +225,9 @@ function applyPatches(
             details.push(`delete: missing search text`);
             break;
           }
-          if (result.includes(patch.search)) {
-            result = result.replace(patch.search, "");
+          const deleteFound = fuzzyFind(result, patch.search);
+          if (deleteFound) {
+            result = result.replace(deleteFound, "");
             applied++;
             details.push(
               `delete: removed "${patch.search.slice(0, 50)}${patch.search.length > 50 ? "..." : ""}"`,
@@ -229,7 +268,10 @@ export function registerDocumentTools(
       description:
         "Apply targeted patch operations to a document. Preferred over write_file for editing because it's non-destructive, auditable, and collaboration-safe. " +
         "Supports: replace, insert_after, insert_before, append, prepend, delete. " +
-        "Each operation uses exact text matching to find the target location.",
+        "Each operation uses exact text matching to find the target location. " +
+        "IMPORTANT: For EMPTY documents (content is \"\"), you MUST use 'append' or 'prepend' operations. " +
+        "Do NOT use 'replace' on empty documents — there is no text to match. " +
+        "Always read the file first to check if it has content before choosing the operation type.",
       inputSchema: z.object({
         userId: userIdParam,
         fileId: z.string().describe("The file ID to patch"),
@@ -251,10 +293,33 @@ export function registerDocumentTools(
             fileId,
           });
 
+        // 若文档为空，自动将基于搜索的操作转换为追加操作。
+        const sanitizedPatches = (patches as PatchOp[]).map((patch) => {
+          if (
+            originalContent.trim() === "" &&
+            (patch.op === "replace" ||
+              patch.op === "insert_after" ||
+              patch.op === "insert_before" ||
+              patch.op === "delete")
+          ) {
+            const content =
+              patch.op === "replace"
+                ? (patch as { replace?: string }).replace || ""
+                : patch.op === "delete"
+                  ? ""
+                  : (patch as { content?: string }).content || "";
+            if (content) {
+              return { op: "append" as const, content };
+            }
+            return patch; // 在空文档中删除不需要任何操作
+          }
+          return patch;
+        });
+
         // Patch
         const { newContent, applied, failed, details } = applyPatches(
           originalContent,
-          patches as PatchOp[],
+          sanitizedPatches as PatchOp[],
         );
 
         if (applied === 0) {

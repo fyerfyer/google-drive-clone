@@ -39,6 +39,8 @@ export interface UseFileEditorReturn {
   // Actions
   handleSave: () => Promise<void>;
   hasUnsavedChanges: boolean;
+  /** Reload file content from server (e.g. after AI Agent edits) */
+  reloadContent: () => Promise<void>;
 }
 
 export const useFileEditor = ({
@@ -177,6 +179,19 @@ export const useFileEditor = ({
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [hasUnsavedChanges]);
 
+  const reloadContent = useCallback(async () => {
+    if (!fileId) return;
+    try {
+      const result = await fileService.getFileContent(fileId);
+      if (result.content !== null) {
+        setContent(result.content);
+        setOriginalContent(result.content);
+      }
+    } catch {
+      // Silently fail — the user can refresh manually
+    }
+  }, [fileId]);
+
   const resolvedEditorMode = file?.name ? getEditorMode(file.name) : null;
 
   return {
@@ -194,5 +209,6 @@ export const useFileEditor = ({
     resolvedEditorMode,
     handleSave,
     hasUnsavedChanges,
+    reloadContent,
   };
 };

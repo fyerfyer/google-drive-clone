@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { McpServices } from "../server";
 import { McpAuthContext, resolveUserId } from "../auth/auth";
 import { logger } from "../../lib/logger";
+import User from "../../models/User.model";
 
 const userIdParam = z
   .string()
@@ -203,14 +204,37 @@ export function registerShareTools(
           .describe("The permission role to give to the users"),
       }),
     },
+
+    // TODO：A
     async ({ userId: rawUserId, resourceId, resourceType, emails, role }) => {
       try {
         const userId = resolveUserId(rawUserId, authContext);
+
+        // Resolve email addresses to user IDs
+        const users = await User.find({ email: { $in: emails } }).lean();
+        if (users.length === 0) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `Error: No registered users found for the provided email(s): ${emails.join(", ")}. Users must have an account to be shared with.`,
+              },
+            ],
+            isError: true,
+          };
+        }
+
+        const targetUserIds = users.map((u) => u._id.toString());
+        const resolvedEmails = users.map((u) => u.email);
+        const unresolvedEmails = emails.filter(
+          (e) => !resolvedEmails.includes(e),
+        );
+
         const result = await shareService.shareWithUsers({
           actorId: userId,
           resourceId,
           resourceType: resourceType as any,
-          emails,
+          targetUserIds,
           role,
         } as any);
         return {
@@ -221,6 +245,12 @@ export function registerShareTools(
                 {
                   success: true,
                   result,
+                  sharedWith: resolvedEmails,
+                  ...(unresolvedEmails.length > 0
+                    ? {
+                        warning: `The following emails were not found as registered users: ${unresolvedEmails.join(", ")}`,
+                      }
+                    : {}),
                 },
                 null,
                 2,

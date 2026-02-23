@@ -1,6 +1,7 @@
 import { IconTrash, IconMessage, IconLoader2 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import type { ConversationSummary } from "@/types/agent.types";
+import { AgentTypeBadge } from "./AgentTypeBadge";
 
 interface AgentConversationListProps {
   conversations: ConversationSummary[];
@@ -39,16 +40,25 @@ export function AgentConversationList({
         <div
           key={conv.id}
           className={cn(
-            "group flex items-center gap-2 rounded-md px-2 py-1.5 text-xs cursor-pointer hover:bg-muted transition-colors",
+            "group flex items-center gap-2 rounded-md px-2 py-2 text-xs cursor-pointer hover:bg-muted transition-colors",
             currentId === conv.id && "bg-muted",
           )}
           onClick={() => onSelect(conv.id)}
         >
           <IconMessage className="size-3.5 shrink-0 text-muted-foreground" />
           <div className="min-w-0 flex-1">
-            <p className="truncate font-medium">{conv.title}</p>
+            <div className="flex items-center gap-1.5">
+              <p className="truncate font-medium">{conv.title}</p>
+              {conv.agentType && (
+                <AgentTypeBadge
+                  type={conv.agentType}
+                  size="sm"
+                  showLabel={false}
+                />
+              )}
+            </div>
             <p className="truncate text-muted-foreground">
-              {conv.messageCount} messages
+              {conv.lastMessage || `${conv.messageCount} messages`}
             </p>
           </div>
           <button

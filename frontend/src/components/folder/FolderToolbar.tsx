@@ -22,13 +22,28 @@ import {
   Star,
   X,
   FilePlus,
+  Bot,
 } from "lucide-react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { CreateFolderDialog } from "./CreateFolderDialog";
 import { FileUploadDialog } from "./FileUploadDialog";
 import { DeleteConfirmDialog } from "./DeleteConfirmDialog";
 import { CreateFileDialog } from "./CreateFileDialog";
 
-export const FolderToolbar = () => {
+interface FolderToolbarProps {
+  showDriveAgent?: boolean;
+  onToggleDriveAgent?: () => void;
+}
+
+export const FolderToolbar = ({
+  showDriveAgent,
+  onToggleDriveAgent,
+}: FolderToolbarProps = {}) => {
   const queryClient = useQueryClient();
 
   // UI state from Zustand
@@ -134,6 +149,29 @@ export const FolderToolbar = () => {
         </div>
 
         <div className="flex items-center gap-2">
+          {onToggleDriveAgent && (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant={showDriveAgent ? "default" : "outline"}
+                    size="sm"
+                    onClick={onToggleDriveAgent}
+                  >
+                    <Bot className="h-4 w-4 mr-1" />
+                    AI Assist
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>
+                    {showDriveAgent
+                      ? "Close Drive AI assistant"
+                      : "Open Drive AI assistant"}
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
           <Button
             variant={viewMode === "grid" ? "default" : "outline"}
             size="icon"

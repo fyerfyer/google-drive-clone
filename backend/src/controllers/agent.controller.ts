@@ -5,7 +5,8 @@ import { AppError } from "../middlewares/errorHandler";
 import { StatusCodes } from "http-status-codes";
 import { config } from "../config/env";
 import { extractParam } from "../utils/request.util";
-import { AgentType } from "../services/agent/agent.types";
+import { AgentType, AgentStreamEvent, AGENT_EVENT_TYPE } from "../services/agent/agent.types";
+import { logger } from "../lib/logger";
 
 export class AgentController {
   constructor(private agentService: AgentService) {}
@@ -56,10 +57,106 @@ export class AgentController {
     return ResponseHelper.ok(res, result);
   }
 
+  // SSE 流式处理接口
+  async chatStream(req: Request, res: Response, next: NextFunction) {
+    const userId = req.user!._id.toString();
+    const { message, conversationId, context } = req.body;
+
+    if (
+      !message ||
+      typeof message !== "string" ||
+      message.trim().length === 0
+    ) {
+      throw new AppError(StatusCodes.BAD_REQUEST, "Message is required");
+    }
+
+    if (message.length > 4000) {
+      throw new AppError(
+        StatusCodes.BAD_REQUEST,
+        "Message too long (max 4000 characters)",
+      );
+    }
+
+    let validatedContext: AgentChatRequest["context"];
+    if (context) {
+      const validTypes: AgentType[] = ["drive", "document", "search"];
+      if (context.type && !validTypes.includes(context.type)) {
+        throw new AppError(
+          StatusCodes.BAD_REQUEST,
+          `Invalid context type. Must be one of: ${validTypes.join(", ")}.`,
+        );
+      }
+      validatedContext = {
+        type: context.type as AgentType | undefined,
+        folderId: context.folderId as string | undefined,
+        fileId: context.fileId as string | undefined,
+      };
+    }
+
+    const chatRequest: AgentChatRequest = {
+      message: message.trim(),
+      conversationId,
+      context: validatedContext,
+    };
+
+    // SSE headers
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
+    });
+
+    // SSE 每25秒发送一次心跳包，防止代理/负载均衡器超时断开
+    const keepAliveInterval = setInterval(() => {
+      try {
+        res.write(": keepalive\n\n");
+      } catch {
+        // Client disconnected
+      }
+    }, 25_000);
+
+    // 向代理循环发出SSE断开信号
+    const abortController = new AbortController();
+    req.on("close", () => {
+      abortController.abort();
+    });
+
+    const sendEvent = (event: AgentStreamEvent) => {
+      try {
+        res.write(`data: ${JSON.stringify(event)}\n\n`);
+      } catch {
+        // Client disconnected
+      }
+    };
+
+    try {
+      const result = await this.agentService.chat(
+        userId,
+        chatRequest,
+        sendEvent,
+        abortController.signal,
+      );
+
+      // 聊天完成，发送 done 事件
+      sendEvent({
+        type: AGENT_EVENT_TYPE.DONE,
+        data: result as unknown as Record<string, unknown>,
+      });
+    } catch (error) {
+      const errMsg = error instanceof Error ? error.message : "Unknown error";
+      logger.error({ error, userId }, "Agent streaming chat failed");
+      sendEvent({ type: AGENT_EVENT_TYPE.ERROR, data: { message: errMsg } });
+    } finally {
+      clearInterval(keepAliveInterval);
+      res.end();
+    }
+  }
+
   async resolveApproval(req: Request, res: Response, next: NextFunction) {
     const userId = req.user!._id.toString();
     const approvalId = extractParam(req.params.approvalId);
-    const { approved } = req.body;
+    const { approved, modifiedArgs } = req.body;
 
     if (typeof approved !== "boolean") {
       throw new AppError(
@@ -68,10 +165,21 @@ export class AgentController {
       );
     }
 
+    if (
+      modifiedArgs !== undefined &&
+      (typeof modifiedArgs !== "object" || modifiedArgs === null)
+    ) {
+      throw new AppError(
+        StatusCodes.BAD_REQUEST,
+        "'modifiedArgs' must be an object if provided",
+      );
+    }
+
     const result = await this.agentService.resolveApproval(
       userId,
       approvalId,
       approved,
+      modifiedArgs,
     );
 
     return ResponseHelper.ok(res, result);

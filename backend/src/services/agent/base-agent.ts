@@ -24,13 +24,18 @@ import {
   GatewayDecision,
   ConversationSummary,
   TaskPlan,
+  AgentEventCallback,
   MAX_TOOL_CALLS_PER_TURN,
   MAX_TOOL_RESULT_CHARS,
+  AGENT_EVENT_TYPE,
 } from "./agent.types";
 
 export interface AgentRunOptions {
   existingSummaries?: ConversationSummary[];
   activePlan?: TaskPlan;
+  onEvent?: AgentEventCallback;
+  // 用于 disconnect 后终止未完成的 Tool Call 等操作
+  signal?: AbortSignal;
 }
 
 export interface AgentLoopResult {
@@ -42,13 +47,12 @@ export interface AgentLoopResult {
     args: Record<string, unknown>;
     reason: string;
   }>;
-  /** 更新后的摘要（用于持久化） */
+  // 更新后的摘要（用于持久化）
   updatedSummaries: ConversationSummary[];
-  /** 更新后的任务计划 */
+  // 更新后的任务计划
   updatedPlan?: TaskPlan;
 }
 
-/** runAgentLoop 内部返回类型（不含 memory 信息） */
 interface LoopResult {
   content: string;
   toolCalls: IToolCall[];
@@ -105,6 +109,8 @@ export abstract class BaseAgent {
       llmTools,
       enrichedCtx,
       conversationId,
+      options?.onEvent,
+      options?.signal,
     );
 
     return {
@@ -120,6 +126,8 @@ export abstract class BaseAgent {
     tools: LlmTool[],
     context: AgentContext,
     conversationId: string,
+    onEvent?: AgentEventCallback,
+    signal?: AbortSignal,
   ): Promise<LoopResult> {
     const allToolCalls: IToolCall[] = [];
     const pendingApprovals: AgentLoopResult["pendingApprovals"] = [];
@@ -144,8 +152,10 @@ export abstract class BaseAgent {
       const assistantMsg = choice.message;
 
       if (!assistantMsg.tool_calls || assistantMsg.tool_calls.length === 0) {
+        const content = assistantMsg.content || "Done.";
+        onEvent?.({ type: AGENT_EVENT_TYPE.CONTENT, data: { content } });
         return {
-          content: assistantMsg.content || "Done.",
+          content,
           toolCalls: allToolCalls,
           pendingApprovals,
         };
@@ -166,6 +176,17 @@ export abstract class BaseAgent {
 
         args.userId = context.userId;
 
+        // 发送 Tool Call Start event
+        onEvent?.({
+          type: AGENT_EVENT_TYPE.TOOL_CALL_START,
+          data: {
+            toolName: name,
+            args: Object.fromEntries(
+              Object.entries(args).filter(([k]) => k !== "userId"),
+            ),
+          },
+        });
+
         const decision: GatewayDecision = this.gateway.checkToolPermission(
           this.agentType,
           name,
@@ -178,20 +199,86 @@ export abstract class BaseAgent {
         let isError = false;
 
         if (!decision.allowed && decision.requiresApproval) {
-          pendingApprovals.push({
-            approvalId: decision.approvalId!,
-            toolName: name,
-            args,
-            reason: decision.reason!,
+          // Emit approval event
+          // 前端接收到这个会渲染 Approve 卡片
+          onEvent?.({
+            type: AGENT_EVENT_TYPE.APPROVAL_NEEDED,
+            data: {
+              approvalId: decision.approvalId,
+              toolName: name,
+              reason: decision.reason,
+              args: Object.fromEntries(
+                Object.entries(args).filter(([k]) => k !== "userId"),
+              ),
+            },
           });
-
-          result = `[APPROVAL REQUIRED] This operation requires user approval: ${decision.reason}. The user has been notified and needs to approve before this action can proceed.`;
-          isError = false; // Not an error, just pending
 
           logger.info(
             { toolName: name, approvalId: decision.approvalId },
-            "Dangerous operation intercepted, awaiting approval",
+            "Dangerous operation intercepted, waiting for user approval inline",
           );
+
+          // 在 SSE 流中等待用户审批
+          const resolution = await this.gateway.waitForApproval(
+            decision.approvalId!,
+            signal,
+          );
+
+          // 清理 approval 记录
+          this.gateway.consumeApproval(decision.approvalId!);
+
+          if (resolution.approved) {
+            // 合并用户修改的参数（如 share 权限等）
+            const finalArgs = resolution.modifiedArgs
+              ? { ...args, ...resolution.modifiedArgs, userId: context.userId }
+              : args;
+
+            logger.info(
+              {
+                toolName: name,
+                approvalId: decision.approvalId,
+                hasModifiedArgs: !!resolution.modifiedArgs,
+              },
+              "Approval granted, executing tool",
+            );
+
+            onEvent?.({
+              type: AGENT_EVENT_TYPE.APPROVAL_RESOLVED,
+              data: {
+                approvalId: decision.approvalId,
+                approved: true,
+              },
+            });
+
+            try {
+              const toolResult = await this.mcpClient.callTool(name, finalArgs);
+              result = toolResult.content.map((c) => c.text).join("\n");
+              isError = toolResult.isError || false;
+            } catch (error) {
+              result = `Tool execution error: ${error instanceof Error ? error.message : "Unknown error"}`;
+              isError = true;
+              logger.error(
+                { error, tool: name },
+                "Approved tool execution failed",
+              );
+            }
+          } else {
+            result = `[REJECTED] Operation '${name}' was rejected by the user or timed out.`;
+            isError = false;
+
+            onEvent?.({
+              type: AGENT_EVENT_TYPE.APPROVAL_RESOLVED,
+              data: {
+                approvalId: decision.approvalId,
+                approved: false,
+              },
+            });
+
+            logger.info(
+              { toolName: name, approvalId: decision.approvalId },
+              "Operation rejected by user",
+            );
+          }
         } else if (!decision.allowed) {
           result = `[BLOCKED] ${decision.reason}`;
           isError = true;
@@ -220,6 +307,18 @@ export abstract class BaseAgent {
         }
 
         allToolCalls.push({ toolName: name, args, result, isError });
+
+        onEvent?.({
+          type: AGENT_EVENT_TYPE.TOOL_CALL_END,
+          data: {
+            toolName: name,
+            args: Object.fromEntries(
+              Object.entries(args).filter(([k]) => k !== "userId"),
+            ),
+            result,
+            isError,
+          },
+        });
 
         messages.push({
           role: "tool",

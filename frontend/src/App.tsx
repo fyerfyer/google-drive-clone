@@ -5,8 +5,12 @@ import { Toaster } from "sonner";
 import { useAuthStore } from "@/stores/useAuthStore";
 import { useEffect } from "react";
 import { queryClient } from "@/lib/queryClient";
-import { AgentPanel } from "@/components/agent/AgentPanel";
-import { AgentTrigger } from "@/components/agent/AgentTrigger";
+import { useSocketConnection } from "@/hooks/useSocket";
+
+function SocketProvider({ children }: { children: React.ReactNode }) {
+  useSocketConnection();
+  return <>{children}</>;
+}
 
 function App() {
   const initializeAuth = useAuthStore((state) => state.initializeAuth);
@@ -19,13 +23,14 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <AppRouter />
-      {isAuthenticated && (
-        <>
-          <AgentTrigger />
-          <AgentPanel />
-        </>
-      )}
-      <Toaster position="bottom-right" richColors expand={false} />
+      {isAuthenticated && <SocketProvider>{null}</SocketProvider>}
+      <Toaster
+        position="bottom-right"
+        richColors
+        expand={false}
+        duration={3000}
+        closeButton
+      />
       <ReactQueryDevtools initialIsOpen={false} />
     </QueryClientProvider>
   );

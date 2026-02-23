@@ -67,12 +67,15 @@ export const AGENT_REGISTRY: AgentMeta[] = [
   },
 ];
 
-export type TaskStatus =
-  | "pending"
-  | "in-progress"
-  | "completed"
-  | "failed"
-  | "skipped";
+export const TASK_STATUS = {
+  PENDING: "pending",
+  IN_PROGRESS: "in-progress",
+  COMPLETED: "completed",
+  FAILED: "failed",
+  SKIPPED: "skipped",
+} as const;
+
+export type TaskStatus = (typeof TASK_STATUS)[keyof typeof TASK_STATUS];
 
 export interface TaskStep {
   id: number;
@@ -109,7 +112,14 @@ export interface MemoryState {
   totalMessageCount: number;
 }
 
-export type ApprovalStatus = "pending" | "approved" | "rejected" | "expired";
+export const APPROVAL_STATUS = {
+  PENDING: "pending",
+  APPROVED: "approved",
+  REJECTED: "rejected",
+  EXPIRED: "expired",
+} as const;
+
+export type ApprovalStatus = (typeof APPROVAL_STATUS)[keyof typeof APPROVAL_STATUS];
 
 export interface ApprovalRequest {
   id: string;
@@ -219,9 +229,7 @@ export const DRIVE_AGENT_TOOLS = new Set([
 ]);
 
 export const DOCUMENT_AGENT_TOOLS = new Set([
-  // Read & Write
   "read_file",
-  "write_file",
   "patch_file",
   "get_file_info",
   // Context 增强
@@ -247,7 +255,7 @@ export const SEARCH_AGENT_TOOLS = new Set([
 ]);
 
 export const OPERATION_RISK: Record<string, OperationRisk> = {
-  // Safe — read-only operations
+  // Safe
   list_files: "safe",
   get_file_info: "safe",
   read_file: "safe",
@@ -265,10 +273,10 @@ export const OPERATION_RISK: Record<string, OperationRisk> = {
   whoami: "safe",
   authenticate: "safe",
 
-  // Moderate — create / update operations
+  // Moderate
   create_file: "moderate",
-  write_file: "moderate",
-  patch_file: "moderate",
+  write_file: "dangerous",
+  patch_file: "dangerous",
   rename_file: "moderate",
   move_file: "moderate",
   star_file: "moderate",
@@ -282,7 +290,7 @@ export const OPERATION_RISK: Record<string, OperationRisk> = {
   index_file: "moderate",
   index_all_files: "moderate",
 
-  // Dangerous — destructive or sensitive operations (require approval)
+  // Dangerous
   trash_file: "dangerous",
   trash_folder: "dangerous",
   delete_file: "dangerous",
@@ -313,3 +321,30 @@ export const MEMORY_SUMMARY_THRESHOLD = 16;
 
 // 判定为复杂任务的阈值（需要拆分的步骤数）
 export const TASK_COMPLEXITY_THRESHOLD = 2;
+
+// 工具调用失败后的最大重试次数
+export const MAX_TOOL_RETRIES = 2;
+
+// Agent 事件类型（用于 SSE 流式传输）
+export const AGENT_EVENT_TYPE = {
+  ROUTE_DECISION: "route_decision",
+  TASK_PLAN: "task_plan",
+  TASK_STEP_UPDATE: "task_step_update",
+  TOOL_CALL_START: "tool_call_start",
+  TOOL_CALL_END: "tool_call_end",
+  CONTENT: "content",
+  APPROVAL_NEEDED: "approval_needed",
+  APPROVAL_RESOLVED: "approval_resolved",
+  DONE: "done",
+  ERROR: "error",
+} as const;
+
+export type AgentEventType = (typeof AGENT_EVENT_TYPE)[keyof typeof AGENT_EVENT_TYPE];
+
+export interface AgentStreamEvent {
+  type: AgentEventType;
+  data: Record<string, unknown>;
+}
+
+// Agent 事件回调函数类型
+export type AgentEventCallback = (event: AgentStreamEvent) => void;

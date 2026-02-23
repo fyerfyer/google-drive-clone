@@ -7,6 +7,9 @@ import {
 import { AuthRoute } from "../components/auth/AuthRoute";
 import { useAuth } from "@/hooks/auth/useAuth";
 import { Spinner } from "@/components/ui/spinner";
+import { AgentPanel } from "@/components/agent/AgentPanel";
+import { AgentTrigger } from "@/components/agent/AgentTrigger";
+import { useAuthStore } from "@/stores/useAuthStore";
 import LoginPage from "@/pages/auth/LoginPage";
 import RegisterPage from "@/pages/auth/RegisterPage";
 import DashboardPage from "@/pages/dashboard/DashboardPage";
@@ -28,6 +31,17 @@ const RootRedirector = () => {
 
   return <Navigate to={isAuthenticated ? "/dashboard" : "/login"} replace />;
 };
+
+function AgentOverlay() {
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  if (!isAuthenticated) return null;
+  return (
+    <>
+      <AgentTrigger />
+      <AgentPanel />
+    </>
+  );
+}
 
 export const AppRouter = () => {
   return (
@@ -76,6 +90,7 @@ export const AppRouter = () => {
           <Route path="*" element={<NotFoundPage />}></Route>
         </Routes>
       </div>
+      <AgentOverlay />
     </Router>
   );
 };

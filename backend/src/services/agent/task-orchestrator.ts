@@ -20,6 +20,10 @@ import {
   TaskPlan,
   TaskStep,
   ConversationSummary,
+  MAX_TOOL_RETRIES,
+  AgentEventCallback,
+  TASK_STATUS,
+  AGENT_EVENT_TYPE,
 } from "./agent.types";
 import { IMessage, IToolCall } from "../../models/Conversation.model";
 import { logger } from "../../lib/logger";
@@ -72,6 +76,8 @@ export class TaskOrchestrator {
     originalMessages: IMessage[],
     conversationId: string,
     existingSummaries: ConversationSummary[],
+    onEvent?: AgentEventCallback,
+    signal?: AbortSignal,
   ): Promise<OrchestratorResult> {
     let currentPlan = this.deepClonePlan(plan);
     const allToolCalls: IToolCall[] = [];
@@ -92,7 +98,7 @@ export class TaskOrchestrator {
 
     for (const step of currentPlan.steps) {
       // 只处理待执行的步骤
-      if (step.status !== "pending") continue;
+      if (step.status !== TASK_STATUS.PENDING) continue;
 
       const agentType = step.agentType || baseContext.type;
       const agent = this.agents[agentType];
@@ -114,11 +120,30 @@ export class TaskOrchestrator {
           success: false,
           error: `No agent for type: ${agentType}`,
         });
+
+        onEvent?.({
+          type: AGENT_EVENT_TYPE.TASK_STEP_UPDATE,
+          data: {
+            stepId: step.id,
+            status: TASK_STATUS.FAILED,
+            error: `No agent for type: ${agentType}`,
+          },
+        });
+
         continue;
       }
 
       // 标记当前步骤为进行中
       currentPlan = this.taskTracker.startCurrentStep(currentPlan);
+
+      onEvent?.({
+        type: AGENT_EVENT_TYPE.TASK_STEP_UPDATE,
+        data: {
+          stepId: step.id,
+          status: TASK_STATUS.IN_PROGRESS,
+          title: step.title,
+        },
+      });
 
       // 构建此步骤专属的上下文
       const stepContext = this.buildStepContext(baseContext, step, agentType);
@@ -141,60 +166,112 @@ export class TaskOrchestrator {
         "Orchestrator: executing step",
       );
 
-      try {
-        const result = await agent.run(
-          stepContext,
-          stepMessages,
-          conversationId,
-          {
-            existingSummaries: updatedSummaries,
-            activePlan: currentPlan,
-          },
-        );
+      let stepSuccess = false;
+      let lastError = "";
+      for (let attempt = 0; attempt <= MAX_TOOL_RETRIES; attempt++) {
+        try {
+          const retryMessages =
+            attempt > 0
+              ? [
+                  ...stepMessages,
+                  {
+                    role: "user" as const,
+                    content: `Previous attempt failed: ${lastError}. Please retry with a different approach. Attempt ${attempt + 1} of ${MAX_TOOL_RETRIES + 1}.`,
+                    timestamp: new Date(),
+                  },
+                ]
+              : stepMessages;
 
-        // 步骤成功
-        currentPlan = this.taskTracker.completeCurrentStep(
-          currentPlan,
-          result.content.slice(0, 200),
-        );
-
-        allToolCalls.push(...result.toolCalls);
-        allPendingApprovals.push(...result.pendingApprovals);
-        updatedSummaries = result.updatedSummaries;
-
-        stepResults.push({
-          step,
-          content: result.content,
-          toolCalls: result.toolCalls,
-          pendingApprovals: result.pendingApprovals,
-          success: true,
-        });
-
-        logger.info(
-          {
-            stepId: step.id,
-            toolCallCount: result.toolCalls.length,
-            contentLength: result.content.length,
-          },
-          "Orchestrator: step completed",
-        );
-
-        // 如果步骤触发了 Approve 请求，暂停编排
-        if (result.pendingApprovals.length > 0) {
-          logger.info(
-            { stepId: step.id, approvalCount: result.pendingApprovals.length },
-            "Orchestrator: pausing — step requires user approval",
+          const result = await agent.run(
+            stepContext,
+            retryMessages,
+            conversationId,
+            {
+              existingSummaries: updatedSummaries,
+              activePlan: currentPlan,
+              onEvent,
+              signal,
+            },
           );
-          break;
-        }
-      } catch (error) {
-        const errMsg = error instanceof Error ? error.message : "Unknown error";
-        logger.error(
-          { error, stepId: step.id, agentType },
-          "Orchestrator: step execution failed",
-        );
 
-        currentPlan = this.taskTracker.failCurrentStep(currentPlan, errMsg);
+          const hasOnlyErrors =
+            result.toolCalls.length > 0 &&
+            result.toolCalls.every((tc) => tc.isError);
+
+          if (hasOnlyErrors && attempt < MAX_TOOL_RETRIES) {
+            lastError = result.toolCalls
+              .filter((tc) => tc.isError)
+              .map((tc) => tc.result || "Unknown error")
+              .join("; ");
+            logger.warn(
+              {
+                stepId: step.id,
+                attempt: attempt + 1,
+                error: lastError,
+              },
+              "Orchestrator: step had only errors, retrying",
+            );
+            continue;
+          }
+
+          // Approve 现在在 Agent 循环中内联等待完成
+          currentPlan = this.taskTracker.completeCurrentStep(
+            currentPlan,
+            result.content.slice(0, 200),
+          );
+
+          allToolCalls.push(...result.toolCalls);
+          updatedSummaries = result.updatedSummaries;
+
+          stepResults.push({
+            step,
+            content: result.content,
+            toolCalls: result.toolCalls,
+            pendingApprovals: [],
+            success: true,
+          });
+
+          onEvent?.({
+            type: AGENT_EVENT_TYPE.TASK_STEP_UPDATE,
+            data: {
+              stepId: step.id,
+              status: TASK_STATUS.COMPLETED,
+              result: result.content.slice(0, 200),
+            },
+          });
+
+          logger.info(
+            {
+              stepId: step.id,
+              toolCallCount: result.toolCalls.length,
+              contentLength: result.content.length,
+              attempts: attempt + 1,
+            },
+            "Orchestrator: step completed",
+          );
+
+          stepSuccess = true;
+
+          break;
+        } catch (error) {
+          lastError = error instanceof Error ? error.message : "Unknown error";
+          logger.error(
+            { error, stepId: step.id, agentType, attempt: attempt + 1 },
+            "Orchestrator: step execution failed",
+          );
+
+          if (attempt >= MAX_TOOL_RETRIES) {
+            break;
+          }
+        }
+      }
+
+      // 多次重试后仍然失败的话就标记 failed 并进入下个步骤
+      if (!stepSuccess) {
+        currentPlan = this.taskTracker.failCurrentStep(
+          currentPlan,
+          `Failed after ${MAX_TOOL_RETRIES + 1} attempts: ${lastError}`,
+        );
 
         stepResults.push({
           step,
@@ -202,10 +279,19 @@ export class TaskOrchestrator {
           toolCalls: [],
           pendingApprovals: [],
           success: false,
-          error: errMsg,
+          error: lastError,
         });
 
-        // 步骤失败后继续下一步
+        onEvent?.({
+          type: AGENT_EVENT_TYPE.TASK_STEP_UPDATE,
+          data: {
+            stepId: step.id,
+            status: TASK_STATUS.FAILED,
+            error: lastError,
+          },
+        });
+
+        continue;
       }
     }
 
@@ -215,7 +301,7 @@ export class TaskOrchestrator {
       content,
       plan: currentPlan,
       toolCalls: allToolCalls,
-      pendingApprovals: allPendingApprovals,
+      pendingApprovals: [],
       updatedSummaries,
       stepResults,
     };
@@ -250,9 +336,9 @@ export class TaskOrchestrator {
     if (previousResults.length > 0) {
       const summaryParts = previousResults.map((r) => {
         if (r.success) {
-          return `[Step ${r.step.id} — ${r.step.title}] ✅ Result:\n${r.content.slice(0, 800)}`;
+          return `[Step ${r.step.id}] ✅ ${r.step.title}: ${r.content.slice(0, 300)}`;
         } else {
-          return `[Step ${r.step.id} — ${r.step.title}] ❌ Failed: ${r.error || "Unknown"}`;
+          return `[Step ${r.step.id}] ❌ ${r.step.title}: ${r.error || "Failed"}`;
         }
       });
 
@@ -268,11 +354,11 @@ export class TaskOrchestrator {
       role: "user" as const,
       content: [
         `[Task Plan — Step ${currentStep.id} of ${plan.steps.length}]`,
-        `Overall goal: ${plan.goal}`,
-        `Current step: ${currentStep.title}`,
+        `Goal: ${plan.goal}`,
+        `Step: ${currentStep.title}`,
         `Instruction: ${currentStep.description}`,
         "",
-        "Please execute ONLY this step. Use the results from previous steps if needed.",
+        "Execute ONLY this step. Be concise — report the result in 1-2 sentences.",
       ].join("\n"),
       timestamp: new Date(),
     });
@@ -299,7 +385,9 @@ export class TaskOrchestrator {
       );
       for (const r of stepResults) {
         if (!r.success) {
-          parts.push(`- Step ${r.step.id} (${r.step.title}): ${r.error}`);
+          parts.push(
+            `- Step ${r.step.id} (${r.step.title}): ${r.error || "Unknown error"}`,
+          );
         }
       }
     }
