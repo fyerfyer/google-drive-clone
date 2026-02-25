@@ -1,10 +1,9 @@
-import { api, apiClient } from "./api";
-import type { ApiResponse } from "@/types/api.types";
+import { api } from "./api";
 import type {
-  AgentChatResponse,
   AgentStatus,
   AgentType,
   AgentStreamEvent,
+  AgentTaskStatusResponse,
   ApprovalResult,
   ConversationDetail,
   ConversationSummary,
@@ -25,28 +24,32 @@ export const agentService = {
   /** Check if Agent is configured and available */
   getStatus: () => api.get<AgentStatus>("/api/agent/status"),
 
-  /** Send a chat message to the agent (longer timeout for complex queries) */
-  chat: (request: AgentChatRequest) =>
-    apiClient
-      .post<ApiResponse<AgentChatResponse>>("/api/agent/chat", request, {
-        timeout: 120000,
-      })
-      .then((response) => response.data),
+  /**
+   * Submit a chat message to the BullMQ async task queue.
+   * Returns a taskId that can be used with streamTaskEvents.
+   */
+  chatAsync: (request: AgentChatRequest) =>
+    api.post<{ taskId: string }, AgentChatRequest>("/api/agent/chat", request),
 
-  /** Send a chat message via SSE streaming */
-  chatStream: async (
-    request: AgentChatRequest,
+  /** Get the status of an async task */
+  getTaskStatus: (taskId: string) =>
+    api.get<AgentTaskStatusResponse>(`/api/agent/tasks/${taskId}`),
+
+  /**
+   * Subscribe to real-time SSE events for an async task via Redis Pub/Sub.
+   * This is the counterpart to chatAsync — call it right after queueing the task.
+   */
+  streamTaskEvents: async (
+    taskId: string,
     onEvent: (event: AgentStreamEvent) => void,
     signal?: AbortSignal,
   ) => {
     const token = localStorage.getItem("token");
-    const response = await fetch("/api/agent/chat/stream", {
-      method: "POST",
+    const response = await fetch(`/api/agent/tasks/${taskId}/stream`, {
+      method: "GET",
       headers: {
-        "Content-Type": "application/json",
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
-      body: JSON.stringify(request),
       signal,
     });
 

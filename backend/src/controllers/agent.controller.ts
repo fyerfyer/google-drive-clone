@@ -1,157 +1,20 @@
 import { Request, Response, NextFunction } from "express";
-import { AgentService, AgentChatRequest } from "../services/agent.service";
+import { AgentService } from "../services/agent.service";
 import { ResponseHelper } from "../utils/response.util";
 import { AppError } from "../middlewares/errorHandler";
 import { StatusCodes } from "http-status-codes";
 import { config } from "../config/env";
 import { extractParam } from "../utils/request.util";
-import { AgentType, AgentStreamEvent, AGENT_EVENT_TYPE } from "../services/agent/agent.types";
-import { logger } from "../lib/logger";
+import {
+  AgentType,
+  AgentStreamEvent,
+  AGENT_EVENT_TYPE,
+  AGENT_TASK_STATUS,
+} from "../services/agent/agent.types";
+import { subscribeTaskEvents } from "../services/agent/agent-task-queue";
 
 export class AgentController {
   constructor(private agentService: AgentService) {}
-
-  async chat(req: Request, res: Response, next: NextFunction) {
-    const userId = req.user!._id.toString();
-    const { message, conversationId, context } = req.body;
-
-    if (
-      !message ||
-      typeof message !== "string" ||
-      message.trim().length === 0
-    ) {
-      throw new AppError(StatusCodes.BAD_REQUEST, "Message is required");
-    }
-
-    if (message.length > 4000) {
-      throw new AppError(
-        StatusCodes.BAD_REQUEST,
-        "Message too long (max 4000 characters)",
-      );
-    }
-
-    let validatedContext: AgentChatRequest["context"];
-    if (context) {
-      const validTypes: AgentType[] = ["drive", "document", "search"];
-      if (context.type && !validTypes.includes(context.type)) {
-        throw new AppError(
-          StatusCodes.BAD_REQUEST,
-          `Invalid context type. Must be one of: ${validTypes.join(", ")}.`,
-        );
-      }
-      validatedContext = {
-        type: context.type as AgentType | undefined,
-        folderId: context.folderId as string | undefined,
-        fileId: context.fileId as string | undefined,
-      };
-    }
-
-    const chatRequest: AgentChatRequest = {
-      message: message.trim(),
-      conversationId,
-      context: validatedContext,
-    };
-
-    const result = await this.agentService.chat(userId, chatRequest);
-
-    return ResponseHelper.ok(res, result);
-  }
-
-  // SSE 流式处理接口
-  async chatStream(req: Request, res: Response, next: NextFunction) {
-    const userId = req.user!._id.toString();
-    const { message, conversationId, context } = req.body;
-
-    if (
-      !message ||
-      typeof message !== "string" ||
-      message.trim().length === 0
-    ) {
-      throw new AppError(StatusCodes.BAD_REQUEST, "Message is required");
-    }
-
-    if (message.length > 4000) {
-      throw new AppError(
-        StatusCodes.BAD_REQUEST,
-        "Message too long (max 4000 characters)",
-      );
-    }
-
-    let validatedContext: AgentChatRequest["context"];
-    if (context) {
-      const validTypes: AgentType[] = ["drive", "document", "search"];
-      if (context.type && !validTypes.includes(context.type)) {
-        throw new AppError(
-          StatusCodes.BAD_REQUEST,
-          `Invalid context type. Must be one of: ${validTypes.join(", ")}.`,
-        );
-      }
-      validatedContext = {
-        type: context.type as AgentType | undefined,
-        folderId: context.folderId as string | undefined,
-        fileId: context.fileId as string | undefined,
-      };
-    }
-
-    const chatRequest: AgentChatRequest = {
-      message: message.trim(),
-      conversationId,
-      context: validatedContext,
-    };
-
-    // SSE headers
-    res.writeHead(200, {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
-      Connection: "keep-alive",
-      "X-Accel-Buffering": "no",
-    });
-
-    // SSE 每25秒发送一次心跳包，防止代理/负载均衡器超时断开
-    const keepAliveInterval = setInterval(() => {
-      try {
-        res.write(": keepalive\n\n");
-      } catch {
-        // Client disconnected
-      }
-    }, 25_000);
-
-    // 向代理循环发出SSE断开信号
-    const abortController = new AbortController();
-    req.on("close", () => {
-      abortController.abort();
-    });
-
-    const sendEvent = (event: AgentStreamEvent) => {
-      try {
-        res.write(`data: ${JSON.stringify(event)}\n\n`);
-      } catch {
-        // Client disconnected
-      }
-    };
-
-    try {
-      const result = await this.agentService.chat(
-        userId,
-        chatRequest,
-        sendEvent,
-        abortController.signal,
-      );
-
-      // 聊天完成，发送 done 事件
-      sendEvent({
-        type: AGENT_EVENT_TYPE.DONE,
-        data: result as unknown as Record<string, unknown>,
-      });
-    } catch (error) {
-      const errMsg = error instanceof Error ? error.message : "Unknown error";
-      logger.error({ error, userId }, "Agent streaming chat failed");
-      sendEvent({ type: AGENT_EVENT_TYPE.ERROR, data: { message: errMsg } });
-    } finally {
-      clearInterval(keepAliveInterval);
-      res.end();
-    }
-  }
 
   async resolveApproval(req: Request, res: Response, next: NextFunction) {
     const userId = req.user!._id.toString();
@@ -187,7 +50,7 @@ export class AgentController {
 
   async getPendingApprovals(req: Request, res: Response, next: NextFunction) {
     const userId = req.user!._id.toString();
-    const approvals = this.agentService.getPendingApprovals(userId);
+    const approvals = await this.agentService.getPendingApprovals(userId);
 
     return ResponseHelper.ok(res, {
       approvals: approvals.map((a) => ({
@@ -252,7 +115,140 @@ export class AgentController {
         documentPatching: true,
         humanApproval: true,
         realtimeEditing: true,
+        asyncTaskQueue: true,
       },
     });
+  }
+
+  // 主聊天接口：将任务入队 BullMQ，前端通过 /tasks/:taskId/stream 接收 SSE 事件
+  async chatAsync(req: Request, res: Response, next: NextFunction) {
+    const userId = req.user!._id.toString();
+    const { message, conversationId, context } = req.body;
+
+    if (
+      !message ||
+      typeof message !== "string" ||
+      message.trim().length === 0
+    ) {
+      throw new AppError(StatusCodes.BAD_REQUEST, "Message is required");
+    }
+
+    if (message.length > 4000) {
+      throw new AppError(
+        StatusCodes.BAD_REQUEST,
+        "Message too long (max 4000 characters)",
+      );
+    }
+
+    let validatedContext:
+      | { type?: AgentType; folderId?: string; fileId?: string }
+      | undefined;
+    if (context) {
+      const validTypes: AgentType[] = ["drive", "document", "search"];
+      if (context.type && !validTypes.includes(context.type)) {
+        throw new AppError(
+          StatusCodes.BAD_REQUEST,
+          `Invalid context type. Must be one of: ${validTypes.join(", ")}.`,
+        );
+      }
+      validatedContext = {
+        type: context.type as AgentType | undefined,
+        folderId: context.folderId as string | undefined,
+        fileId: context.fileId as string | undefined,
+      };
+    }
+
+    const result = await this.agentService.chatAsync(userId, {
+      message: message.trim(),
+      conversationId,
+      context: validatedContext,
+    });
+
+    return ResponseHelper.ok(res, result);
+  }
+
+  // 查询异步任务状态
+  async getTaskStatus(req: Request, res: Response, next: NextFunction) {
+    const taskId = extractParam(req.params.taskId);
+    const status = await this.agentService.getTaskStatus(taskId);
+    return ResponseHelper.ok(res, status);
+  }
+
+  // 订阅异步任务的实时 SSE 事件流
+  // 通过 Redis Pub/Sub 接收 Worker 广播
+  async streamTaskEvents(req: Request, res: Response, next: NextFunction) {
+    const taskId = extractParam(req.params.taskId);
+
+    // 先检查任务是否存在
+    const status = await this.agentService.getTaskStatus(taskId);
+    if (status.status === AGENT_TASK_STATUS.NOT_FOUND) {
+      throw new AppError(StatusCodes.NOT_FOUND, "Task not found");
+    }
+
+    // 始终使用 SSE 格式，确保前端接收格式一致
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
+    });
+
+    // 如果任务已完成或失败，以 SSE 事件格式返回后关闭
+    if (
+      status.status === AGENT_TASK_STATUS.COMPLETED ||
+      status.status === AGENT_TASK_STATUS.FAILED
+    ) {
+      const event: AgentStreamEvent =
+        status.status === AGENT_TASK_STATUS.COMPLETED && status.result
+          ? {
+              type: AGENT_EVENT_TYPE.DONE,
+              data: status.result as unknown as Record<string, unknown>,
+            }
+          : {
+              type: AGENT_EVENT_TYPE.ERROR,
+              data: { message: status.error || "Task failed" },
+            };
+      res.write(`data: ${JSON.stringify(event)}\n\n`);
+      res.end();
+      return;
+    }
+
+    const keepAliveInterval = setInterval(() => {
+      try {
+        res.write(": keepalive\n\n");
+      } catch {
+        // Client disconnected
+      }
+    }, 25_000);
+
+    const sendEvent = (event: AgentStreamEvent) => {
+      try {
+        res.write(`data: ${JSON.stringify(event)}\n\n`);
+      } catch {
+        // Client disconnected
+      }
+    };
+
+    // 订阅 Redis Pub/Sub 事件
+    const unsubscribe = subscribeTaskEvents(taskId, (event) => {
+      sendEvent(event);
+
+      // 当收到 DONE 或 ERROR 时结束流
+      if (
+        event.type === AGENT_EVENT_TYPE.DONE ||
+        event.type === AGENT_EVENT_TYPE.ERROR
+      ) {
+        cleanup();
+      }
+    });
+
+    const cleanup = () => {
+      clearInterval(keepAliveInterval);
+      unsubscribe();
+      res.end();
+    };
+
+    // 客户端断开时清理
+    req.on("close", cleanup);
   }
 }

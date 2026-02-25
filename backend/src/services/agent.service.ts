@@ -39,12 +39,17 @@ import {
   RouteDecision,
   TaskPlan,
   AgentEventCallback,
+  AgentStreamEvent,
   AGENT_EVENT_TYPE,
+  AgentTaskData,
+  AgentTaskResult,
+  AgentTaskStatusResponse,
 } from "./agent/agent.types";
 import { BaseAgent } from "./agent/base-agent";
 import { logger } from "../lib/logger";
 import { AppError } from "../middlewares/errorHandler";
 import { StatusCodes } from "http-status-codes";
+import { enqueueAgentTask, getAgentTaskStatus } from "./agent/agent-task-queue";
 
 export interface AgentChatRequest {
   message: string;
@@ -145,7 +150,7 @@ export class AgentService {
     };
   }
 
-  async chat(
+  private async chat(
     userId: string,
     request: AgentChatRequest,
     onEvent?: AgentEventCallback,
@@ -416,7 +421,7 @@ export class AgentService {
     approved: boolean,
     modifiedArgs?: Record<string, unknown>,
   ): Promise<ApprovalResponse> {
-    const result = this.gateway.resolveApproval(
+    const result = await this.gateway.resolveApproval(
       approvalId,
       userId,
       approved,
@@ -463,7 +468,7 @@ export class AgentService {
     return { success: false, message: "Unexpected approval state" };
   }
 
-  getPendingApprovals(userId: string): ApprovalRequest[] {
+  async getPendingApprovals(userId: string): Promise<ApprovalRequest[]> {
     return this.gateway.getPendingApprovals(userId);
   }
 
@@ -530,5 +535,51 @@ export class AgentService {
       throw new AppError(StatusCodes.NOT_FOUND, "Conversation not found");
     }
     return conversation;
+  }
+
+  // 将聊天请求放入 BullMQ 队列异步执行。
+  // 返回 taskId，前端可通过 SSE / polling 获取进度。
+  async chatAsync(
+    userId: string,
+    request: AgentChatRequest,
+  ): Promise<{ taskId: string }> {
+    const taskId = `agent-${userId}-${Date.now()}`;
+    const data: AgentTaskData = {
+      taskId,
+      userId,
+      message: request.message,
+      conversationId: request.conversationId,
+      context: request.context,
+    };
+    await enqueueAgentTask(data);
+    return { taskId };
+  }
+
+  async getTaskStatus(taskId: string): Promise<AgentTaskStatusResponse> {
+    return getAgentTaskStatus(taskId);
+  }
+
+  // 创建 BullMQ Worker 所需的 processor 回调。
+  buildTaskProcessor() {
+    return async (
+      data: AgentTaskData,
+      onEvent: (event: AgentStreamEvent) => void,
+    ): Promise<AgentTaskResult> => {
+      const request: AgentChatRequest = {
+        message: data.message,
+        conversationId: data.conversationId,
+        context: data.context,
+      };
+
+      const result = await this.chat(data.userId, request, onEvent);
+
+      return {
+        taskId: data.taskId,
+        conversationId: result.conversationId,
+        agentType: result.agentType,
+        content: result.message.content,
+        success: true,
+      };
+    };
   }
 }

@@ -81,7 +81,6 @@ export class TaskOrchestrator {
   ): Promise<OrchestratorResult> {
     let currentPlan = this.deepClonePlan(plan);
     const allToolCalls: IToolCall[] = [];
-    const allPendingApprovals: AgentLoopResult["pendingApprovals"] = [];
     const stepResults: StepResult[] = [];
     let updatedSummaries = [...existingSummaries];
 

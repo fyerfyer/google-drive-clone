@@ -7,13 +7,12 @@
  *   3. 人工审批 — 危险操作需要用户明确批准
  *
  * 审批流程：
- *   Agent 循环中遇到危险操作 -> 创建 ApprovalRequest -> emit SSE 事件
- *   -> 调用 waitForApproval() 阻塞当前 SSE 流
- *   -> 用户通过 REST API 调用 resolveApproval() -> 触发 Promise 解析
- *   -> Agent 循环继续执行实际工具调用或跳过
+ *   Agent 循环中遇到危险操作 -> 创建 ApprovalRequest 存入 Redis Hash
+ *   -> emit SSE 事件 -> 调用 waitForApproval() 通过 Redis Pub/Sub 阻塞
+ *   -> 用户通过 REST API 调用 resolveApproval() -> 发布 Pub/Sub 事件
+ *   -> 节点捕获事件，触发 Promise.resolve() 继续执行
  */
 
-import { randomUUID } from "node:crypto";
 import { logger } from "../../lib/logger";
 import {
   AgentType,
@@ -27,46 +26,16 @@ import {
   APPROVAL_TTL_SECONDS,
   APPROVAL_STATUS,
 } from "./agent.types";
-
-const pendingApprovals = new Map<string, ApprovalRequest>();
-
-export interface ApprovalResolution {
-  approved: boolean;
-  modifiedArgs?: Record<string, unknown>;
-}
-
-// 等待审批响应的 Promise 解析器。
-// 当 resolveApproval 被调用时触发对应的 resolve，
-// 使 waitForApproval 的 await 结束。
-const approvalResolvers = new Map<
-  string,
-  { resolve: (result: ApprovalResolution) => void }
->();
-
-// 清理过期确认请求（同时清理对应的 resolver）
-setInterval(() => {
-  const now = Date.now();
-  for (const [id, req] of pendingApprovals) {
-    if (
-      req.status === APPROVAL_STATUS.PENDING &&
-      now - req.createdAt.getTime() > req.ttlSeconds * 1000
-    ) {
-      req.status = APPROVAL_STATUS.EXPIRED;
-      req.resolvedAt = new Date();
-      pendingApprovals.delete(id);
-
-      // 清理 resolver
-      // 以超时拒绝方式解析
-      const resolver = approvalResolvers.get(id);
-      if (resolver) {
-        resolver.resolve({ approved: false });
-        approvalResolvers.delete(id);
-      }
-
-      logger.debug({ approvalId: id }, "Approval request expired");
-    }
-  }
-}, 60_000);
+import {
+  ApprovalResolution,
+  createApprovalId,
+  storeApproval,
+  getApproval as getApprovalFromStore,
+  getPendingApprovals as getPendingApprovalsFromStore,
+  resolveApproval as resolveApprovalInStore,
+  consumeApproval as consumeApprovalFromStore,
+  waitForApproval as waitForApprovalFromStore,
+} from "./approval-store";
 
 interface RateWindow {
   count: number;
@@ -125,7 +94,7 @@ export class CapabilityGateway {
     const risk = this.getOperationRisk(toolName);
 
     if (risk === "dangerous") {
-      const approval = this.createApprovalRequest(
+      const approval = this.createApprovalRequestSync(
         userId,
         conversationId,
         toolName,
@@ -145,14 +114,16 @@ export class CapabilityGateway {
     return { allowed: true, requiresApproval: false };
   }
 
-  private createApprovalRequest(
+  // 同步创建 ApprovalRequest 对象，并异步持久化到 Redis。
+  // 返回值可立即用于 GatewayDecision，Redis 写入在后台完成。
+  private createApprovalRequestSync(
     userId: string,
     conversationId: string,
     toolName: string,
     args: Record<string, unknown>,
     risk: OperationRisk,
   ): ApprovalRequest {
-    const id = randomUUID();
+    const id = createApprovalId();
     const request: ApprovalRequest = {
       id,
       userId,
@@ -166,7 +137,14 @@ export class CapabilityGateway {
       ttlSeconds: APPROVAL_TTL_SECONDS,
     };
 
-    pendingApprovals.set(id, request);
+    // 异步写入 Redis（waitForApproval 会在自身注册 resolver 前等待）
+    storeApproval(request).catch((err) => {
+      logger.error(
+        { err, approvalId: id },
+        "Failed to store approval in Redis",
+      );
+    });
+
     logger.info(
       { approvalId: id, toolName, userId },
       "Created approval request for dangerous operation",
@@ -175,56 +153,26 @@ export class CapabilityGateway {
     return request;
   }
 
-  resolveApproval(
+  // 通过 REST API 解决审批请求。
+  // 操作写入 Redis 并通过 Pub/Sub 广播给所有节点。
+  async resolveApproval(
     approvalId: string,
     userId: string,
     approved: boolean,
     modifiedArgs?: Record<string, unknown>,
-  ): ApprovalRequest | null {
-    const request = pendingApprovals.get(approvalId);
+  ): Promise<ApprovalRequest | null> {
+    const request = await resolveApprovalInStore(
+      approvalId,
+      userId,
+      approved,
+      modifiedArgs,
+    );
+
     if (!request) return null;
-    if (request.userId !== userId) return null;
-    if (request.status !== APPROVAL_STATUS.PENDING) return null;
-
-    const elapsed = Date.now() - request.createdAt.getTime();
-    if (elapsed > request.ttlSeconds * 1000) {
-      request.status = APPROVAL_STATUS.EXPIRED;
-      request.resolvedAt = new Date();
-      pendingApprovals.delete(approvalId);
-
-      // 同时通知等待中的 agent loop
-      const resolver = approvalResolvers.get(approvalId);
-      if (resolver) {
-        resolver.resolve({ approved: false });
-        approvalResolvers.delete(approvalId);
-      }
-
-      return request;
-    }
-
-    request.status = approved ? APPROVAL_STATUS.APPROVED : APPROVAL_STATUS.REJECTED;
-    request.resolvedAt = new Date();
 
     if (approved) {
       this.incrementRateCounter(userId);
     }
-
-    // 触发等待中的 Agent 循环继续执行
-    const resolver = approvalResolvers.get(approvalId);
-    if (resolver) {
-      resolver.resolve({ approved, modifiedArgs });
-      approvalResolvers.delete(approvalId);
-    }
-
-    logger.info(
-      {
-        approvalId,
-        approved,
-        toolName: request.toolName,
-        hasModifiedArgs: !!modifiedArgs,
-      },
-      "Approval request resolved",
-    );
 
     return request;
   }
@@ -233,60 +181,19 @@ export class CapabilityGateway {
     approvalId: string,
     signal?: AbortSignal,
   ): Promise<ApprovalResolution> {
-    return new Promise<ApprovalResolution>((resolve) => {
-      // 已经被终止（SSE 断开）
-      if (signal?.aborted) {
-        resolve({ approved: false });
-        return;
-      }
-
-      // 监听 SSE 连接断开
-      const onAbort = () => {
-        approvalResolvers.delete(approvalId);
-        resolve({ approved: false });
-      };
-      signal?.addEventListener("abort", onAbort, { once: true });
-
-      // 注册 resolver — resolveApproval 调用时触发
-      approvalResolvers.set(approvalId, {
-        resolve: (result) => {
-          signal?.removeEventListener("abort", onAbort);
-          resolve(result);
-        },
-      });
-
-      // 超时保护（与 APPROVAL_TTL_SECONDS 对齐）
-      setTimeout(() => {
-        if (approvalResolvers.has(approvalId)) {
-          approvalResolvers.delete(approvalId);
-          signal?.removeEventListener("abort", onAbort);
-          resolve({ approved: false });
-          logger.debug({ approvalId }, "waitForApproval timed out");
-        }
-      }, APPROVAL_TTL_SECONDS * 1000);
-    });
+    return waitForApprovalFromStore(approvalId, signal);
   }
 
-  getApproval(approvalId: string): ApprovalRequest | null {
-    return pendingApprovals.get(approvalId) || null;
+  async getApproval(approvalId: string): Promise<ApprovalRequest | null> {
+    return getApprovalFromStore(approvalId);
   }
 
-  getPendingApprovals(userId: string): ApprovalRequest[] {
-    const results: ApprovalRequest[] = [];
-    for (const req of pendingApprovals.values()) {
-      if (req.userId === userId && req.status === APPROVAL_STATUS.PENDING) {
-        results.push(req);
-      }
-    }
-    return results;
+  async getPendingApprovals(userId: string): Promise<ApprovalRequest[]> {
+    return getPendingApprovalsFromStore(userId);
   }
 
-  consumeApproval(approvalId: string): ApprovalRequest | null {
-    const req = pendingApprovals.get(approvalId);
-    if (req) {
-      pendingApprovals.delete(approvalId);
-    }
-    return req || null;
+  async consumeApproval(approvalId: string): Promise<ApprovalRequest | null> {
+    return consumeApprovalFromStore(approvalId);
   }
 
   private getOperationRisk(toolName: string): OperationRisk {

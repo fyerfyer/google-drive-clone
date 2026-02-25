@@ -32,9 +32,15 @@ apiClient.interceptors.response.use(
 
   (error: AxiosError) => {
     if (error.response?.status === StatusCodes.UNAUTHORIZED) {
-      // 清空 Token 并重定向到登录页
-      localStorage.removeItem("token");
-      window.location.href = "/login";
+      // Don't redirect/clear token if we're already on login page or trying to login
+      const isLoginRequest = error.config?.url?.includes("/auth/login");
+      const isLoginPage = window.location.pathname === "/login";
+
+      if (!isLoginRequest && !isLoginPage) {
+        // 清空 Token 并重定向到登录页
+        localStorage.removeItem("token");
+        window.location.href = "/login";
+      }
     }
 
     const responseData = error.response?.data as

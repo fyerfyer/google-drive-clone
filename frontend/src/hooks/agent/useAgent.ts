@@ -206,16 +206,25 @@ export function useAgentChat() {
       };
 
       try {
-        await agentService.chatStream(
-          {
-            message: text.trim(),
-            conversationId: conversationId || undefined,
-            context: {
-              type: contextType || context.type,
-              folderId: context.folderId,
-              fileId: context.fileId,
-            },
+        // Step 1: Enqueue task to BullMQ
+        const asyncResult = await agentService.chatAsync({
+          message: text.trim(),
+          conversationId: conversationId || undefined,
+          context: {
+            type: contextType || context.type,
+            folderId: context.folderId,
+            fileId: context.fileId,
           },
+        });
+
+        const taskId = asyncResult.data?.taskId;
+        if (!taskId) {
+          throw new Error("Failed to enqueue agent task: no taskId returned");
+        }
+
+        // Step 2: Subscribe to SSE event stream for this task
+        await agentService.streamTaskEvents(
+          taskId,
           handleEvent,
           abortController.signal,
         );

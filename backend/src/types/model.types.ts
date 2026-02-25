@@ -38,6 +38,7 @@ export const QUEUE_NAMES = {
   NOTIFICATIONS: "notifications",
   FILE_PROCESSING: "file-processing",
   MAINTAINANCE: "maintenance",
+  AGENT_TASKS: "agent-tasks",
 } as const;
 
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
@@ -46,6 +47,7 @@ export const QUEUE_TASKS = {
   SEND_SHARE: "send-share-notification",
   CLEANUP_TRASH: "cleanup-trash",
   CLEANUP_TEMP_FILES: "cleanup-temp-files",
+  AGENT_CHAT: "agent-chat",
 } as const;
 
 export type QueueTaskType = (typeof QUEUE_TASKS)[keyof typeof QUEUE_TASKS];

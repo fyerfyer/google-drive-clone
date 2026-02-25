@@ -29,6 +29,11 @@ import {
   MAX_TOOL_RESULT_CHARS,
   AGENT_EVENT_TYPE,
 } from "./agent.types";
+import {
+  needsLock,
+  getResourceKeys,
+  withLock,
+} from "./resource-lock";
 
 export interface AgentRunOptions {
   existingSummaries?: ConversationSummary[];
@@ -225,7 +230,7 @@ export abstract class BaseAgent {
           );
 
           // 清理 approval 记录
-          this.gateway.consumeApproval(decision.approvalId!);
+          await this.gateway.consumeApproval(decision.approvalId!);
 
           if (resolution.approved) {
             // 合并用户修改的参数（如 share 权限等）
@@ -251,7 +256,7 @@ export abstract class BaseAgent {
             });
 
             try {
-              const toolResult = await this.mcpClient.callTool(name, finalArgs);
+              const toolResult = await this.executeWithLock(name, finalArgs);
               result = toolResult.content.map((c) => c.text).join("\n");
               isError = toolResult.isError || false;
             } catch (error) {
@@ -289,7 +294,7 @@ export abstract class BaseAgent {
           );
         } else {
           try {
-            const toolResult = await this.mcpClient.callTool(name, args);
+            const toolResult = await this.executeWithLock(name, args);
             result = toolResult.content.map((c) => c.text).join("\n");
             isError = toolResult.isError || false;
           } catch (error) {
@@ -412,5 +417,20 @@ export abstract class BaseAgent {
         },
       };
     });
+  }
+
+  private async executeWithLock(
+    toolName: string,
+    args: Record<string, unknown>,
+  ) {
+    if (needsLock(toolName)) {
+      const resources = getResourceKeys(toolName, args);
+      if (resources.length > 0) {
+        return withLock(resources, () =>
+          this.mcpClient.callTool(toolName, args),
+        );
+      }
+    }
+    return this.mcpClient.callTool(toolName, args);
   }
 }

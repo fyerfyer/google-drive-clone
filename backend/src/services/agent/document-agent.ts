@@ -121,7 +121,6 @@ ${content}
       }
     }
 
-    // Build related context section
     let relatedSection = "";
     if (context.relatedContext) {
       relatedSection = `\n\n## Related Workspace Context

@@ -85,7 +85,17 @@ export const useAuthForm = <T extends Record<string, unknown>>({
       return;
     }
 
-    await onSubmit(formData);
+    try {
+      await onSubmit(formData);
+    } catch (error: any) {
+      // Clear password if it exists in form data and error is "Incorrect password"
+      if (
+        formData.password !== undefined &&
+        error.message === "Incorrect password"
+      ) {
+        setFormData((prev) => ({ ...prev, password: "" }));
+      }
+    }
   };
 
   return {

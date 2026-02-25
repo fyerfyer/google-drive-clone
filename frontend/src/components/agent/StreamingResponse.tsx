@@ -22,6 +22,7 @@ import { StreamingContent } from "./StreamingContent";
 import type { TaskPlan, TaskStep, TaskStatus } from "@/types/agent.types";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
+import { TASK_STATUS } from "@/types/agent.types";
 
 // ─── Task Step Status Icons ──────────────────────────────────────
 
@@ -29,11 +30,17 @@ const STEP_STATUS: Record<
   TaskStatus,
   { icon: typeof IconCircleCheck; color: string }
 > = {
-  pending: { icon: IconCircleDashed, color: "text-muted-foreground" },
-  "in-progress": { icon: IconLoader2, color: "text-blue-500" },
-  completed: { icon: IconCircleCheck, color: "text-emerald-500" },
-  failed: { icon: IconCircleX, color: "text-destructive" },
-  skipped: { icon: IconPlayerSkipForward, color: "text-muted-foreground" },
+  [TASK_STATUS.PENDING]: {
+    icon: IconCircleDashed,
+    color: "text-muted-foreground",
+  },
+  [TASK_STATUS.IN_PROGRESS]: { icon: IconLoader2, color: "text-blue-500" },
+  [TASK_STATUS.COMPLETED]: { icon: IconCircleCheck, color: "text-emerald-500" },
+  [TASK_STATUS.FAILED]: { icon: IconCircleX, color: "text-destructive" },
+  [TASK_STATUS.SKIPPED]: {
+    icon: IconPlayerSkipForward,
+    color: "text-muted-foreground",
+  },
 };
 
 function InlineTaskStep({
@@ -43,15 +50,15 @@ function InlineTaskStep({
   step: TaskStep;
   isCurrent: boolean;
 }) {
-  const config = STEP_STATUS[step.status] || STEP_STATUS.pending;
+  const config = STEP_STATUS[step.status] || STEP_STATUS[TASK_STATUS.PENDING];
   const Icon = config.icon;
-  const isSpinning = step.status === "in-progress";
+  const isSpinning = step.status === TASK_STATUS.IN_PROGRESS;
 
   return (
     <div
       className={cn(
         "flex items-center gap-2 py-1 px-2 rounded-md text-xs transition-colors",
-        isCurrent && step.status === "in-progress" && "bg-blue-500/5",
+        isCurrent && step.status === TASK_STATUS.IN_PROGRESS && "bg-blue-500/5",
       )}
     >
       <Icon
@@ -64,10 +71,11 @@ function InlineTaskStep({
       <span
         className={cn(
           "flex-1 truncate",
-          step.status === "completed" && "text-muted-foreground",
-          step.status === "failed" && "text-destructive",
-          step.status === "skipped" && "text-muted-foreground line-through",
-          step.status === "in-progress" && "font-medium",
+          step.status === TASK_STATUS.COMPLETED && "text-muted-foreground",
+          step.status === TASK_STATUS.FAILED && "text-destructive",
+          step.status === TASK_STATUS.SKIPPED &&
+            "text-muted-foreground line-through",
+          step.status === TASK_STATUS.IN_PROGRESS && "font-medium",
         )}
       >
         {step.title}
@@ -83,10 +91,14 @@ function InlineTaskStep({
 
 function InlineTaskPlan({ plan }: { plan: TaskPlan }) {
   const [collapsed, setCollapsed] = useState(false);
-  const completed = plan.steps.filter((s) => s.status === "completed").length;
+  const completed = plan.steps.filter(
+    (s) => s.status === TASK_STATUS.COMPLETED,
+  ).length;
   const total = plan.steps.length;
   const progressPct = Math.round((completed / total) * 100);
-  const failed = plan.steps.filter((s) => s.status === "failed").length;
+  const failed = plan.steps.filter(
+    (s) => s.status === TASK_STATUS.FAILED,
+  ).length;
 
   return (
     <div className="rounded-lg border bg-card/50 overflow-hidden">

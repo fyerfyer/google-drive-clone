@@ -7,6 +7,7 @@ import { logger } from "./lib/logger";
 import { initScheduledJobs } from "./lib/cron";
 import { ensureCollection as ensureQdrantCollection } from "./config/qdrant";
 import { initSocket } from "./lib/socket";
+import { initAgentWorker } from "./lib/queue/agent.worker";
 
 const startServer = async () => {
   try {
@@ -32,6 +33,14 @@ const startServer = async () => {
     const httpServer = createServer(app);
     initSocket(httpServer);
     logger.info("WebSocket initialized for document editing & agent approvals");
+
+    // 初始化 Agent BullMQ Worker
+    try {
+      initAgentWorker();
+      logger.info("Agent task worker initialized");
+    } catch (e) {
+      logger.warn({ err: e }, "Failed to initialize agent task worker");
+    }
 
     httpServer.listen(config.port, () => {
       logger.info(

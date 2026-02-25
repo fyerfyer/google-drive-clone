@@ -10,8 +10,7 @@ export function createAgentRouter(agentController: AgentController): Router {
 
   router.get("/status", agentController.getStatus.bind(agentController));
 
-  router.post("/chat", agentController.chat.bind(agentController));
-  router.post("/chat/stream", agentController.chatStream.bind(agentController));
+  router.post("/chat", agentController.chatAsync.bind(agentController));
 
   router.get(
     "/approvals",
@@ -20,6 +19,15 @@ export function createAgentRouter(agentController: AgentController): Router {
   router.post(
     "/approve/:approvalId",
     agentController.resolveApproval.bind(agentController),
+  );
+
+  router.get(
+    "/tasks/:taskId",
+    agentController.getTaskStatus.bind(agentController),
+  );
+  router.get(
+    "/tasks/:taskId/stream",
+    agentController.streamTaskEvents.bind(agentController),
   );
 
   router.get(

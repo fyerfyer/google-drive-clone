@@ -1,5 +1,44 @@
 export type AgentType = "drive" | "document" | "search";
 
+export const AGENT_TASK_STATUS = {
+  PENDING: "pending",
+  ACTIVE: "active",
+  COMPLETED: "completed",
+  FAILED: "failed",
+  NOT_FOUND: "not_found",
+} as const;
+
+export type AgentTaskStatus =
+  (typeof AGENT_TASK_STATUS)[keyof typeof AGENT_TASK_STATUS];
+
+export interface AgentTaskData {
+  taskId: string;
+  userId: string;
+  message: string;
+  conversationId?: string;
+  context?: {
+    type?: AgentType;
+    folderId?: string;
+    fileId?: string;
+  };
+}
+
+export interface AgentTaskResult {
+  taskId: string;
+  conversationId: string;
+  agentType: AgentType;
+  // 最终 assistant 消息内容
+  content: string;
+  success: boolean;
+  error?: string;
+}
+
+export interface AgentTaskStatusResponse {
+  status: AgentTaskStatus;
+  result?: AgentTaskResult;
+  error?: string;
+}
+
 export const TASK_STATUS = {
   PENDING: "pending",
   IN_PROGRESS: "in-progress",
@@ -65,11 +104,17 @@ export const AGENT_EVENT_TYPE = {
   ERROR: "error",
 } as const;
 
-export type AgentEventType = (typeof AGENT_EVENT_TYPE)[keyof typeof AGENT_EVENT_TYPE];
+export type AgentEventType =
+  (typeof AGENT_EVENT_TYPE)[keyof typeof AGENT_EVENT_TYPE];
 
 export interface AgentStreamEvent {
   type: AgentEventType;
   data: Record<string, unknown>;
+}
+
+export interface AgentStatus {
+  status: string;
+  agents: AgentMeta[];
 }
 
 export interface AgentMeta {

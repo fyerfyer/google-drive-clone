@@ -8,7 +8,6 @@ interface RegisterDTO {
   password: string;
   name: string;
   avatarDataUrl?: string;
-  avatarFile?: Express.Multer.File;
 }
 
 interface LoginDTO {
@@ -41,18 +40,12 @@ export class AuthService {
   async login(data: LoginDTO): Promise<AuthResponse> {
     const user = await this.userService.getUserByEmail(data.email);
     if (!user) {
-      throw new AppError(
-        StatusCodes.UNAUTHORIZED,
-        getReasonPhrase(StatusCodes.UNAUTHORIZED),
-      );
+      throw new AppError(StatusCodes.UNAUTHORIZED, "User not found");
     }
 
     const isPasswordValid = await user.comparePassword(data.password);
     if (!isPasswordValid) {
-      throw new AppError(
-        StatusCodes.UNAUTHORIZED,
-        getReasonPhrase(StatusCodes.UNAUTHORIZED),
-      );
+      throw new AppError(StatusCodes.UNAUTHORIZED, "Incorrect password");
     }
 
     const token = generateToken({ id: user.id, email: user.email });

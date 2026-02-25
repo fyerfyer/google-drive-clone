@@ -11,6 +11,7 @@ import {
 } from "@tabler/icons-react";
 import type { TaskPlan, TaskStep, TaskStatus } from "@/types/agent.types";
 import { cn } from "@/lib/utils";
+import { TASK_STATUS } from "@/types/agent.types";
 
 // ─── Status Icons ──────────────────────────────────────────────────
 
@@ -22,27 +23,27 @@ const STATUS_CONFIG: Record<
     label: string;
   }
 > = {
-  pending: {
+  [TASK_STATUS.PENDING]: {
     icon: IconCircleDashed,
     color: "text-muted-foreground",
     label: "Pending",
   },
-  "in-progress": {
+  [TASK_STATUS.IN_PROGRESS]: {
     icon: IconLoader2,
     color: "text-blue-500",
     label: "In Progress",
   },
-  completed: {
+  [TASK_STATUS.COMPLETED]: {
     icon: IconCircleCheck,
     color: "text-emerald-500",
     label: "Completed",
   },
-  failed: {
+  [TASK_STATUS.FAILED]: {
     icon: IconCircleX,
     color: "text-destructive",
     label: "Failed",
   },
-  skipped: {
+  [TASK_STATUS.SKIPPED]: {
     icon: IconPlayerSkipForward,
     color: "text-muted-foreground",
     label: "Skipped",
@@ -53,9 +54,10 @@ const STATUS_CONFIG: Record<
 
 function TaskStepItem({ step }: { step: TaskStep }) {
   const [expanded, setExpanded] = useState(false);
-  const config = STATUS_CONFIG[step.status] || STATUS_CONFIG.pending;
+  const config =
+    STATUS_CONFIG[step.status] || STATUS_CONFIG[TASK_STATUS.PENDING];
   const Icon = config.icon;
-  const isAnimated = step.status === "in-progress";
+  const isAnimated = step.status === TASK_STATUS.IN_PROGRESS;
 
   const hasDetails = step.description || step.result || step.error;
 
@@ -93,9 +95,10 @@ function TaskStepItem({ step }: { step: TaskStep }) {
         <span
           className={cn(
             "flex-1 font-medium truncate",
-            step.status === "completed" && "text-muted-foreground",
-            step.status === "failed" && "text-destructive",
-            step.status === "skipped" && "text-muted-foreground line-through",
+            step.status === TASK_STATUS.COMPLETED && "text-muted-foreground",
+            step.status === TASK_STATUS.FAILED && "text-destructive",
+            step.status === TASK_STATUS.SKIPPED &&
+              "text-muted-foreground line-through",
           )}
         >
           {step.title || `Step ${step.id}`}
@@ -137,8 +140,12 @@ export function TaskPlanDisplay({ plan }: TaskPlanDisplayProps) {
 
   if (!plan || !plan.steps || plan.steps.length === 0) return null;
 
-  const completed = plan.steps.filter((s) => s.status === "completed").length;
-  const failed = plan.steps.filter((s) => s.status === "failed").length;
+  const completed = plan.steps.filter(
+    (s) => s.status === TASK_STATUS.COMPLETED,
+  ).length;
+  const failed = plan.steps.filter(
+    (s) => s.status === TASK_STATUS.FAILED,
+  ).length;
   const total = plan.steps.length;
   const progressPct = Math.round((completed / total) * 100);
 
