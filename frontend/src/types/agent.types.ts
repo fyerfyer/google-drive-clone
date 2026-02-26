@@ -55,6 +55,8 @@ export interface TaskStep {
   description: string;
   status: TaskStatus;
   agentType?: AgentType;
+  /** IDs of steps that must complete before this step can start */
+  dependencies?: number[];
   result?: string;
   error?: string;
 }
@@ -95,11 +97,14 @@ export const AGENT_EVENT_TYPE = {
   ROUTE_DECISION: "route_decision",
   TASK_PLAN: "task_plan",
   TASK_STEP_UPDATE: "task_step_update",
+  PARALLEL_BATCH: "parallel_batch",
   TOOL_CALL_START: "tool_call_start",
   TOOL_CALL_END: "tool_call_end",
   CONTENT: "content",
   APPROVAL_NEEDED: "approval_needed",
   APPROVAL_RESOLVED: "approval_resolved",
+  TRACE: "trace",
+  TOKEN_UPDATE: "token_update",
   DONE: "done",
   ERROR: "error",
 } as const;
@@ -187,4 +192,45 @@ export interface AgentStatus {
   enabled: boolean;
   model: string;
   provider: string;
+}
+
+// ─── Dashboard Types ──────────────────────────────────────────────
+
+export interface TokenUsage {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+}
+
+export interface UserTokenBudget {
+  maxTokensPerTask: number;
+  maxTokensPerDay: number;
+  pauseOnWarning: boolean;
+  warningThresholdPct: number;
+}
+
+export interface ActiveChat {
+  taskId: string;
+  conversationId?: string;
+  message: string;
+  agentType?: AgentType;
+  status: "queued" | "running";
+  startedAt: number;
+  tokenUsage: TokenUsage;
+}
+
+export type TraceEntryType = "thought" | "action" | "observation" | "error";
+
+export interface TraceEntry {
+  type: TraceEntryType;
+  content: string;
+  timestamp: number;
+  stepId?: number;
+  toolName?: string;
+}
+
+/** A batch of step IDs that were executed in parallel by the orchestrator */
+export interface ParallelBatch {
+  stepIds: number[];
+  timestamp: number;
 }

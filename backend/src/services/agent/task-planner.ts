@@ -192,24 +192,60 @@ export async function shouldPlanTask(
   return llmNeedsPlan(message, context);
 }
 
-const PLANNER_PROMPT = `You are a task planner for a cloud drive AI assistant. Given a complex user request, break it down into clear, ordered steps that the AI agent can execute one by one.
+const PLANNER_PROMPT = `You are a task planner for a cloud drive AI assistant. Given a complex user request, break it down into the MINIMUM number of steps necessary.
 
 Rules:
-1. Each step should be a single, atomic action
+1. **MINIMIZE STEPS** — combine related work into as few steps as possible. The ideal plan has 2-4 steps, NEVER more than 6.
 2. Steps should be in logical execution order
 3. Include the appropriate agent type for each step:
-   - "drive" for file/folder operations (create, delete, move, rename, share, etc.)
-   - "document" for text editing operations (write, edit, patch, translate, etc.)
-   - "search" for search/retrieval operations (find files, semantic search, knowledge query, etc.)
-4. Keep step titles short (under 50 chars) and descriptions clear
-5. Maximum 8 steps per plan
+   - "search" for finding files, semantic search, reading file content, knowledge queries
+   - "drive" for file/folder CRUD: create (with content!), delete, move, rename, share
+   - "document" for editing the CURRENT open document only (patch operations)
+4. Keep step titles short (under 50 chars)
+5. **Dependencies**: Each step MUST include a "dependencies" array listing the IDs of steps that must finish before it can start.
+   - Steps with NO dependencies can run in PARALLEL.
+   - Example: If step 3 needs outputs of step 1 and 2, set "dependencies": [1, 2].
+   - Maximize parallelism: independent reads/searches should have "dependencies": [] so they run simultaneously.
 6. Respond ONLY with valid JSON
 
-IMPORTANT CONTEXT RULES:
-- If the user is currently in the Document Editor (context includes "currentFileId"), the "document" agent can ONLY edit THAT file. NEVER create a step that creates a new file via the document agent. If the user wants to write content, it goes into the CURRENT document.
-- The "document" agent does NOT create, delete, move or share files. Only the "drive" agent does that.
-- If the user asks to "write a summary" while in the Document Editor, the summary should be written INTO the current document (via "document" agent), NOT into a new file.
-- When editing the current document, prefer fewer steps. A simple "edit current document" task is usually 1-2 steps, not 5.
+CRITICAL TOOL KNOWLEDGE:
+- The "drive" agent's \`create_file\` tool accepts a \`content\` parameter. You can create a file WITH content in ONE step — do NOT split "create file" and "write content" into separate steps.
+- The "search" agent has \`read_file\` — it can read any file's content. Use it to gather information before writing.
+- The "search" agent has \`search_files\` (by name) and \`semantic_search_files\` (by content/meaning). Choose the right one based on user intent.
+- NEVER generate steps like "open file", "open document", or "get file info" as standalone steps — there is no "open" action. If you need file info, combine it with the main work step.
+- NEVER split writing/editing into multiple steps like "write header", "write body", "write conclusion". Combine all writing into ONE step.
+- The \`patch_file\` tool FAILS on empty files because there is nothing to search for. If you need to create a new file with content, use \`create_file\` with content in a single drive step.
+
+CONTEXT RULES:
+- If context includes "currentFileId", the "document" agent edits THAT file only. Don't create new files.
+- The "document" agent does NOT create/delete/move files — only the "drive" agent does.
+- When editing the current document, 1-2 steps is typical.
+
+EXAMPLES of GOOD plans:
+
+User: "Write a summary for all CS224n files in the drive"
+Good plan (3 steps):
+  Step 1: "Search for CS224n files" (search, deps: []) — use semantic_search_files to find all CS224n-related files
+  Step 2: "Read file contents" (search, deps: [1]) — read the content of each found file to extract key information
+  Step 3: "Create summary document" (drive, deps: [2]) — create a new markdown file with the complete summary using create_file with content
+
+User: "Find all PDFs and move them to the Archive folder"
+Good plan (2 steps):
+  Step 1: "Search for PDF files" (search, deps: []) — find all .pdf files
+  Step 2: "Move PDFs to Archive" (drive, deps: [1]) — move each found PDF to the Archive folder
+
+User: "Read report.pdf and budget.xlsx and compare them"
+Good plan (3 steps):
+  Step 1: "Read report.pdf" (search, deps: []) — read its content
+  Step 2: "Read budget.xlsx" (search, deps: []) — read its content (PARALLEL with step 1!)
+  Step 3: "Create comparison" (drive, deps: [1, 2]) — create a comparison document
+
+BAD plans (AVOID):
+- Splitting file creation and writing into 2+ steps
+- Having "Open file" as a step
+- Having separate steps for header/body/conclusion
+- More than 5 steps for any task
+- Sequential steps that could run in parallel
 
 Output format:
 {
@@ -219,7 +255,8 @@ Output format:
       "id": 1,
       "title": "<short action title>",
       "description": "<what to do, with specific details>",
-      "agentType": "drive|document|search"
+      "agentType": "drive|document|search",
+      "dependencies": []
     }
   ]
 }`;
@@ -288,6 +325,7 @@ export async function generateTaskPlan(
         title: string;
         description: string;
         agentType?: string;
+        dependencies?: number[];
       }>;
     };
 
@@ -301,6 +339,7 @@ export async function generateTaskPlan(
       agentType: (["drive", "document", "search"].includes(s.agentType || "")
         ? s.agentType
         : undefined) as AgentType | undefined,
+      dependencies: Array.isArray(s.dependencies) ? s.dependencies : [],
     }));
 
     const plan: TaskPlan = {
@@ -342,7 +381,9 @@ export class TaskPlanTracker {
     }
 
     // 推进到下一步
-    const nextPending = updated.steps.find((s) => s.status === TASK_STATUS.PENDING);
+    const nextPending = updated.steps.find(
+      (s) => s.status === TASK_STATUS.PENDING,
+    );
     if (nextPending) {
       updated.currentStep = nextPending.id;
     } else {
@@ -362,7 +403,9 @@ export class TaskPlanTracker {
     }
 
     // 继续尝试下一步
-    const nextPending = updated.steps.find((s) => s.status === TASK_STATUS.PENDING);
+    const nextPending = updated.steps.find(
+      (s) => s.status === TASK_STATUS.PENDING,
+    );
     if (nextPending) {
       updated.currentStep = nextPending.id;
     } else {
@@ -381,7 +424,9 @@ export class TaskPlanTracker {
       step.result = reason || "Skipped";
     }
 
-    const nextPending = updated.steps.find((s) => s.status === TASK_STATUS.PENDING);
+    const nextPending = updated.steps.find(
+      (s) => s.status === TASK_STATUS.PENDING,
+    );
     if (nextPending) {
       updated.currentStep = nextPending.id;
     } else {
@@ -392,8 +437,12 @@ export class TaskPlanTracker {
   }
 
   getProgressSummary(plan: TaskPlan): string {
-    const completed = plan.steps.filter((s) => s.status === TASK_STATUS.COMPLETED).length;
-    const failed = plan.steps.filter((s) => s.status === TASK_STATUS.FAILED).length;
+    const completed = plan.steps.filter(
+      (s) => s.status === TASK_STATUS.COMPLETED,
+    ).length;
+    const failed = plan.steps.filter(
+      (s) => s.status === TASK_STATUS.FAILED,
+    ).length;
     const total = plan.steps.length;
 
     const parts = [`Progress: ${completed}/${total} completed`];

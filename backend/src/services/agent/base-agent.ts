@@ -28,12 +28,14 @@ import {
   MAX_TOOL_CALLS_PER_TURN,
   MAX_TOOL_RESULT_CHARS,
   AGENT_EVENT_TYPE,
+  TokenUsage,
 } from "./agent.types";
 import {
-  needsLock,
-  getResourceKeys,
-  withLock,
-} from "./resource-lock";
+  recordTokenUsage,
+  checkTokenBudget,
+  appendTrace,
+} from "./agent-dashboard";
+import { needsLock, getResourceKeys, withLock } from "./resource-lock";
 
 export interface AgentRunOptions {
   existingSummaries?: ConversationSummary[];
@@ -41,6 +43,9 @@ export interface AgentRunOptions {
   onEvent?: AgentEventCallback;
   // 用于 disconnect 后终止未完成的 Tool Call 等操作
   signal?: AbortSignal;
+  // taskId 用于 tracing
+  taskId?: string;
+  stepId?: number;
 }
 
 export interface AgentLoopResult {
@@ -116,6 +121,8 @@ export abstract class BaseAgent {
       conversationId,
       options?.onEvent,
       options?.signal,
+      options?.taskId,
+      options?.stepId,
     );
 
     return {
@@ -133,6 +140,8 @@ export abstract class BaseAgent {
     conversationId: string,
     onEvent?: AgentEventCallback,
     signal?: AbortSignal,
+    taskId?: string,
+    stepId?: number,
   ): Promise<LoopResult> {
     const allToolCalls: IToolCall[] = [];
     const pendingApprovals: AgentLoopResult["pendingApprovals"] = [];
@@ -142,7 +151,65 @@ export abstract class BaseAgent {
       iteration++;
       this.memoryManager.compressIfNeeded(messages);
 
-      const response = await this.callLlm(messages, tools);
+      // Token 限流检查
+      if (taskId) {
+        try {
+          const budgetCheck = await checkTokenBudget(taskId, context.userId);
+          if (!budgetCheck.allowed) {
+            logger.warn(
+              { taskId, reason: budgetCheck.reason },
+              "Token budget exceeded — stopping agent loop",
+            );
+            onEvent?.({
+              type: AGENT_EVENT_TYPE.TOKEN_UPDATE,
+              data: {
+                taskTokens: budgetCheck.taskTokens,
+                dailyTokens: budgetCheck.dailyTokens,
+                taskLimit: budgetCheck.taskLimit,
+                dailyLimit: budgetCheck.dailyLimit,
+                exceeded: true,
+                reason: budgetCheck.reason,
+              },
+            });
+            return {
+              content: `⚠️ Token budget limit reached: ${budgetCheck.reason}. The task has been paused to prevent excessive costs. You can adjust your token budget in the Agent Dashboard settings.`,
+              toolCalls: allToolCalls,
+              pendingApprovals,
+            };
+          }
+          if (budgetCheck.warning) {
+            onEvent?.({
+              type: AGENT_EVENT_TYPE.TOKEN_UPDATE,
+              data: {
+                taskTokens: budgetCheck.taskTokens,
+                dailyTokens: budgetCheck.dailyTokens,
+                taskLimit: budgetCheck.taskLimit,
+                dailyLimit: budgetCheck.dailyLimit,
+                warning: true,
+              },
+            });
+          }
+        } catch (err) {
+          logger.warn({ err, taskId }, "Token budget check failed");
+        }
+      }
+
+      // Trace: thought
+      if (taskId) {
+        appendTrace(taskId, {
+          type: "thought",
+          content: `Agent loop iteration ${iteration} — calling LLM with ${messages.length} messages, ${tools.length} tools`,
+          stepId,
+        }).catch(() => {});
+      }
+
+      const response = await this.callLlm(
+        messages,
+        tools,
+        taskId,
+        context.userId,
+        onEvent,
+      );
       const choice = response.choices[0];
 
       if (!choice) {
@@ -158,6 +225,16 @@ export abstract class BaseAgent {
 
       if (!assistantMsg.tool_calls || assistantMsg.tool_calls.length === 0) {
         const content = assistantMsg.content || "Done.";
+
+        // Trace: final content
+        if (taskId) {
+          appendTrace(taskId, {
+            type: "thought",
+            content: `Final response: ${content.slice(0, 200)}`,
+            stepId,
+          }).catch(() => {});
+        }
+
         onEvent?.({ type: AGENT_EVENT_TYPE.CONTENT, data: { content } });
         return {
           content,
@@ -191,6 +268,16 @@ export abstract class BaseAgent {
             ),
           },
         });
+
+        // Trace: action
+        if (taskId) {
+          appendTrace(taskId, {
+            type: "action",
+            content: `Calling tool: ${name}`,
+            toolName: name,
+            stepId,
+          }).catch(() => {});
+        }
 
         const decision: GatewayDecision = this.gateway.checkToolPermission(
           this.agentType,
@@ -313,6 +400,16 @@ export abstract class BaseAgent {
 
         allToolCalls.push({ toolName: name, args, result, isError });
 
+        // Trace: observation
+        if (taskId) {
+          appendTrace(taskId, {
+            type: isError ? "error" : "observation",
+            content: result.slice(0, 500),
+            toolName: name,
+            stepId,
+          }).catch(() => {});
+        }
+
         onEvent?.({
           type: AGENT_EVENT_TYPE.TOOL_CALL_END,
           data: {
@@ -344,6 +441,9 @@ export abstract class BaseAgent {
   protected async callLlm(
     messages: LlmMessage[],
     tools: LlmTool[],
+    taskId?: string,
+    userId?: string,
+    onEvent?: AgentEventCallback,
   ): Promise<LlmResponse> {
     const apiKey = config.llmApiKey;
     const baseUrl = config.llmBaseUrl;
@@ -391,7 +491,35 @@ export abstract class BaseAgent {
       );
     }
 
-    return (await response.json()) as LlmResponse;
+    const json = (await response.json()) as LlmResponse & {
+      usage?: {
+        prompt_tokens?: number;
+        completion_tokens?: number;
+        total_tokens?: number;
+      };
+    };
+
+    if (taskId && userId && json.usage) {
+      const usage: TokenUsage = {
+        promptTokens: json.usage.prompt_tokens || 0,
+        completionTokens: json.usage.completion_tokens || 0,
+        totalTokens: json.usage.total_tokens || 0,
+      };
+      try {
+        const accumulated = await recordTokenUsage(taskId, userId, usage);
+        onEvent?.({
+          type: AGENT_EVENT_TYPE.TOKEN_UPDATE,
+          data: {
+            taskTokens: accumulated.totalTokens,
+            callTokens: usage.totalTokens,
+          },
+        });
+      } catch (err) {
+        logger.warn({ err }, "Failed to record token usage");
+      }
+    }
+
+    return json as LlmResponse;
   }
 
   protected buildLlmTools(tools: McpToolDefinition[]): LlmTool[] {

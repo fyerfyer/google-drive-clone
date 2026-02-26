@@ -1,12 +1,13 @@
 /**
- * Task Orchestrator 多 Agent 任务编排器
+ * Task Orchestrator 多 Agent 任务编排器 (DAG 并行版)
  *
  * 当 TaskPlan 涉及多种 AgentType 的步骤时，由 Orchestrator 统一调度：
- *   1. 遍历 plan.steps
- *   2. 根据 step.agentType 选择对应 Agent
- *   3. 构建包含前序结果的上下文，让当前 Agent 知晓前面步骤的产出
- *   4. 收集所有步骤的 toolCalls / pendingApprovals / summaries
- *   5. 遇到 pendingApproval 时暂停编排（需要用户确认后再继续）
+ *   1. 解析每个步骤的 dependencies 字段，构建 DAG
+ *   2. 每轮迭代筛选所有依赖已完成的就绪节点，使用 Promise.all 并行执行
+ *   3. 根据 step.agentType 选择对应 Agent
+ *   4. 构建包含前序结果的上下文，让当前 Agent 知晓前面步骤的产出
+ *   5. 收集所有步骤的 toolCalls / summaries
+ *   6. 遇到 pendingApproval 时暂停编排
  *
  *   每个步骤仍通过 BaseAgent.run() 执行，Orchestrator 仅负责
  *   选谁执行、传什么上下文、如何推进。
@@ -59,7 +60,7 @@ export class TaskOrchestrator {
     this.taskTracker = new TaskPlanTracker();
   }
 
-  // 如果 plan 中包含 >=2 种 agentType，则需要 Orchestrator 调度；
+  // 如果 plan 中包含 >=2 种 agentType，则需要 Orchestrator 调度
   needsOrchestration(plan: TaskPlan): boolean {
     const types = new Set<AgentType>();
     for (const step of plan.steps) {
@@ -78,11 +79,25 @@ export class TaskOrchestrator {
     existingSummaries: ConversationSummary[],
     onEvent?: AgentEventCallback,
     signal?: AbortSignal,
+    taskId?: string,
   ): Promise<OrchestratorResult> {
     let currentPlan = this.deepClonePlan(plan);
     const allToolCalls: IToolCall[] = [];
     const stepResults: StepResult[] = [];
     let updatedSummaries = [...existingSummaries];
+
+    // 通过当前 plan 状态构建 DAG
+    // 这样之后可以直接恢复部分完成状态的 plan
+    const completedStepIds = new Set<number>(
+      currentPlan.steps
+        .filter((s) => s.status === TASK_STATUS.COMPLETED)
+        .map((s) => s.id),
+    );
+    const failedStepIds = new Set<number>(
+      currentPlan.steps
+        .filter((s) => s.status === TASK_STATUS.FAILED)
+        .map((s) => s.id),
+    );
 
     logger.info(
       {
@@ -91,208 +106,123 @@ export class TaskOrchestrator {
         agentTypes: [
           ...new Set(currentPlan.steps.map((s) => s.agentType).filter(Boolean)),
         ],
+        hasDependencies: currentPlan.steps.some(
+          (s) => s.dependencies && s.dependencies.length > 0,
+        ),
       },
-      "Orchestrator: starting multi-agent plan execution",
+      "Orchestrator: starting DAG-based parallel plan execution",
     );
 
-    for (const step of currentPlan.steps) {
-      // 只处理待执行的步骤
-      if (step.status !== TASK_STATUS.PENDING) continue;
-
-      const agentType = step.agentType || baseContext.type;
-      const agent = this.agents[agentType];
-
-      if (!agent) {
-        logger.error(
-          { agentType, stepId: step.id },
-          "Orchestrator: no agent available for step",
+    while (true) {
+      // 找到所有已完成的 step
+      const readySteps = currentPlan.steps.filter((step) => {
+        if (step.status !== TASK_STATUS.PENDING) return false;
+        const deps = step.dependencies || [];
+        return deps.every(
+          (depId) => completedStepIds.has(depId) || failedStepIds.has(depId),
         );
-        currentPlan = this.taskTracker.failCurrentStep(
-          currentPlan,
-          `No agent available for type: ${agentType}`,
-        );
-        stepResults.push({
-          step,
-          content: "",
-          toolCalls: [],
-          pendingApprovals: [],
-          success: false,
-          error: `No agent for type: ${agentType}`,
-        });
-
-        onEvent?.({
-          type: AGENT_EVENT_TYPE.TASK_STEP_UPDATE,
-          data: {
-            stepId: step.id,
-            status: TASK_STATUS.FAILED,
-            error: `No agent for type: ${agentType}`,
-          },
-        });
-
-        continue;
-      }
-
-      // 标记当前步骤为进行中
-      currentPlan = this.taskTracker.startCurrentStep(currentPlan);
-
-      onEvent?.({
-        type: AGENT_EVENT_TYPE.TASK_STEP_UPDATE,
-        data: {
-          stepId: step.id,
-          status: TASK_STATUS.IN_PROGRESS,
-          title: step.title,
-        },
       });
 
-      // 构建此步骤专属的上下文
-      const stepContext = this.buildStepContext(baseContext, step, agentType);
-
-      // 构建消息：原始历史 + 前序结果 + 当前步骤指令
-      const stepMessages = this.buildStepMessages(
-        originalMessages,
-        step,
-        stepResults,
-        currentPlan,
-      );
+      if (readySteps.length === 0) break;
 
       logger.info(
         {
-          stepId: step.id,
-          title: step.title,
-          agentType,
-          messageCount: stepMessages.length,
+          readyCount: readySteps.length,
+          readyIds: readySteps.map((s) => s.id),
         },
-        "Orchestrator: executing step",
+        "Orchestrator: parallel batch ready",
       );
 
-      let stepSuccess = false;
-      let lastError = "";
-      for (let attempt = 0; attempt <= MAX_TOOL_RETRIES; attempt++) {
-        try {
-          const retryMessages =
-            attempt > 0
-              ? [
-                  ...stepMessages,
-                  {
-                    role: "user" as const,
-                    content: `Previous attempt failed: ${lastError}. Please retry with a different approach. Attempt ${attempt + 1} of ${MAX_TOOL_RETRIES + 1}.`,
-                    timestamp: new Date(),
-                  },
-                ]
-              : stepMessages;
+      // 并发执行
+      onEvent?.({
+        type: AGENT_EVENT_TYPE.PARALLEL_BATCH,
+        data: {
+          stepIds: readySteps.map((s) => s.id),
+          batchIndex: stepResults.length > 0 ? -1 : 0,
+        },
+      });
 
-          const result = await agent.run(
-            stepContext,
-            retryMessages,
-            conversationId,
-            {
-              existingSummaries: updatedSummaries,
-              activePlan: currentPlan,
-              onEvent,
-              signal,
-            },
-          );
+      const batchPromises = readySteps.map((step) =>
+        this.executeStep(
+          step,
+          currentPlan,
+          baseContext,
+          originalMessages,
+          conversationId,
+          updatedSummaries,
+          stepResults,
+          onEvent,
+          signal,
+          taskId,
+        ),
+      );
 
-          const hasOnlyErrors =
-            result.toolCalls.length > 0 &&
-            result.toolCalls.every((tc) => tc.isError);
+      const batchResults = await Promise.all(batchPromises);
 
-          if (hasOnlyErrors && attempt < MAX_TOOL_RETRIES) {
-            lastError = result.toolCalls
-              .filter((tc) => tc.isError)
-              .map((tc) => tc.result || "Unknown error")
-              .join("; ");
-            logger.warn(
-              {
-                stepId: step.id,
-                attempt: attempt + 1,
-                error: lastError,
-              },
-              "Orchestrator: step had only errors, retrying",
-            );
-            continue;
-          }
+      for (const result of batchResults) {
+        const step = currentPlan.steps.find((s) => s.id === result.step.id)!;
 
-          // Approve 现在在 Agent 循环中内联等待完成
-          currentPlan = this.taskTracker.completeCurrentStep(
-            currentPlan,
-            result.content.slice(0, 200),
-          );
-
+        if (result.success) {
+          step.status = TASK_STATUS.COMPLETED;
+          step.result = result.content.slice(0, 200);
+          completedStepIds.add(step.id);
           allToolCalls.push(...result.toolCalls);
-          updatedSummaries = result.updatedSummaries;
-
-          stepResults.push({
-            step,
-            content: result.content,
-            toolCalls: result.toolCalls,
-            pendingApprovals: [],
-            success: true,
-          });
 
           onEvent?.({
             type: AGENT_EVENT_TYPE.TASK_STEP_UPDATE,
             data: {
               stepId: step.id,
               status: TASK_STATUS.COMPLETED,
-              result: result.content.slice(0, 200),
+              result: step.result,
             },
           });
+        } else {
+          step.status = TASK_STATUS.FAILED;
+          step.error = result.error;
+          failedStepIds.add(step.id);
 
-          logger.info(
-            {
+          onEvent?.({
+            type: AGENT_EVENT_TYPE.TASK_STEP_UPDATE,
+            data: {
               stepId: step.id,
-              toolCallCount: result.toolCalls.length,
-              contentLength: result.content.length,
-              attempts: attempt + 1,
+              status: TASK_STATUS.FAILED,
+              error: result.error,
             },
-            "Orchestrator: step completed",
-          );
+          });
+        }
 
-          stepSuccess = true;
-
-          break;
-        } catch (error) {
-          lastError = error instanceof Error ? error.message : "Unknown error";
-          logger.error(
-            { error, stepId: step.id, agentType, attempt: attempt + 1 },
-            "Orchestrator: step execution failed",
-          );
-
-          if (attempt >= MAX_TOOL_RETRIES) {
-            break;
-          }
+        stepResults.push(result);
+        if (result.updatedSummaries) {
+          updatedSummaries = result.updatedSummaries;
         }
       }
 
-      // 多次重试后仍然失败的话就标记 failed 并进入下个步骤
-      if (!stepSuccess) {
-        currentPlan = this.taskTracker.failCurrentStep(
-          currentPlan,
-          `Failed after ${MAX_TOOL_RETRIES + 1} attempts: ${lastError}`,
-        );
+      const nextPending = currentPlan.steps.find(
+        (s) => s.status === TASK_STATUS.PENDING,
+      );
+      if (nextPending) {
+        currentPlan.currentStep = nextPending.id;
+      } else {
+        currentPlan.isComplete = true;
+      }
+    }
 
-        stepResults.push({
-          step,
-          content: "",
-          toolCalls: [],
-          pendingApprovals: [],
-          success: false,
-          error: lastError,
-        });
-
+    // 跳过所有不可达 step
+    for (const step of currentPlan.steps) {
+      if (step.status === TASK_STATUS.PENDING) {
+        step.status = TASK_STATUS.SKIPPED;
+        step.error = "Skipped due to failed dependencies";
         onEvent?.({
           type: AGENT_EVENT_TYPE.TASK_STEP_UPDATE,
           data: {
             stepId: step.id,
-            status: TASK_STATUS.FAILED,
-            error: lastError,
+            status: TASK_STATUS.SKIPPED,
+            error: step.error,
           },
         });
-
-        continue;
       }
     }
+    currentPlan.isComplete = true;
 
     const content = this.buildFinalResponse(currentPlan, stepResults);
 
@@ -303,6 +233,159 @@ export class TaskOrchestrator {
       pendingApprovals: [],
       updatedSummaries,
       stepResults,
+    };
+  }
+
+  private async executeStep(
+    step: TaskStep,
+    currentPlan: TaskPlan,
+    baseContext: AgentContext,
+    originalMessages: IMessage[],
+    conversationId: string,
+    existingSummaries: ConversationSummary[],
+    previousResults: StepResult[],
+    onEvent?: AgentEventCallback,
+    signal?: AbortSignal,
+    taskId?: string,
+  ): Promise<StepResult & { updatedSummaries?: ConversationSummary[] }> {
+    const agentType = step.agentType || baseContext.type;
+    const agent = this.agents[agentType];
+
+    if (!agent) {
+      logger.error(
+        { agentType, stepId: step.id },
+        "Orchestrator: no agent available for step",
+      );
+
+      onEvent?.({
+        type: AGENT_EVENT_TYPE.TASK_STEP_UPDATE,
+        data: {
+          stepId: step.id,
+          status: TASK_STATUS.FAILED,
+          error: `No agent for type: ${agentType}`,
+        },
+      });
+
+      return {
+        step,
+        content: "",
+        toolCalls: [],
+        pendingApprovals: [],
+        success: false,
+        error: `No agent for type: ${agentType}`,
+      };
+    }
+
+    step.status = TASK_STATUS.IN_PROGRESS;
+    onEvent?.({
+      type: AGENT_EVENT_TYPE.TASK_STEP_UPDATE,
+      data: {
+        stepId: step.id,
+        status: TASK_STATUS.IN_PROGRESS,
+        title: step.title,
+      },
+    });
+
+    const stepContext = this.buildStepContext(baseContext, step, agentType);
+    const stepMessages = this.buildStepMessages(
+      originalMessages,
+      step,
+      previousResults,
+      currentPlan,
+    );
+
+    logger.info(
+      {
+        stepId: step.id,
+        title: step.title,
+        agentType,
+        dependencies: step.dependencies,
+        messageCount: stepMessages.length,
+      },
+      "Orchestrator: executing step",
+    );
+
+    let lastError = "";
+    for (let attempt = 0; attempt <= MAX_TOOL_RETRIES; attempt++) {
+      try {
+        const retryMessages =
+          attempt > 0
+            ? [
+                ...stepMessages,
+                {
+                  role: "user" as const,
+                  content: `Previous attempt failed: ${lastError}. Please retry with a different approach. Attempt ${attempt + 1} of ${MAX_TOOL_RETRIES + 1}.`,
+                  timestamp: new Date(),
+                },
+              ]
+            : stepMessages;
+
+        const result = await agent.run(
+          stepContext,
+          retryMessages,
+          conversationId,
+          {
+            existingSummaries,
+            activePlan: currentPlan,
+            onEvent,
+            signal,
+            taskId,
+            stepId: step.id,
+          },
+        );
+
+        const hasOnlyErrors =
+          result.toolCalls.length > 0 &&
+          result.toolCalls.every((tc) => tc.isError);
+
+        if (hasOnlyErrors && attempt < MAX_TOOL_RETRIES) {
+          lastError = result.toolCalls
+            .filter((tc) => tc.isError)
+            .map((tc) => tc.result || "Unknown error")
+            .join("; ");
+          logger.warn(
+            { stepId: step.id, attempt: attempt + 1, error: lastError },
+            "Orchestrator: step had only errors, retrying",
+          );
+          continue;
+        }
+
+        logger.info(
+          {
+            stepId: step.id,
+            toolCallCount: result.toolCalls.length,
+            contentLength: result.content.length,
+            attempts: attempt + 1,
+          },
+          "Orchestrator: step completed",
+        );
+
+        return {
+          step,
+          content: result.content,
+          toolCalls: result.toolCalls,
+          pendingApprovals: [],
+          success: true,
+          updatedSummaries: result.updatedSummaries,
+        };
+      } catch (error) {
+        lastError = error instanceof Error ? error.message : "Unknown error";
+        logger.error(
+          { error, stepId: step.id, agentType, attempt: attempt + 1 },
+          "Orchestrator: step execution failed",
+        );
+
+        if (attempt >= MAX_TOOL_RETRIES) break;
+      }
+    }
+
+    return {
+      step,
+      content: "",
+      toolCalls: [],
+      pendingApprovals: [],
+      success: false,
+      error: `Failed after ${MAX_TOOL_RETRIES + 1} attempts: ${lastError}`,
     };
   }
 

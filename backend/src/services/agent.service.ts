@@ -50,6 +50,19 @@ import { logger } from "../lib/logger";
 import { AppError } from "../middlewares/errorHandler";
 import { StatusCodes } from "http-status-codes";
 import { enqueueAgentTask, getAgentTaskStatus } from "./agent/agent-task-queue";
+import {
+  getActiveChats,
+  getDailyTokenUsage,
+  getTaskTokenUsage,
+  getUserTokenBudget,
+  setUserTokenBudget,
+  getTraces,
+} from "./agent/agent-dashboard";
+import type {
+  ActiveChat,
+  TokenUsage,
+  UserTokenBudget,
+} from "./agent/agent.types";
 
 export interface AgentChatRequest {
   message: string;
@@ -140,6 +153,7 @@ export class AgentService {
           description: step.description,
           status: step.status,
           agentType: step.agentType,
+          dependencies: step.dependencies,
           result: step.result,
           error: step.error,
         };
@@ -155,6 +169,7 @@ export class AgentService {
     request: AgentChatRequest,
     onEvent?: AgentEventCallback,
     signal?: AbortSignal,
+    taskId?: string,
   ): Promise<AgentChatResponse> {
     const { message, conversationId, context } = request;
 
@@ -315,6 +330,7 @@ export class AgentService {
         existingSummaries,
         onEvent,
         signal,
+        taskId,
       );
 
       activePlan = orchResult.plan;
@@ -337,6 +353,7 @@ export class AgentService {
           activePlan,
           onEvent,
           signal,
+          taskId,
         },
       );
 
@@ -571,7 +588,13 @@ export class AgentService {
         context: data.context,
       };
 
-      const result = await this.chat(data.userId, request, onEvent);
+      const result = await this.chat(
+        data.userId,
+        request,
+        onEvent,
+        undefined,
+        data.taskId,
+      );
 
       return {
         taskId: data.taskId,
@@ -581,5 +604,32 @@ export class AgentService {
         success: true,
       };
     };
+  }
+
+  async getActiveChats(userId: string): Promise<ActiveChat[]> {
+    return getActiveChats(userId);
+  }
+
+  async getTaskTokenUsage(taskId: string): Promise<TokenUsage> {
+    return getTaskTokenUsage(taskId);
+  }
+
+  async getDailyTokenUsage(userId: string): Promise<TokenUsage> {
+    return getDailyTokenUsage(userId);
+  }
+
+  async getUserTokenBudget(userId: string): Promise<UserTokenBudget> {
+    return getUserTokenBudget(userId);
+  }
+
+  async setUserTokenBudget(
+    userId: string,
+    budget: Partial<UserTokenBudget>,
+  ): Promise<UserTokenBudget> {
+    return setUserTokenBudget(userId, budget);
+  }
+
+  async getTaskTraces(taskId: string) {
+    return getTraces(taskId);
   }
 }

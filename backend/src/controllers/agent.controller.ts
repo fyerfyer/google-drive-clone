@@ -16,6 +16,54 @@ import { subscribeTaskEvents } from "../services/agent/agent-task-queue";
 export class AgentController {
   constructor(private agentService: AgentService) {}
 
+  async getActiveChats(req: Request, res: Response, next: NextFunction) {
+    const userId = req.user!._id.toString();
+    const chats = await this.agentService.getActiveChats(userId);
+    return ResponseHelper.ok(res, { chats });
+  }
+
+  async getTaskTraces(req: Request, res: Response, next: NextFunction) {
+    const taskId = extractParam(req.params.taskId);
+    const traces = await this.agentService.getTaskTraces(taskId);
+    return ResponseHelper.ok(res, { traces });
+  }
+
+  async getTokenUsage(req: Request, res: Response, next: NextFunction) {
+    const userId = req.user!._id.toString();
+    const taskId = req.query.taskId as string | undefined;
+
+    const daily = await this.agentService.getDailyTokenUsage(userId);
+    let task = undefined;
+    if (taskId) {
+      task = await this.agentService.getTaskTokenUsage(taskId);
+    }
+    return ResponseHelper.ok(res, { daily, task });
+  }
+
+  async getTokenBudget(req: Request, res: Response, next: NextFunction) {
+    const userId = req.user!._id.toString();
+    const budget = await this.agentService.getUserTokenBudget(userId);
+    return ResponseHelper.ok(res, { budget });
+  }
+
+  async updateTokenBudget(req: Request, res: Response, next: NextFunction) {
+    const userId = req.user!._id.toString();
+    const {
+      maxTokensPerTask,
+      maxTokensPerDay,
+      pauseOnWarning,
+      warningThresholdPct,
+    } = req.body;
+
+    const budget = await this.agentService.setUserTokenBudget(userId, {
+      ...(maxTokensPerTask !== undefined ? { maxTokensPerTask } : {}),
+      ...(maxTokensPerDay !== undefined ? { maxTokensPerDay } : {}),
+      ...(pauseOnWarning !== undefined ? { pauseOnWarning } : {}),
+      ...(warningThresholdPct !== undefined ? { warningThresholdPct } : {}),
+    });
+    return ResponseHelper.ok(res, { budget });
+  }
+
   async resolveApproval(req: Request, res: Response, next: NextFunction) {
     const userId = req.user!._id.toString();
     const approvalId = extractParam(req.params.approvalId);

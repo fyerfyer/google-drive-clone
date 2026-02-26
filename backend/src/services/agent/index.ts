@@ -11,3 +11,4 @@ export * from "./task-orchestrator";
 export * from "./agent.types";
 export * from "./resource-lock";
 export * from "./agent-task-queue";
+export * from "./agent-dashboard";

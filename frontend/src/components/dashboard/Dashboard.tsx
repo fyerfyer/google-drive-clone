@@ -2,7 +2,7 @@ import { AppSidebar } from "@/components/ui/app-sidebar";
 import { SiteHeader } from "@/components/ui/site-header";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { StorageOverview } from "@/components/dashboard/StorageOverview";
-import { RecentFiles } from "@/components/dashboard/RecentFiles";
+import { AgentMonitor } from "@/components/dashboard/AgentMonitor";
 
 export function Dashboard() {
   return (
@@ -31,7 +31,7 @@ export function Dashboard() {
                 </div>
                 <div className="grid gap-4 md:gap-6 lg:grid-cols-2">
                   <StorageOverview />
-                  <RecentFiles />
+                  <AgentMonitor />
                 </div>
               </div>
             </div>

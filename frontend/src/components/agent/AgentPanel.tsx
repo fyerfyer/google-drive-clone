@@ -10,8 +10,10 @@ import {
   IconFolder,
   IconFileText,
   IconSearch,
+  IconActivity,
 } from "@tabler/icons-react";
 import { useAgentStore } from "@/stores/useAgentStore";
+import { useBackgroundTasksStore } from "@/stores/useBackgroundTasksStore";
 import {
   useAgentChat,
   useAgentConversations,
@@ -28,6 +30,7 @@ import { AgentTypeBadge } from "./AgentTypeBadge";
 import { TaskPlanDisplay } from "./TaskPlanDisplay";
 import { ApprovalList } from "./ApprovalCard";
 import { StreamingResponse } from "./StreamingResponse";
+import { AgentDashboard } from "./AgentDashboard";
 import type { AgentType } from "@/types/agent.types";
 import { AGENT_REGISTRY } from "@/types/agent.types";
 import { cn } from "@/lib/utils";
@@ -42,6 +45,7 @@ export function AgentPanel() {
   const {
     isOpen,
     close,
+    open,
     agentType,
     taskPlan,
     pendingApprovals,
@@ -57,7 +61,16 @@ export function AgentPanel() {
   const { data: agentStatus } = useAgentStatus();
   const queryClient = useQueryClient();
 
+  // Background tasks count for indicator
+  const bgTaskCount = useBackgroundTasksStore(
+    (s) =>
+      Object.values(s.tasks).filter(
+        (t) => t.status === "running" || t.status === "waiting_approval",
+      ).length,
+  );
+
   const [showHistory, setShowHistory] = useState(false);
+  const [showDashboard, setShowDashboard] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll to bottom on new messages or streaming updates
@@ -65,7 +78,6 @@ export function AgentPanel() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isLoading, isStreaming]);
 
-  // Also scroll when streaming content changes
   const { streamingContent, streamingToolCalls } = useAgentStore();
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -101,13 +113,31 @@ export function AgentPanel() {
         (tc) => driveModifyingTools.includes(tc.toolName) && !tc.isError,
       );
       if (hasModification) {
-        // Invalidate all folder content queries so any open folder view refreshes
         setTimeout(() => {
           queryClient.invalidateQueries({ queryKey: queryKeys.folders.all });
         }, 500);
       }
     }
   }, [messages, queryClient]);
+
+  // Listen for "goto conversation" events from background task toasts
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail as {
+        conversationId?: string;
+        taskId?: string;
+      };
+      if (detail.conversationId || detail.taskId) {
+        open();
+        setShowHistory(false);
+        setShowDashboard(false);
+        // Pass both ids — loadConversation will try taskId first, then convId
+        loadConversation(detail.conversationId ?? null, detail.taskId);
+      }
+    };
+    window.addEventListener("agent:goto-conversation", handler);
+    return () => window.removeEventListener("agent:goto-conversation", handler);
+  }, [open, loadConversation]);
 
   if (!isOpen) return null;
 
@@ -126,6 +156,16 @@ export function AgentPanel() {
               <IconArrowLeft className="size-4" />
             </button>
             <span className="text-sm font-semibold">Conversations</span>
+          </>
+        ) : showDashboard ? (
+          <>
+            <button
+              onClick={() => setShowDashboard(false)}
+              className="rounded-md p-1 hover:bg-muted transition-colors"
+            >
+              <IconArrowLeft className="size-4" />
+            </button>
+            <span className="text-sm font-semibold">Dashboard</span>
           </>
         ) : (
           <>
@@ -149,16 +189,26 @@ export function AgentPanel() {
         )}
 
         <div className="flex items-center gap-1 ml-auto">
-          {!showHistory && (
+          {!showHistory && !showDashboard && (
             <>
               <button
-                onClick={() => {
-                  newConversation();
-                }}
+                onClick={() => newConversation()}
                 className="rounded-md p-1.5 hover:bg-muted transition-colors"
                 title="New conversation"
               >
                 <IconPlus className="size-4" />
+              </button>
+              <button
+                onClick={() => setShowDashboard(true)}
+                className="relative rounded-md p-1.5 hover:bg-muted transition-colors"
+                title="Dashboard"
+              >
+                <IconActivity className="size-4" />
+                {bgTaskCount > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 flex size-4 items-center justify-center rounded-full bg-primary text-[9px] font-bold text-primary-foreground">
+                    {bgTaskCount}
+                  </span>
+                )}
               </button>
               <button
                 onClick={() => setShowHistory(true)}
@@ -180,7 +230,9 @@ export function AgentPanel() {
 
       {/* Body */}
       <div className="flex-1 overflow-y-auto">
-        {showHistory ? (
+        {showDashboard ? (
+          <AgentDashboard />
+        ) : showHistory ? (
           <div className="p-3">
             <AgentConversationList
               conversations={conversations || []}
@@ -254,7 +306,7 @@ export function AgentPanel() {
       </div>
 
       {/* Input */}
-      {!showHistory && (
+      {!showHistory && !showDashboard && (
         <AgentInput
           onSend={sendMessage}
           isLoading={isLoading}

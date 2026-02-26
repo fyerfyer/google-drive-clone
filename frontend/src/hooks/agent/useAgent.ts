@@ -1,276 +1,113 @@
-import { useCallback, useRef } from "react";
+import { useCallback } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { agentService } from "@/services/agent.service";
 import { useAgentStore } from "@/stores/useAgentStore";
-import type {
-  AgentMessage,
-  AgentType,
-  AgentStreamEvent,
-  TaskStatus,
-} from "@/types/agent.types";
-import { AGENT_EVENT_TYPE, TASK_STATUS } from "@/types/agent.types";
+import {
+  useBackgroundTasksStore,
+  getBackgroundTaskByConversationId,
+} from "@/stores/useBackgroundTasksStore";
+import {
+  agentTaskRunner,
+  detachCurrentTask,
+  attachBackgroundTask,
+} from "@/lib/agentTaskRunner";
+import { loadTracesFromCache } from "@/lib/traceCache";
+import type { AgentMessage, AgentType } from "@/types/agent.types";
 import { toast } from "sonner";
 
+/* ═══════════════════════════════════════════════════════════════
+   useAgentChat — main hook for sending messages & managing
+   the current conversation.  The heavy SSE event‑handling has
+   moved to agentTaskRunner so it survives conversation switches.
+   ═══════════════════════════════════════════════════════════════ */
+
 export function useAgentChat() {
-  const queryClient = useQueryClient();
-  const abortRef = useRef<AbortController | null>(null);
-  const {
-    conversationId,
-    messages,
-    isLoading,
-    context,
-    addMessage,
-    setConversationId,
-    setMessages,
-    setLoading,
-    setRouteDecision,
-    setTaskPlan,
-    updateTaskStep,
-    setAgentType,
-    setStreaming,
-    appendStreamingContent,
-    addStreamingToolCall,
-    updateLastStreamingToolCall,
-    setStreamingStepId,
-    setStreamingError,
-    clearStreamingState,
-    addPendingApproval,
-    removePendingApproval,
-    finalizeStreaming,
-    newConversation,
-  } = useAgentStore();
+  const messages = useAgentStore((s) => s.messages);
+  const isLoading = useAgentStore((s) => s.isLoading);
+  const conversationId = useAgentStore((s) => s.conversationId);
 
+  /**
+   * Send a message.  The flow:
+   * 1. (If a task is running for the current chat, it means we already
+   *     have an SSE open — this should not happen since we disable
+   *     the input while streaming.  But if it does, bail.)
+   * 2. Add user message to the store.
+   * 3. chatAsync → get taskId from BullMQ.
+   * 4. agentTaskRunner.start() — fire-and-forget SSE that routes
+   *    events to the main store (attached) or background store
+   *    (if the user switches conversations before it finishes).
+   */
   const sendMessage = useCallback(
-    async (
-      text: string,
-      contextType?: AgentType,
-      options?: { silent?: boolean },
-    ) => {
-      // Check live store state to prevent race conditions from stale closures
-      const liveState = useAgentStore.getState();
-      if (!text.trim() || isLoading || liveState.isLoading) return;
+    async (text: string, contextType?: AgentType) => {
+      const s = useAgentStore.getState();
+      if (!text.trim() || s.isLoading) return;
 
-      // Add user message immediately (unless silent mode for auto-continue)
-      if (!options?.silent) {
-        const userMessage: AgentMessage = {
-          role: "user",
-          content: text.trim(),
-          timestamp: new Date().toISOString(),
-        };
-        addMessage(userMessage);
-      }
-      setLoading(true);
-      setStreaming(true);
-      clearStreamingState();
-      // Re-set streaming after clear
-      useAgentStore.setState({ isStreaming: true });
-
-      // Create abort controller for cancellation
-      const abortController = new AbortController();
-      abortRef.current = abortController;
-
-      const handleEvent = (event: AgentStreamEvent) => {
-        switch (event.type) {
-          case AGENT_EVENT_TYPE.ROUTE_DECISION: {
-            const data = event.data as {
-              agentType: AgentType;
-              confidence: number;
-              source: string;
-              reason: string;
-            };
-            setAgentType(data.agentType);
-            setRouteDecision({
-              confidence: data.confidence,
-              source: data.source as any,
-              reason: data.reason,
-            });
-            break;
-          }
-
-          case AGENT_EVENT_TYPE.TASK_PLAN: {
-            const data = event.data as { plan: any };
-            setTaskPlan(data.plan);
-            break;
-          }
-
-          case AGENT_EVENT_TYPE.TASK_STEP_UPDATE: {
-            const data = event.data as {
-              stepId: number;
-              status: TaskStatus;
-              title?: string;
-              result?: string;
-              error?: string;
-            };
-            updateTaskStep(data.stepId, {
-              status: data.status,
-              result: data.result,
-              error: data.error,
-            });
-            if (data.status === TASK_STATUS.IN_PROGRESS) {
-              setStreamingStepId(data.stepId);
-            }
-            break;
-          }
-
-          case AGENT_EVENT_TYPE.TOOL_CALL_START: {
-            const data = event.data as {
-              toolName: string;
-              args: Record<string, unknown>;
-            };
-            addStreamingToolCall({
-              toolName: data.toolName,
-              args: data.args,
-            });
-            break;
-          }
-
-          case AGENT_EVENT_TYPE.TOOL_CALL_END: {
-            const data = event.data as {
-              toolName: string;
-              result: string;
-              isError: boolean;
-            };
-            updateLastStreamingToolCall({
-              result: data.result,
-              isError: data.isError,
-            });
-            break;
-          }
-
-          case AGENT_EVENT_TYPE.CONTENT: {
-            const data = event.data as { content: string };
-            appendStreamingContent(data.content);
-            break;
-          }
-
-          case AGENT_EVENT_TYPE.APPROVAL_NEEDED: {
-            const data = event.data as {
-              approvalId: string;
-              toolName: string;
-              reason: string;
-              args: Record<string, unknown>;
-            };
-            addPendingApproval({
-              approvalId: data.approvalId,
-              toolName: data.toolName,
-              reason: data.reason,
-              args: data.args,
-            });
-            break;
-          }
-
-          case AGENT_EVENT_TYPE.APPROVAL_RESOLVED: {
-            const data = event.data as {
-              approvalId: string;
-              approved: boolean;
-            };
-            // Remove the approval card from the UI — the SSE stream will
-            // continue with tool_call_end / content events automatically
-            removePendingApproval(data.approvalId);
-            break;
-          }
-
-          case AGENT_EVENT_TYPE.DONE: {
-            const data = event.data as any;
-            if (data.conversationId) {
-              setConversationId(data.conversationId);
-            }
-            if (data.agentType) {
-              setAgentType(data.agentType);
-            }
-            if (data.taskPlan) {
-              setTaskPlan(data.taskPlan);
-            }
-
-            // Finalize: add the final assistant message
-            if (data.message) {
-              finalizeStreaming(data.message);
-            } else {
-              finalizeStreaming();
-            }
-
-            // Refresh conversation list
-            queryClient.invalidateQueries({
-              queryKey: ["agent-conversations"],
-            });
-            break;
-          }
-
-          case AGENT_EVENT_TYPE.ERROR: {
-            const data = event.data as { message: string };
-            setStreamingError(data.message);
-            finalizeStreaming();
-            break;
-          }
-        }
+      // Add user message
+      const userMessage: AgentMessage = {
+        role: "user",
+        content: text.trim(),
+        timestamp: new Date().toISOString(),
       };
+      s.addMessage(userMessage);
+      s.setLoading(true);
+      s.setStreaming(true);
+      s.clearStreamingState();
+      // clearStreamingState resets isStreaming — re-set it
+      useAgentStore.setState({ isStreaming: true, isLoading: true });
 
       try {
-        // Step 1: Enqueue task to BullMQ
-        const asyncResult = await agentService.chatAsync({
+        const res = await agentService.chatAsync({
           message: text.trim(),
-          conversationId: conversationId || undefined,
+          conversationId: s.conversationId || undefined,
           context: {
-            type: contextType || context.type,
-            folderId: context.folderId,
-            fileId: context.fileId,
+            type: contextType || s.context.type,
+            folderId: s.context.folderId,
+            fileId: s.context.fileId,
           },
         });
 
-        const taskId = asyncResult.data?.taskId;
-        if (!taskId) {
-          throw new Error("Failed to enqueue agent task: no taskId returned");
-        }
+        const taskId = res.data?.taskId;
+        if (!taskId) throw new Error("No taskId returned");
 
-        // Step 2: Subscribe to SSE event stream for this task
-        await agentService.streamTaskEvents(
-          taskId,
-          handleEvent,
-          abortController.signal,
-        );
+        // Store the taskId so we can detach it later
+        useAgentStore.getState().setCurrentTaskId(taskId);
 
-        // If stream ended without a done event, finalize anyway
-        const state = useAgentStore.getState();
-        if (state.isStreaming) {
-          finalizeStreaming();
-        }
-      } catch (error: any) {
-        if (error.name === "AbortError") return;
-        const errMsg = error.message || "Unknown error";
-        setStreamingError(errMsg);
-        finalizeStreaming();
+        // Fire-and-forget SSE — events routed by the task runner
+        agentTaskRunner.start(taskId, s.conversationId, /* attached */ true);
+      } catch (error: unknown) {
+        const msg = error instanceof Error ? error.message : "Unknown error";
+        useAgentStore.getState().setStreamingError(msg);
+        useAgentStore.getState().finalizeStreaming();
       }
     },
-    [
-      isLoading,
-      conversationId,
-      context,
-      addMessage,
-      setLoading,
-      setStreaming,
-      clearStreamingState,
-      setAgentType,
-      setRouteDecision,
-      setTaskPlan,
-      updateTaskStep,
-      setStreamingStepId,
-      addStreamingToolCall,
-      updateLastStreamingToolCall,
-      appendStreamingContent,
-      addPendingApproval,
-      removePendingApproval,
-      setConversationId,
-      finalizeStreaming,
-      setStreamingError,
-      queryClient,
-    ],
+    [],
   );
 
+  /**
+   * Start a new conversation.  If a task is currently streaming,
+   * it gets detached to the background store and keeps running.
+   */
+  const newConversation = useCallback(() => {
+    const s = useAgentStore.getState();
+    if (s.currentTaskId && (s.isLoading || s.isStreaming)) {
+      detachCurrentTask();
+    }
+    s.newConversation();
+  }, []);
+
+  /**
+   * Cancel the current task (truly abort the SSE connection).
+   */
   const cancelStream = useCallback(() => {
-    abortRef.current?.abort();
-    clearStreamingState();
-    setLoading(false);
-  }, [clearStreamingState, setLoading]);
+    const s = useAgentStore.getState();
+    if (s.currentTaskId) {
+      agentTaskRunner.abort(s.currentTaskId);
+      useBackgroundTasksStore.getState().removeTask(s.currentTaskId);
+    }
+    s.clearStreamingState();
+    s.setLoading(false);
+    s.setCurrentTaskId(null);
+  }, []);
 
   return {
     messages,
@@ -279,15 +116,15 @@ export function useAgentChat() {
     sendMessage,
     cancelStream,
     newConversation,
-    setMessages,
-    setConversationId,
   };
 }
 
-// Hook for resolving approvals (approve/reject) with optional modified args.
-// The SSE stream stays open while waiting for approval — no auto-continue needed.
+/* ═══════════════════════════════════════════════════════════════
+   useResolveApproval — approve / reject a pending operation
+   ═══════════════════════════════════════════════════════════════ */
+
 export function useResolveApproval() {
-  const { removePendingApproval } = useAgentStore();
+  const removePendingApproval = useAgentStore((s) => s.removePendingApproval);
 
   return useMutation({
     mutationFn: async ({
@@ -302,9 +139,6 @@ export function useResolveApproval() {
       return agentService.resolveApproval(approvalId, approved, modifiedArgs);
     },
     onSuccess: (response, { approvalId, approved }) => {
-      // Note: the approval card will also be removed by the SSE
-      // `approval_resolved` event, but we remove it here too for
-      // immediate UX feedback
       removePendingApproval(approvalId);
       if (approved) {
         toast.success(response.data?.message || "Operation approved");
@@ -318,7 +152,10 @@ export function useResolveApproval() {
   });
 }
 
-// Hook for listing conversations
+/* ═══════════════════════════════════════════════════════════════
+   useAgentConversations — query for the conversation list
+   ═══════════════════════════════════════════════════════════════ */
+
 export function useAgentConversations() {
   return useQuery({
     queryKey: ["agent-conversations"],
@@ -330,32 +167,34 @@ export function useAgentConversations() {
   });
 }
 
-// Hook for loading a specific conversation
 export function useLoadConversation() {
-  const {
-    setConversationId,
-    setMessages,
-    setTaskPlan,
-    setRouteDecision,
-    setAgentType,
-  } = useAgentStore();
-
-  const loadMutation = useMutation({
-    mutationFn: async (conversationId: string) => {
-      return agentService.getConversation(conversationId);
-    },
+  const apiMutation = useMutation({
+    mutationFn: (conversationId: string) =>
+      agentService.getConversation(conversationId),
     onSuccess: (response) => {
       if (response.data) {
-        setConversationId(response.data.id);
-        setMessages(response.data.messages);
-        if (response.data.agentType) {
-          setAgentType(response.data.agentType);
-        }
-        if (response.data.activePlan) {
-          setTaskPlan(response.data.activePlan);
-        }
-        if (response.data.routeDecision) {
-          setRouteDecision(response.data.routeDecision);
+        const s = useAgentStore.getState();
+        s.setConversationId(response.data.id);
+        s.setMessages(response.data.messages);
+        s.setCurrentTaskId(null);
+        if (response.data.agentType) s.setAgentType(response.data.agentType);
+        if (response.data.activePlan) s.setTaskPlan(response.data.activePlan);
+        if (response.data.routeDecision)
+          s.setRouteDecision(response.data.routeDecision);
+        // Ensure clean streaming state for loaded conversations
+        useAgentStore.setState({
+          isLoading: false,
+          isStreaming: false,
+          streamingContent: "",
+          streamingToolCalls: [],
+          streamingStepId: null,
+          streamingError: null,
+          pendingApprovals: [],
+        });
+        // Restore any cached trace entries for this conversation
+        const cachedTraces = loadTracesFromCache(response.data.id);
+        if (cachedTraces.length > 0) {
+          useAgentStore.setState({ traceEntries: cachedTraces });
         }
       }
     },
@@ -364,26 +203,49 @@ export function useLoadConversation() {
     },
   });
 
+  const loadConversation = useCallback(
+    (conversationId: string | null, taskId?: string | null) => {
+      // Detach current running task if any
+      const s = useAgentStore.getState();
+      if (s.currentTaskId && (s.isLoading || s.isStreaming)) {
+        detachCurrentTask();
+      }
+
+      // If we have a taskId, try to attach that background task directly
+      if (taskId) {
+        const attached = attachBackgroundTask(taskId);
+        if (attached) return;
+      }
+
+      // Fall back to lookup by conversationId
+      if (conversationId) {
+        const bgTask = getBackgroundTaskByConversationId(conversationId);
+        if (bgTask) {
+          attachBackgroundTask(bgTask.taskId);
+          return;
+        }
+        // Load from API
+        apiMutation.mutate(conversationId);
+      }
+    },
+    [apiMutation],
+  );
+
   return {
-    loadConversation: loadMutation.mutate,
-    isLoading: loadMutation.isPending,
+    loadConversation,
+    isLoading: apiMutation.isPending,
   };
 }
 
-// Hook for deleting a conversation
 export function useDeleteConversation() {
   const queryClient = useQueryClient();
-  const { conversationId, newConversation } = useAgentStore();
 
   return useMutation({
-    mutationFn: async (id: string) => {
-      return agentService.deleteConversation(id);
-    },
+    mutationFn: (id: string) => agentService.deleteConversation(id),
     onSuccess: (_, deletedId) => {
       queryClient.invalidateQueries({ queryKey: ["agent-conversations"] });
-      if (deletedId === conversationId) {
-        newConversation();
-      }
+      const s = useAgentStore.getState();
+      if (deletedId === s.conversationId) s.newConversation();
       toast.success("Conversation deleted");
     },
     onError: () => {
@@ -392,7 +254,6 @@ export function useDeleteConversation() {
   });
 }
 
-// Hook for checking agent availability
 export function useAgentStatus() {
   return useQuery({
     queryKey: ["agent-status"],

@@ -9,6 +9,7 @@
 import { Queue, Worker, Job } from "bullmq";
 import { redisClient, redisSubscriber } from "../../config/redis";
 import { logger } from "../../lib/logger";
+import { userActiveTasksKey } from "./agent-dashboard";
 import {
   AgentType,
   AgentStreamEvent,
@@ -120,6 +121,8 @@ export function subscribeTaskEvents(
 export async function enqueueAgentTask(
   data: AgentTaskData,
 ): Promise<Job<AgentTaskData, AgentTaskResult>> {
+  await redisClient.sadd(userActiveTasksKey(data.userId), data.taskId);
+
   const job = await agentTaskQueue.add("agent-chat", data, {
     jobId: data.taskId,
   });
@@ -209,6 +212,9 @@ export function createAgentTaskWorker(
       { taskId: job.data.taskId, jobId: job.id },
       "Agent task completed",
     );
+    redisClient
+      .srem(userActiveTasksKey(job.data.userId), job.data.taskId)
+      .catch(() => {});
   });
 
   worker.on("failed", (job, err) => {
@@ -216,6 +222,11 @@ export function createAgentTaskWorker(
       { taskId: job?.data.taskId, jobId: job?.id, error: err.message },
       "Agent task failed",
     );
+    if (job) {
+      redisClient
+        .srem(userActiveTasksKey(job.data.userId), job.data.taskId)
+        .catch(() => {});
+    }
   });
 
   return worker;

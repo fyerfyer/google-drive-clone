@@ -9,6 +9,7 @@ import {
   IconHistory,
   IconArrowLeft,
   IconPlus,
+  IconActivity,
 } from "@tabler/icons-react";
 import { useAgentStore } from "@/stores/useAgentStore";
 import {
@@ -24,6 +25,7 @@ import { AgentConversationList } from "./AgentConversationList";
 import { TaskPlanDisplay } from "./TaskPlanDisplay";
 import { ApprovalList } from "./ApprovalCard";
 import { StreamingResponse } from "./StreamingResponse";
+import { AgentDashboard } from "./AgentDashboard";
 import { cn } from "@/lib/utils";
 
 interface DriveAgentPanelProps {
@@ -89,6 +91,7 @@ export function DriveAgentPanel({
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const [showHistory, setShowHistory] = useState(false);
+  const [showDashboard, setShowDashboard] = useState(false);
   const [panelWidth, setPanelWidth] = useState(DEFAULT_WIDTH);
   const isResizingRef = useRef(false);
   const resizeStartRef = useRef({ x: 0, width: 0 });
@@ -205,6 +208,16 @@ export function DriveAgentPanel({
             </button>
             <span className="text-xs font-semibold">Conversations</span>
           </>
+        ) : showDashboard ? (
+          <>
+            <button
+              onClick={() => setShowDashboard(false)}
+              className="rounded-md p-1 hover:bg-muted transition-colors"
+            >
+              <IconArrowLeft className="size-3.5" />
+            </button>
+            <span className="text-xs font-semibold">Dashboard</span>
+          </>
         ) : (
           <>
             <div className="flex size-7 items-center justify-center rounded-lg bg-blue-500/10 text-blue-500">
@@ -219,7 +232,7 @@ export function DriveAgentPanel({
           </>
         )}
         <div className="flex items-center gap-0.5 ml-auto">
-          {!showHistory && (
+          {!showHistory && !showDashboard && (
             <>
               <button
                 onClick={() => newConversation()}
@@ -227,6 +240,13 @@ export function DriveAgentPanel({
                 title="New conversation"
               >
                 <IconPlus className="size-3.5" />
+              </button>
+              <button
+                onClick={() => setShowDashboard(true)}
+                className="rounded-md p-1 hover:bg-muted transition-colors"
+                title="Dashboard"
+              >
+                <IconActivity className="size-3.5" />
               </button>
               <button
                 onClick={() => setShowHistory(true)}
@@ -248,7 +268,9 @@ export function DriveAgentPanel({
 
       {/* Body */}
       <div className="flex-1 overflow-y-auto">
-        {showHistory ? (
+        {showDashboard ? (
+          <AgentDashboard />
+        ) : showHistory ? (
           <div className="p-2">
             <AgentConversationList
               conversations={conversations || []}
@@ -333,7 +355,7 @@ export function DriveAgentPanel({
       </div>
 
       {/* Input */}
-      {!showHistory && (
+      {!showHistory && !showDashboard && (
         <AgentInput
           onSend={(msg) => sendMessage(msg, "drive")}
           isLoading={isLoading}

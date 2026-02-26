@@ -29,6 +29,10 @@ export function createAgentRouter(agentController: AgentController): Router {
     "/tasks/:taskId/stream",
     agentController.streamTaskEvents.bind(agentController),
   );
+  router.get(
+    "/tasks/:taskId/traces",
+    agentController.getTaskTraces.bind(agentController),
+  );
 
   router.get(
     "/conversations",
@@ -41,6 +45,23 @@ export function createAgentRouter(agentController: AgentController): Router {
   router.delete(
     "/conversations/:conversationId",
     agentController.deleteConversation.bind(agentController),
+  );
+
+  router.get(
+    "/dashboard/active-chats",
+    agentController.getActiveChats.bind(agentController),
+  );
+  router.get(
+    "/dashboard/token-usage",
+    agentController.getTokenUsage.bind(agentController),
+  );
+  router.get(
+    "/dashboard/token-budget",
+    agentController.getTokenBudget.bind(agentController),
+  );
+  router.put(
+    "/dashboard/token-budget",
+    agentController.updateTokenBudget.bind(agentController),
   );
 
   return router;

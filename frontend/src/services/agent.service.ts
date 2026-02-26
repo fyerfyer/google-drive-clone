@@ -8,6 +8,10 @@ import type {
   ConversationDetail,
   ConversationSummary,
   PendingApproval,
+  ActiveChat,
+  TokenUsage,
+  UserTokenBudget,
+  TraceEntry,
 } from "@/types/agent.types";
 
 export interface AgentChatRequest {
@@ -21,24 +25,14 @@ export interface AgentChatRequest {
 }
 
 export const agentService = {
-  /** Check if Agent is configured and available */
   getStatus: () => api.get<AgentStatus>("/api/agent/status"),
 
-  /**
-   * Submit a chat message to the BullMQ async task queue.
-   * Returns a taskId that can be used with streamTaskEvents.
-   */
   chatAsync: (request: AgentChatRequest) =>
     api.post<{ taskId: string }, AgentChatRequest>("/api/agent/chat", request),
 
-  /** Get the status of an async task */
   getTaskStatus: (taskId: string) =>
     api.get<AgentTaskStatusResponse>(`/api/agent/tasks/${taskId}`),
 
-  /**
-   * Subscribe to real-time SSE events for an async task via Redis Pub/Sub.
-   * This is the counterpart to chatAsync — call it right after queueing the task.
-   */
   streamTaskEvents: async (
     taskId: string,
     onEvent: (event: AgentStreamEvent) => void,
@@ -85,25 +79,20 @@ export const agentService = {
     }
   },
 
-  /** List all conversations */
   listConversations: () =>
     api.get<{ conversations: ConversationSummary[] }>(
       "/api/agent/conversations",
     ),
 
-  /** Get a specific conversation with full history */
   getConversation: (conversationId: string) =>
     api.get<ConversationDetail>(`/api/agent/conversations/${conversationId}`),
 
-  /** Delete a conversation */
   deleteConversation: (conversationId: string) =>
     api.delete(`/api/agent/conversations/${conversationId}`),
 
-  /** Get pending approvals */
   getPendingApprovals: () =>
     api.get<{ approvals: PendingApproval[] }>("/api/agent/approvals"),
 
-  /** Resolve an approval (approve or reject), optionally with modified args */
   resolveApproval: (
     approvalId: string,
     approved: boolean,
@@ -116,4 +105,24 @@ export const agentService = {
       approved,
       ...(modifiedArgs ? { modifiedArgs } : {}),
     }),
+
+  getActiveChats: () =>
+    api.get<{ chats: ActiveChat[] }>("/api/agent/dashboard/active-chats"),
+
+  getTokenUsage: (taskId?: string) =>
+    api.get<{ daily: TokenUsage; task?: TokenUsage }>(
+      `/api/agent/dashboard/token-usage${taskId ? `?taskId=${taskId}` : ""}`,
+    ),
+
+  getTokenBudget: () =>
+    api.get<{ budget: UserTokenBudget }>("/api/agent/dashboard/token-budget"),
+
+  updateTokenBudget: (budget: Partial<UserTokenBudget>) =>
+    api.put<{ budget: UserTokenBudget }, Partial<UserTokenBudget>>(
+      "/api/agent/dashboard/token-budget",
+      budget,
+    ),
+
+  getTaskTraces: (taskId: string) =>
+    api.get<{ traces: TraceEntry[] }>(`/api/agent/tasks/${taskId}/traces`),
 };

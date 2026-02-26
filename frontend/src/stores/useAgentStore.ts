@@ -8,6 +8,8 @@ import type {
   RouteDecision,
   PendingApproval,
   ToolCall,
+  TraceEntry,
+  ParallelBatch,
 } from "@/types/agent.types";
 import { TASK_STATUS } from "@/types/agent.types";
 
@@ -24,6 +26,7 @@ interface AgentState {
 
   // Current conversation
   conversationId: string | null;
+  currentTaskId: string | null;
   messages: AgentMessage[];
   agentType: AgentType;
 
@@ -51,6 +54,18 @@ interface AgentState {
   /** Error that occurred during streaming */
   streamingError: string | null;
 
+  // Token usage tracking
+  taskTokens: number;
+  tokenWarning: boolean;
+  tokenExceeded: boolean;
+  tokenExceededReason: string | null;
+
+  // Trace entries for current task
+  traceEntries: TraceEntry[];
+
+  // Parallel batch tracking for DAG visualization
+  parallelBatches: ParallelBatch[];
+
   // Actions
   open: () => void;
   close: () => void;
@@ -60,6 +75,7 @@ interface AgentState {
   setMessages: (messages: AgentMessage[]) => void;
   clearMessages: () => void;
   setLoading: (loading: boolean) => void;
+  setCurrentTaskId: (taskId: string | null) => void;
   newConversation: () => void;
   setAgentType: (type: AgentType) => void;
   setContext: (ctx: AgentContext) => void;
@@ -84,10 +100,13 @@ interface AgentState {
   setStreamingError: (error: string | null) => void;
   clearStreamingState: () => void;
 
-  /**
-   * Finalize streaming: convert streaming state into a proper assistant message
-   * and clear streaming buffers
-   */
+  // Token & trace actions
+  setTaskTokens: (tokens: number) => void;
+  setTokenWarning: (warning: boolean) => void;
+  setTokenExceeded: (exceeded: boolean, reason?: string) => void;
+  addTraceEntry: (entry: TraceEntry) => void;
+  clearTraceEntries: () => void;
+  addParallelBatch: (batch: ParallelBatch) => void;
   finalizeStreaming: (finalMessage?: AgentMessage) => void;
 }
 
@@ -96,6 +115,7 @@ export const useAgentStore = create<AgentState>()(
     (set, get) => ({
       isOpen: false,
       conversationId: null,
+      currentTaskId: null,
       messages: [],
       agentType: "drive",
       context: {},
@@ -110,6 +130,14 @@ export const useAgentStore = create<AgentState>()(
       streamingToolCalls: [],
       streamingStepId: null,
       streamingError: null,
+
+      // Token & trace defaults
+      taskTokens: 0,
+      tokenWarning: false,
+      tokenExceeded: false,
+      tokenExceededReason: null,
+      traceEntries: [],
+      parallelBatches: [],
 
       open: () => set({ isOpen: true }),
       close: () => set({ isOpen: false }),
@@ -127,19 +155,28 @@ export const useAgentStore = create<AgentState>()(
           routeDecision: null,
         }),
       setLoading: (loading) => set({ isLoading: loading }),
+      setCurrentTaskId: (taskId) => set({ currentTaskId: taskId }),
       newConversation: () =>
         set({
           conversationId: null,
+          currentTaskId: null,
           messages: [],
           taskPlan: null,
           routeDecision: null,
           pendingApprovals: [],
           agentType: "drive",
+          isLoading: false,
           isStreaming: false,
           streamingContent: "",
           streamingToolCalls: [],
           streamingStepId: null,
           streamingError: null,
+          taskTokens: 0,
+          tokenWarning: false,
+          tokenExceeded: false,
+          tokenExceededReason: null,
+          traceEntries: [],
+          parallelBatches: [],
         }),
 
       setAgentType: (type) => set({ agentType: type }),
@@ -217,7 +254,24 @@ export const useAgentStore = create<AgentState>()(
           streamingToolCalls: [],
           streamingStepId: null,
           streamingError: null,
+          taskTokens: 0,
+          tokenWarning: false,
+          tokenExceeded: false,
+          tokenExceededReason: null,
+          traceEntries: [],
+          parallelBatches: [],
         }),
+
+      // Token & trace actions
+      setTaskTokens: (tokens) => set({ taskTokens: tokens }),
+      setTokenWarning: (warning) => set({ tokenWarning: warning }),
+      setTokenExceeded: (exceeded, reason) =>
+        set({ tokenExceeded: exceeded, tokenExceededReason: reason ?? null }),
+      addTraceEntry: (entry) =>
+        set((s) => ({ traceEntries: [...s.traceEntries, entry] })),
+      clearTraceEntries: () => set({ traceEntries: [] }),
+      addParallelBatch: (batch) =>
+        set((s) => ({ parallelBatches: [...s.parallelBatches, batch] })),
 
       finalizeStreaming: (finalMessage) => {
         const state = get();
