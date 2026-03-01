@@ -13,7 +13,7 @@ export function registerWorkspaceResources(
     {
       title: "Drive Configuration",
       description:
-        "Google Drive Clone configuration and capability information",
+        "Mind Drive configuration and capability information",
       mimeType: "application/json",
     },
     async (uri) => ({
@@ -23,7 +23,7 @@ export function registerWorkspaceResources(
           mimeType: "application/json",
           text: JSON.stringify(
             {
-              name: "Google Drive Clone",
+              name: "Mind Drive",
               version: "1.0.0",
               capabilities: {
                 atomic: [

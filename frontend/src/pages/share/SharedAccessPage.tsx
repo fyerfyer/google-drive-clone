@@ -1,6 +1,8 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { shareService } from "@/services/share.service";
+import { queryKeys, getSpecialViewQueryKey } from "@/lib/queryClient";
+import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
@@ -19,7 +21,7 @@ import {
   Save,
   Lock,
 } from "lucide-react";
-import GoogleDriveIcon from "@/assets/GoogleDriveIcon.svg";
+import MindDriveIcon from "@/assets/MindDriveIcon.svg";
 import { triggerDownload } from "@/lib/download";
 import { toast } from "sonner";
 import { Worker, Viewer } from "@react-pdf-viewer/core";
@@ -101,6 +103,7 @@ const SharedAccessPage = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { isAuthenticated } = useAuth(); // Assuming useAuth returns isAuthenticated
+  const queryClient = useQueryClient();
 
   // Resource info
   const [resource, setResource] = useState<SharedResource | null>(null);
@@ -309,7 +312,6 @@ const SharedAccessPage = () => {
     setShowFolderPicker(true);
   };
 
-  // Handle folder selection for Save to Drive
   const handleSaveLocationSelected = async (targetFolderId: string) => {
     if (!token || !resource) return;
 
@@ -324,6 +326,24 @@ const SharedAccessPage = () => {
         },
       );
       toast.success(`Saved "${resource.name}" to your Drive`);
+
+      // Invalidate the exact target folder
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.folders.content(targetFolderId),
+      });
+      // Invalidate root in case they navigate straight to Dashboard/My Drive
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.folders.content("root"),
+      });
+      // Invalidate the special 'files' view
+      queryClient.invalidateQueries({
+        queryKey: getSpecialViewQueryKey("files"),
+      });
+      // Aggressively invalidate all folders to prevent stale navigation maps
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.folders.all,
+      });
+
       setShowFolderPicker(false);
     } catch (err) {
       toast.error(
@@ -421,11 +441,7 @@ const SharedAccessPage = () => {
         <Card className="max-w-md w-full">
           <CardHeader className="text-center">
             <div className="flex justify-center mb-4">
-              <img
-                src={GoogleDriveIcon}
-                alt="Google Drive"
-                className="w-12 h-12"
-              />
+              <img src={MindDriveIcon} alt="Mind Drive" className="w-12 h-12" />
             </div>
             <CardTitle>Unable to Access</CardTitle>
           </CardHeader>
@@ -538,11 +554,7 @@ const SharedAccessPage = () => {
               <Button variant="ghost" size="icon" onClick={handleBackToLanding}>
                 <ArrowLeft className="h-5 w-5" />
               </Button>
-              <img
-                src={GoogleDriveIcon}
-                alt="Google Drive"
-                className="w-8 h-8"
-              />
+              <img src={MindDriveIcon} alt="Mind Drive" className="w-8 h-8" />
               <h1 className="text-xl font-semibold">Shared Folder</h1>
             </div>
 
@@ -553,7 +565,11 @@ const SharedAccessPage = () => {
               {isAuthenticated ? (
                 <Save className="mr-2 h-4 w-4" />
               ) : (
-                <img src={GoogleDriveIcon} alt="G" className="mr-2 h-4 w-4" />
+                <img
+                  src={MindDriveIcon}
+                  alt="Mind Drive"
+                  className="mr-2 h-4 w-4"
+                />
               )}
               {isAuthenticated ? "Save to Drive" : "Sign in to Save"}
             </Button>
@@ -651,11 +667,7 @@ const SharedAccessPage = () => {
               <Button variant="ghost" size="icon" onClick={handleBackToLanding}>
                 <ArrowLeft className="h-5 w-5" />
               </Button>
-              <img
-                src={GoogleDriveIcon}
-                alt="Google Drive"
-                className="w-8 h-8"
-              />
+              <img src={MindDriveIcon} alt="Mind Drive" className="w-8 h-8" />
               <div>
                 <h1 className="text-xl font-semibold">
                   {previewFile?.name || resource.name}
@@ -675,7 +687,11 @@ const SharedAccessPage = () => {
                 {isAuthenticated ? (
                   <Save className="mr-2 h-4 w-4" />
                 ) : (
-                  <img src={GoogleDriveIcon} alt="G" className="mr-2 h-4 w-4" />
+                  <img
+                    src={MindDriveIcon}
+                    alt="Mind Drive"
+                    className="mr-2 h-4 w-4"
+                  />
                 )}
                 {isAuthenticated ? "Save" : "Sign in to Save"}
               </Button>
@@ -711,11 +727,7 @@ const SharedAccessPage = () => {
       <Card className="max-w-lg w-full">
         <CardHeader className="text-center">
           <div className="flex justify-center mb-4">
-            <img
-              src={GoogleDriveIcon}
-              alt="Google Drive"
-              className="w-12 h-12"
-            />
+            <img src={MindDriveIcon} alt="Mind Drive" className="w-12 h-12" />
           </div>
           <CardTitle className="text-xl">
             Shared {resource.resourceType}

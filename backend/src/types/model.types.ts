@@ -29,6 +29,9 @@ export const NOTIFICATION_TYPES = {
   ACCESS_REVOKED: "ACCESS_REVOKED",
   STORAGE_WARNING: "STORAGE_WARNING",
   SYSTEM_ANNOUNCEMENT: "SYSTEM_ANNOUNCEMENT",
+  AGENT_TASK_COMPLETE: "AGENT_TASK_COMPLETE",
+  FILE_UPLOAD_COMPLETE: "FILE_UPLOAD_COMPLETE",
+  STORAGE_QUOTA_WARNING: "STORAGE_QUOTA_WARNING",
 } as const;
 
 export type NotificationType =
@@ -47,6 +50,7 @@ export const QUEUE_TASKS = {
   SEND_SHARE: "send-share-notification",
   CLEANUP_TRASH: "cleanup-trash",
   CLEANUP_TEMP_FILES: "cleanup-temp-files",
+  CLEANUP_STALE_MULTIPARTS: "cleanup-stale-multiparts",
   AGENT_CHAT: "agent-chat",
 } as const;
 

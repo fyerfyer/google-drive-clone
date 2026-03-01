@@ -261,6 +261,41 @@ export const fileService = {
   },
 
   /**
+   * Check if a file with the given hash already exists (秒传 / instant upload dedup).
+   * If it exists, the backend creates a new DB record pointing to the same MinIO key
+   * and returns the new file record so the client can skip the actual upload.
+   */
+  async checkFileByHash(params: {
+    hash: string;
+    folderId: string;
+    originalName: string;
+    mimeType: string;
+    size: number;
+  }): Promise<{ exists: boolean; file?: IFile }> {
+    const query = new URLSearchParams({
+      hash: params.hash,
+      folderId: params.folderId,
+      originalName: params.originalName,
+      mimeType: params.mimeType,
+      size: String(params.size),
+    });
+
+    const response = await api.get<{ exists: boolean; file?: IFile }>(
+      `${FILE_API_BASE}/check?${query.toString()}`,
+    );
+
+    if (!response.success || response.data === undefined) {
+      throw new Error(response.message || "Failed to check file hash");
+    }
+
+    const result = response.data;
+    return {
+      exists: result.exists,
+      file: result.file ? normalizeFile(result.file) : undefined,
+    };
+  },
+
+  /**
    * Create a blank file directly in the drive
    */
   async createBlankFile(data: {

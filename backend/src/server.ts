@@ -34,6 +34,14 @@ const startServer = async () => {
     initSocket(httpServer);
     logger.info("WebSocket initialized for document editing & agent approvals");
 
+    // 初始化通知 BullMQ Worker
+    try {
+      await import("./lib/queue/notification.worker");
+      logger.info("Notification worker initialized");
+    } catch (e) {
+      logger.warn({ err: e }, "Failed to initialize notification worker");
+    }
+
     // 初始化 Agent BullMQ Worker
     try {
       initAgentWorker();

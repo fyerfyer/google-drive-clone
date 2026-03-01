@@ -81,5 +81,11 @@ export function createFolderRouter(
     folderController.getFolderPath.bind(folderController),
   );
 
+  router.get(
+    "/:folderId/download",
+    requireAccess(permissionService, "viewer", { resourceType: "Folder" }),
+    folderController.downloadFolder.bind(folderController),
+  );
+
   return router;
 }

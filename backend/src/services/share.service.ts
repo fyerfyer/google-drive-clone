@@ -348,14 +348,29 @@ export class ShareService {
     await Promise.all(sharePromises);
 
     if (notifyUsers) {
+      const notificationType =
+        resourceType === "Folder"
+          ? NOTIFICATION_TYPES.FOLDER_SHARED
+          : NOTIFICATION_TYPES.FILE_SHARED;
+
       users.forEach((user) => {
         notificationQueue.add(QUEUE_TASKS.SEND_SHARE, {
           recipientId: user._id.toString(),
           senderId: actorId,
-          type: NOTIFICATION_TYPES.FILE_SHARED,
-          resourceType,
-          resourceId,
-          resourceName: resourceName || "Resource",
+          type: notificationType,
+          data: {
+            title:
+              resourceType === "Folder"
+                ? "Folder shared with you"
+                : "File shared with you",
+            body: `You received ${resourceType.toLowerCase()} "${resourceName || "Resource"}" with ${role} access.`,
+            actionUrl: "/files?view=shared",
+            resourceId,
+            resourceType,
+            resourceName: resourceName || "Resource",
+            role,
+            items: [{ resourceId, kind: resourceType }],
+          },
         });
       });
     }
@@ -613,6 +628,7 @@ export class ShareService {
 
     // 组装结果
     const validItems: SharedWithMeItem[] = [];
+    const staleAccessIds: string[] = [];
     for (const item of sharedItems) {
       const resourceIdStr = item.resource.toString();
       const sharedByIdStr = item.sharedBy.toString();
@@ -648,7 +664,10 @@ export class ShareService {
         }
       }
 
-      if (!resource) continue;
+      if (!resource || resource.isTrashed) {
+        staleAccessIds.push(item._id.toString());
+        continue;
+      }
 
       const sharedByUser = userMap.get(sharedByIdStr);
       if (!sharedByUser) continue;
@@ -668,7 +687,13 @@ export class ShareService {
       });
     }
 
-    return { items: validItems, total };
+    let adjustedTotal = total;
+    if (staleAccessIds.length > 0) {
+      await SharedAccess.deleteMany({ _id: { $in: staleAccessIds } });
+      adjustedTotal = Math.max(total - staleAccessIds.length, 0);
+    }
+
+    return { items: validItems, total: adjustedTotal };
   }
 
   async getResourceByShareToken(

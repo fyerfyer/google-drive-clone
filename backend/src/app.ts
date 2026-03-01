@@ -36,6 +36,9 @@ import { ApiKeyController } from "./controllers/apikey.controller";
 import { createApiKeyRouter } from "./routes/apikey.route";
 import { createMcpServer } from "./mcp";
 import { KnowledgeService } from "./services/knowledge.service";
+import { NotificationService } from "./services/notification.service";
+import { NotificationController } from "./controllers/notification.controller";
+import { createNotificationRouter } from "./routes/notification.route";
 
 const userService = new UserService();
 const authService = new AuthService(userService);
@@ -124,6 +127,10 @@ app.use("/api/share", createShareRouter(shareController));
 const apiKeyService = new ApiKeyService();
 const apiKeyController = new ApiKeyController(apiKeyService);
 app.use("/api/apikeys", createApiKeyRouter(apiKeyController));
+
+const notificationService = new NotificationService();
+const notificationController = new NotificationController(notificationService);
+app.use("/api/notifications", createNotificationRouter(notificationController));
 
 // MCP Server
 const knowledgeService = new KnowledgeService();

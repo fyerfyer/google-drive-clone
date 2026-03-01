@@ -2,23 +2,17 @@ import { AccessRole, ResourceType, ResourceItem } from "../types/model.types";
 import File from "../models/File.model";
 import Folder from "../models/Folder.model";
 import { SharedAccess } from "../models/SharedAccess.model";
-import {
-  ShareLink,
-  IShareLink,
-  IShareLinkPolicy,
-} from "../models/ShareLink.model";
+import { ShareLink, IShareLinkPolicy } from "../models/ShareLink.model";
 import mongoose from "mongoose";
 import {
   PermissionSet,
   PermissionSource,
-  PermissionSourceType,
   CheckPermissionRequest,
   GetEffectivePermissionsRequest,
   ResolvedShareLink,
 } from "../types/share.types";
 import bcrypt from "bcryptjs";
 
-// Lean document types for MongoDB queries
 type LeanShareLink = {
   _id: mongoose.Types.ObjectId;
   resourceId: mongoose.Types.ObjectId;

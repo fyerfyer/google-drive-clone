@@ -3,10 +3,12 @@ import { useNavigate } from "react-router-dom";
 import { useSharedWithMe } from "@/hooks/queries/useShareQueries";
 import { useShareDialogStore } from "@/stores/useShareDialogStore";
 import { useFolderUIStore } from "@/stores/useFolderUIStore";
+import { shareService } from "@/services/share.service";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { FolderPicker } from "@/components/files/FolderPicker";
 import {
   Select,
   SelectContent,
@@ -29,6 +31,7 @@ import {
   ChevronRight,
   Share2,
   MoreHorizontal,
+  Save,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -40,6 +43,9 @@ import type { ResourceType, SharedWithMeItem } from "@/types/share.types";
 import { formatDistanceToNow } from "date-fns";
 import { FilePreviewModal } from "@/components/folder/FilePreviewModal";
 import type { IFile } from "@/types/file.types";
+import { toast } from "sonner";
+
+import { useQueryClient } from "@tanstack/react-query";
 
 const getInitials = (name: string) => {
   return name
@@ -64,8 +70,14 @@ export const SharedWithMeView = () => {
     ResourceType | "all"
   >("all");
   const [previewFile, setPreviewFile] = useState<IFile | null>(null);
+  const [shortcutTarget, setShortcutTarget] = useState<SharedWithMeItem | null>(
+    null,
+  );
+  const [savePickerOpen, setSavePickerOpen] = useState(false);
+  const [isSavingShortcut, setIsSavingShortcut] = useState(false);
   const limit = 20;
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   const { openShareDialog } = useShareDialogStore();
   const setCurrentFolderId = useFolderUIStore(
@@ -121,6 +133,48 @@ export const SharedWithMeView = () => {
 
   const handleManageAccess = (item: SharedWithMeItem) => {
     openShareDialog(item.resource._id, item.resourceType, item.resource.name);
+  };
+
+  const handleOpenSaveShortcut = (item: SharedWithMeItem) => {
+    setShortcutTarget(item);
+    setSavePickerOpen(true);
+  };
+
+  const handleSaveShortcut = async (targetFolderId: string) => {
+    if (!shortcutTarget) return;
+
+    try {
+      setIsSavingShortcut(true);
+      await shareService.saveDirectSharedResource(
+        shortcutTarget.resource._id,
+        shortcutTarget.resourceType,
+        { targetFolderId },
+      );
+      toast.success("Shortcut saved to your Drive");
+
+      // Invalidate caches so the UI refreshes when returning to Drive
+      queryClient.invalidateQueries({
+        queryKey: ["folders", "content", targetFolderId],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["folders", "content", "root"],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["special-view", "files"],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["folders"],
+      });
+
+      setSavePickerOpen(false);
+      setShortcutTarget(null);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to save shortcut";
+      toast.error(message);
+    } finally {
+      setIsSavingShortcut(false);
+    }
   };
 
   if (error) {
@@ -242,6 +296,15 @@ export const SharedWithMeView = () => {
                         <DropdownMenuItem
                           onClick={(e) => {
                             e.stopPropagation();
+                            handleOpenSaveShortcut(item);
+                          }}
+                        >
+                          <Save className="mr-2 h-4 w-4" />
+                          Save to My Drive
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={(e) => {
+                            e.stopPropagation();
                             handleManageAccess(item);
                           }}
                         >
@@ -301,6 +364,25 @@ export const SharedWithMeView = () => {
         isOpen={!!previewFile}
         onClose={() => setPreviewFile(null)}
         file={previewFile}
+      />
+
+      <FolderPicker
+        open={savePickerOpen}
+        onOpenChange={(open) => {
+          setSavePickerOpen(open);
+          if (!open) {
+            setShortcutTarget(null);
+          }
+        }}
+        onSelect={handleSaveShortcut}
+        title="Save Shortcut"
+        description={
+          shortcutTarget
+            ? `Choose where to save shortcut for "${shortcutTarget.resource.name}"`
+            : "Choose where to save this shared resource"
+        }
+        actionLabel="Save Shortcut"
+        isLoading={isSavingShortcut}
       />
     </div>
   );

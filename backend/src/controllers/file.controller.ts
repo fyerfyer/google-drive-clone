@@ -455,4 +455,30 @@ export class FileController {
     const files = await this.fileService.getAllUserFiles(userId);
     return ResponseHelper.ok(res, files);
   }
+
+  //  如果相同 hash 的文件已存在，直接复用 MinIO key 创建新记录
+  async checkFileByHash(req: Request, res: Response, next: NextFunction) {
+    if (!req.user) {
+      throw new AppError(StatusCodes.UNAUTHORIZED, "User not authenticated");
+    }
+
+    const { hash, folderId, originalName, mimeType, size } = req.query;
+    if (!hash || !folderId || !originalName || !mimeType || !size) {
+      throw new AppError(
+        StatusCodes.BAD_REQUEST,
+        "Missing required query parameters: hash, folderId, originalName, mimeType, size",
+      );
+    }
+
+    const result = await this.fileService.checkFileByHash({
+      userId: req.user.id,
+      hash: hash as string,
+      folderId: folderId as string,
+      originalName: originalName as string,
+      mimeType: mimeType as string,
+      size: parseInt(size as string, 10),
+    });
+
+    return ResponseHelper.ok(res, result);
+  }
 }

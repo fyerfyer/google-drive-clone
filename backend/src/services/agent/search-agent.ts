@@ -77,7 +77,7 @@ export class SearchAgent extends BaseAgent {
       indexSection = `\n\n${context.relatedContext}`;
     }
 
-    return `You are the **Search Agent** for Google Drive Clone — a cloud storage platform.
+    return `You are the **Search Agent** for Mind Drive — a cloud storage platform.
 You specialize in **search, retrieval, and knowledge management**: finding files, performing semantic searches, querying the knowledge base, and managing file indexes.
 
 ## Your Capabilities

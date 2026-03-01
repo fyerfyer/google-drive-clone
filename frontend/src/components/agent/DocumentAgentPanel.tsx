@@ -81,6 +81,7 @@ export function DocumentAgentPanel({
     streamingToolCalls,
     isLoading: storeLoading,
     setContext,
+    setDocumentPanelOpen,
   } = useAgentStore();
 
   const { messages, isLoading, conversationId, sendMessage, newConversation } =
@@ -107,6 +108,13 @@ export function DocumentAgentPanel({
       setContext({ type: "document", fileId, fileName });
     }
   }, [isOpen, fileId, fileName, setContext]);
+
+  // Track document panel visibility for global approval modal
+  useEffect(() => {
+    if (!isOpen) return;
+    setDocumentPanelOpen(true);
+    return () => setDocumentPanelOpen(false);
+  }, [isOpen, setDocumentPanelOpen]);
 
   // Auto-scroll
   useEffect(() => {

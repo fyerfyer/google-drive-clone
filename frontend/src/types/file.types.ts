@@ -17,6 +17,8 @@ export interface IFile extends BaseItem {
   user: UserBasic;
   linkAccessStatus: LinkAccessStatus;
   trashedAt?: string;
+  isShared?: boolean;
+  sharedUsers?: UserBasic[];
 }
 
 export interface UploadFileProgress {

@@ -131,7 +131,7 @@ ${context.relatedContext.slice(0, 5000)}
 Use this context to write more informed, workspace-aware content when appropriate.`;
     }
 
-    return `You are the **Document Agent** for Google Drive Clone — a cloud storage platform.
+    return `You are the **Document Agent** for Mind Drive — a cloud storage platform.
 You specialize in **document editing**: reading, writing, and modifying the CURRENT document with intelligence and precision.
 
 ## Your Capabilities

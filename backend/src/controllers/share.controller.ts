@@ -475,4 +475,30 @@ export class ShareController {
       shortcut: result,
     });
   }
+
+  // 保存 Share 快捷方式到自己的 Drive
+  async saveDirectSharedResource(req: Request, res: Response) {
+    if (!req.user) {
+      throw new AppError(
+        StatusCodes.UNAUTHORIZED,
+        "Login required to save shared resource",
+      );
+    }
+
+    const resourceType = this.normalizeResourceType(req.params.resourceType);
+    const resourceId = extractParam(req.params.resourceId);
+    const { targetFolderId } = req.body;
+
+    const result = await this.shareService.saveSharedResource({
+      userId: req.user.id,
+      resourceId,
+      resourceType,
+      targetFolderId: targetFolderId || "root",
+    });
+
+    return ResponseHelper.created(res, {
+      message: "Resource saved successfully",
+      shortcut: result,
+    });
+  }
 }

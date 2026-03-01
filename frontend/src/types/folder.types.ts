@@ -14,6 +14,8 @@ export interface Folder extends BaseItem {
   description?: string;
   linkAccessStatus: LinkAccessStatus;
   trashedAt?: string;
+  isShared?: boolean;
+  sharedUsers?: UserBasic[];
 }
 
 export interface BreadcrumbItem {

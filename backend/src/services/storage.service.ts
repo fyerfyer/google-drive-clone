@@ -6,6 +6,7 @@ import {
   DeleteObjectCommand,
   GetObjectCommand,
   HeadObjectCommand,
+  ListMultipartUploadsCommand,
   ListPartsCommand,
   PutObjectCommand,
   UploadPartCommand,
@@ -225,5 +226,47 @@ export class StorageService {
     });
 
     return await s3Client.send(command);
+  }
+
+  // 列出所有未完成的分片上传
+  // 用于 cron job 清理过期的分片上传
+  static async listMultipartUploads(
+    bucketName: BucketsType,
+  ): Promise<
+    Array<{ Key: string; UploadId: string; Initiated: Date | undefined }>
+  > {
+    const uploads: Array<{
+      Key: string;
+      UploadId: string;
+      Initiated: Date | undefined;
+    }> = [];
+    let isTruncated = true;
+    let keyMarker: string | undefined;
+    let uploadIdMarker: string | undefined;
+
+    while (isTruncated) {
+      const command = new ListMultipartUploadsCommand({
+        Bucket: bucketName,
+        KeyMarker: keyMarker,
+        UploadIdMarker: uploadIdMarker,
+      });
+      const result = await s3Client.send(command);
+
+      if (result.Uploads) {
+        uploads.push(
+          ...result.Uploads.map((u) => ({
+            Key: u.Key ?? "",
+            UploadId: u.UploadId ?? "",
+            Initiated: u.Initiated,
+          })),
+        );
+      }
+
+      isTruncated = result.IsTruncated ?? false;
+      keyMarker = result.NextKeyMarker;
+      uploadIdMarker = result.NextUploadIdMarker;
+    }
+
+    return uploads;
   }
 }

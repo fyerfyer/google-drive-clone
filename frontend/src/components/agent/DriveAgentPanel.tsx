@@ -79,6 +79,7 @@ export function DriveAgentPanel({
     streamingToolCalls,
     isLoading: storeLoading,
     setContext,
+    setDrivePanelOpen,
   } = useAgentStore();
 
   const { messages, isLoading, conversationId, sendMessage, newConversation } =
@@ -106,6 +107,13 @@ export function DriveAgentPanel({
       });
     }
   }, [isOpen, folderId, folderName, setContext]);
+
+  // Track drive panel visibility for global approval modal
+  useEffect(() => {
+    if (!isOpen) return;
+    setDrivePanelOpen(true);
+    return () => setDrivePanelOpen(false);
+  }, [isOpen, setDrivePanelOpen]);
 
   // Auto-scroll
   useEffect(() => {

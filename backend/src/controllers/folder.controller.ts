@@ -207,4 +207,18 @@ export class FolderController {
     );
     return ResponseHelper.ok(res, { breadcrumbs });
   }
+
+  async downloadFolder(req: Request, res: Response, next: NextFunction) {
+    if (!req.user) {
+      throw new AppError(StatusCodes.UNAUTHORIZED, "User not authenticated");
+    }
+
+    const userId = req.user.id;
+    const folderId = extractParam(req.params.folderId);
+    if (!folderId) {
+      throw new AppError(StatusCodes.BAD_REQUEST, "Folder ID is required");
+    }
+
+    await this.folderService.downloadFolderAsZip(folderId, userId, res);
+  }
 }

@@ -453,7 +453,7 @@ function DAGStepNode({
                     {entry.type}
                     {entry.toolName && ` — ${entry.toolName}`}
                   </span>
-                  <p className="text-foreground whitespace-pre-wrap break-words leading-relaxed">
+                  <p className="text-foreground whitespace-pre-wrap wrap-break-word leading-relaxed">
                     {entry.content}
                   </p>
                 </div>
@@ -627,7 +627,7 @@ function TracesTab() {
                           {relativeTime(entry.timestamp)}
                         </span>
                       </div>
-                      <p className="text-xs text-foreground mt-0.5 whitespace-pre-wrap break-words">
+                      <p className="text-xs text-foreground mt-0.5 whitespace-pre-wrap wrap-break-word">
                         {entry.content}
                       </p>
                     </div>

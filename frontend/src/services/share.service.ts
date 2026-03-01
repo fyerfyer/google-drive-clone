@@ -203,6 +203,25 @@ export const shareService = {
   },
 
   /**
+   * 保存“直接分享”的资源到我的网盘（非 shareLink）
+   */
+  saveDirectSharedResource: async (
+    resourceId: string,
+    resourceType: ResourceType,
+    req: SaveSharedResourceRequest,
+  ): Promise<SaveSharedResourceResponse> => {
+    const response = await api.post<
+      SaveSharedResourceResponse,
+      SaveSharedResourceRequest
+    >(`${SHARE_API_BASE}/${resourceType}/${resourceId}/save`, req);
+
+    if (response.success && response.data) {
+      return response.data;
+    }
+    throw new Error(response.message || "Failed to save shared resource");
+  },
+
+  /**
    * 通过分享链接token获取共享资源信息（公开API，不需要认证）
    */
   getSharedResourceByToken: async (

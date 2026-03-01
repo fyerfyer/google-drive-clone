@@ -13,6 +13,12 @@ import { buildShortcutFileOverrides } from "../utils/shortcut.util";
 import jwt from "jsonwebtoken";
 import { config } from "../config/env";
 import { generateOnlyOfficeToken } from "../utils/jwt.util";
+import {
+  revokeSharedAccessAndNotify,
+  cascadeTrashShortcuts,
+  cascadeRestoreShortcuts,
+  cascadeDeleteShortcuts,
+} from "../utils/cascade.util";
 
 interface CreateFileRecordDTO {
   userId: string;
@@ -73,6 +79,8 @@ export interface IFilePublic {
   trashedAt?: Date;
   createdAt: Date;
   updatedAt: Date;
+  isShared?: boolean;
+  sharedUsers?: IUserBasic[];
 }
 
 export class FileService {
@@ -134,6 +142,8 @@ export class FileService {
       trashedAt: file.trashedAt,
       createdAt: file.createdAt,
       updatedAt: file.updatedAt,
+      ...(override?.isShared !== undefined && { isShared: override.isShared }),
+      ...(override?.sharedUsers && { sharedUsers: override.sharedUsers }),
     };
   }
 
@@ -357,10 +367,7 @@ export class FileService {
 
     const MAX_TEXT_SIZE = 10 * 1024 * 1024;
     if (targetFile.size > MAX_TEXT_SIZE) {
-      throw new AppError(
-        StatusCodes.BAD_REQUEST,
-        "File too large for text editing",
-      );
+      throw new AppError(StatusCodes.BAD_REQUEST, "Failed to record file view");
     }
 
     const stream = await StorageService.getObjectStream(
@@ -449,25 +456,65 @@ export class FileService {
   async trashFile(fileId: string, userId: string) {
     const fileObjectId = new mongoose.Types.ObjectId(fileId);
     const userObjectId = new mongoose.Types.ObjectId(userId);
-    const result = await File.updateOne(
-      {
-        _id: fileObjectId,
-        user: userObjectId,
-      },
-      {
-        isTrashed: true,
-        trashedAt: new Date(),
-      },
-    );
+    const file = await File.findOne({
+      _id: fileObjectId,
+      user: userObjectId,
+    }).select("name isTrashed folder ancestors");
 
-    if (result.matchedCount === 0) {
+    if (!file) {
       throw new AppError(StatusCodes.NOT_FOUND, "File not found");
     }
+
+    if (!file.isTrashed) {
+      const result = await File.updateOne(
+        {
+          _id: fileObjectId,
+          user: userObjectId,
+        },
+        {
+          isTrashed: true,
+          trashedAt: new Date(),
+        },
+      );
+
+      if (result.matchedCount === 0) {
+        throw new AppError(StatusCodes.NOT_FOUND, "File not found");
+      }
+    }
+
+    this.runAsyncCascadeTrash([fileObjectId], userId);
   }
 
   async restoreFile(fileId: string, userId: string) {
     const fileObjectId = new mongoose.Types.ObjectId(fileId);
     const userObjectId = new mongoose.Types.ObjectId(userId);
+
+    const file = await File.findOne({
+      _id: fileObjectId,
+      user: userObjectId,
+    });
+    if (!file) {
+      throw new AppError(StatusCodes.NOT_FOUND, "File not found");
+    }
+
+    // 如果文件在文件夹中，检查该文件夹是否也被 trashed
+    // 如果是，恢复到根目录以避免“僵尸”状态
+    let targetFolder: mongoose.Types.ObjectId | null = file.folder;
+    let targetAncestors: mongoose.Types.ObjectId[] = file.ancestors;
+
+    if (file.folder) {
+      const parentFolder = await Folder.findById(file.folder);
+      if (!parentFolder || parentFolder.isTrashed) {
+        // 父文件夹已删除或被 trashed：恢复到根目录
+        targetFolder = null;
+        targetAncestors = [];
+        logger.info(
+          { fileId, parentFolderId: file.folder.toString() },
+          "Restoring file to root because parent folder is trashed",
+        );
+      }
+    }
+
     const result = await File.updateOne(
       {
         _id: fileObjectId,
@@ -476,12 +523,17 @@ export class FileService {
       {
         isTrashed: false,
         trashedAt: null,
+        folder: targetFolder,
+        ancestors: targetAncestors,
       },
     );
 
     if (result.matchedCount === 0) {
       throw new AppError(StatusCodes.NOT_FOUND, "File not found");
     }
+
+    // 异步恢复指向该文件的快捷方式
+    this.runAsyncCascadeRestore([fileObjectId]);
   }
 
   async deleteFilePermanent(fileId: string, userId: string) {
@@ -492,7 +544,7 @@ export class FileService {
       _id: fileObjectId,
       user: userObjectId,
       isTrashed: true,
-    }).select("+key +hash size");
+    }).select("+key +hash name folder ancestors size");
 
     if (!fileToDelete) {
       throw new AppError(
@@ -522,6 +574,7 @@ export class FileService {
         { session },
       );
 
+      // 在这里 commit Tx，不阻塞之后的操作
       await session.commitTransaction();
     } catch (error) {
       logger.error(
@@ -536,6 +589,8 @@ export class FileService {
     } finally {
       await session.endSession();
     }
+
+    this.runAsyncCascadeDelete([fileObjectId], userId);
 
     // 在事务提交后清理MinIO对象
     await this.cleanupMinioObject(fileToDelete.key, fileToDelete.hash);
@@ -1243,5 +1298,141 @@ export class FileService {
 
     // 其他 status 直接返回成功
     return { error: 0 };
+  }
+
+  // 秒传检查：通过 hash 判断用户是否已有相同文件
+  // 如果存在，直接在 DB 创建新记录并指向已有 MinIO key，无需重新上传
+  async checkFileByHash(data: {
+    userId: string;
+    hash: string;
+    folderId: string;
+    originalName: string;
+    mimeType: string;
+    size: number;
+  }): Promise<{ exists: boolean; file?: IFilePublic }> {
+    const { userId, hash, folderId, originalName, mimeType, size } = data;
+    const userObjectId = new mongoose.Types.ObjectId(userId);
+
+    // 查找该用户或任何用户中具有相同 hash 的文件（共享 key 节省存储）
+    const existingFile = await File.findOne({
+      hash,
+      isTrashed: false,
+    }).select("+key +hash size mimeType originalName user");
+
+    if (!existingFile) {
+      return { exists: false };
+    }
+
+    // 找到后，创建新记录并指向已有 MinIO key，无需重新上传
+    const isRoot = folderId === "root";
+    const folderObjectId = isRoot
+      ? null
+      : new mongoose.Types.ObjectId(folderId);
+
+    let ancestors: mongoose.Types.ObjectId[] = [];
+    if (folderObjectId) {
+      const parentFolder = await Folder.findOne({
+        _id: folderObjectId,
+        user: userObjectId,
+      });
+      if (!parentFolder) {
+        throw new AppError(StatusCodes.NOT_FOUND, "Parent folder not found");
+      }
+      ancestors = [...parentFolder.ancestors, folderObjectId];
+    }
+
+    // 更新用户配额
+    const updateUser = await User.findOneAndUpdate(
+      {
+        _id: userObjectId,
+        $expr: {
+          $lte: [{ $add: ["$storageUsage", size] }, "$storageQuota"],
+        },
+      },
+      { $inc: { storageUsage: size } },
+      { new: true },
+    );
+
+    if (!updateUser) {
+      throw new AppError(
+        StatusCodes.BAD_REQUEST,
+        "Storage quota exceeded or user not found",
+      );
+    }
+
+    const ext = mimeTypes.extension(mimeType) || "";
+
+    const newFile = await File.create({
+      user: userObjectId,
+      folder: folderObjectId,
+      ancestors,
+      key: existingFile.key, // Reuse the same MinIO key
+      size,
+      mimeType,
+      originalName,
+      name: originalName,
+      extension: ext,
+      hash,
+      isStarred: false,
+      isTrashed: false,
+    });
+
+    const userBasic = await this.getUserBasic(userId);
+
+    logger.info(
+      { fileId: newFile.id, originalName, hash, userId },
+      "Instant upload (dedup) — reused existing MinIO key",
+    );
+
+    return { exists: true, file: this.toFilePublic(newFile, userBasic) };
+  }
+
+  private async runAsyncCascadeTrash(
+    fileIds: mongoose.Types.ObjectId[],
+    userId: string,
+  ): Promise<void> {
+    try {
+      if (fileIds.length > 0) {
+        await cascadeTrashShortcuts(fileIds, "File");
+        await revokeSharedAccessAndNotify(fileIds, "File", userId);
+      }
+    } catch (err) {
+      logger.error(
+        { err, fileIds, userId },
+        "Background cascade trash failed for file operation",
+      );
+    }
+  }
+
+  private async runAsyncCascadeRestore(
+    fileIds: mongoose.Types.ObjectId[],
+  ): Promise<void> {
+    try {
+      if (fileIds.length > 0) {
+        await cascadeRestoreShortcuts(fileIds, "File");
+      }
+    } catch (err) {
+      logger.error(
+        { err, fileIds },
+        "Background cascade restore failed for file operation",
+      );
+    }
+  }
+
+  private async runAsyncCascadeDelete(
+    fileIds: mongoose.Types.ObjectId[],
+    userId: string,
+  ): Promise<void> {
+    try {
+      if (fileIds.length > 0) {
+        await cascadeDeleteShortcuts(fileIds, "File");
+        await revokeSharedAccessAndNotify(fileIds, "File", userId);
+      }
+    } catch (err) {
+      logger.error(
+        { err, fileIds, userId },
+        "Background cascade delete failed for file operation",
+      );
+    }
   }
 }

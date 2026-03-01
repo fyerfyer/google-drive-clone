@@ -1,8 +1,14 @@
 import { useFolderUIStore } from "@/stores/useFolderUIStore";
 import { useFolderContent } from "@/hooks/queries/useFolderQueries";
 import { Card, CardContent } from "@/components/ui/card";
-import { FolderIcon, FileIcon, MoreVertical } from "lucide-react";
+import { FolderIcon, FileIcon, MoreVertical, Users } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import type { Folder } from "@/types/folder.types";
 import type { IFile } from "@/types/file.types";
 import { ItemContextMenu } from "./ItemContextMenu";
@@ -81,6 +87,38 @@ const FolderCard = ({
                       {folder.description}
                     </p>
                   )}
+                  {folder.isShared && folder.sharedUsers && (
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <div
+                            className="inline-flex items-center gap-1 mt-1 text-[10px] text-blue-500 bg-blue-500/10 px-1.5 py-0.5 rounded-full cursor-help"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <Users className="size-3" />
+                            <span>Shared</span>
+                          </div>
+                        </TooltipTrigger>
+                        <TooltipContent side="top">
+                          <div className="flex flex-col gap-1 max-w-[200px]">
+                            <p className="font-semibold text-xs border-b pb-1">
+                              Shared with:
+                            </p>
+                            {folder.sharedUsers.slice(0, 5).map((u) => (
+                              <div key={u.id} className="text-xs truncate">
+                                {u.name || u.email}
+                              </div>
+                            ))}
+                            {folder.sharedUsers.length > 5 && (
+                              <div className="text-xs text-muted-foreground mt-1 text-center">
+                                + {folder.sharedUsers.length - 5} more
+                              </div>
+                            )}
+                          </div>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  )}
                   <p className="text-xs text-muted-foreground mt-1">
                     {formatDistanceToNow(new Date(folder.updatedAt), {
                       addSuffix: true,
@@ -146,7 +184,39 @@ const FileCard = ({
                   <p className="text-xs text-muted-foreground mt-1">
                     {(file.size / 1024).toFixed(2)} KB
                   </p>
-                  <p className="text-xs text-muted-foreground">
+                  {file.isShared && file.sharedUsers && (
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <div
+                            className="inline-flex items-center gap-1 mt-1 text-[10px] text-blue-500 bg-blue-500/10 px-1.5 py-0.5 rounded-full cursor-help"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <Users className="size-3" />
+                            <span>Shared</span>
+                          </div>
+                        </TooltipTrigger>
+                        <TooltipContent side="top">
+                          <div className="flex flex-col gap-1 max-w-[200px]">
+                            <p className="font-semibold text-xs border-b pb-1">
+                              Shared with:
+                            </p>
+                            {file.sharedUsers.slice(0, 5).map((u) => (
+                              <div key={u.id} className="text-xs truncate">
+                                {u.name || u.email}
+                              </div>
+                            ))}
+                            {file.sharedUsers.length > 5 && (
+                              <div className="text-xs text-muted-foreground mt-1 text-center">
+                                + {file.sharedUsers.length - 5} more
+                              </div>
+                            )}
+                          </div>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  )}
+                  <p className="text-xs text-muted-foreground mt-1">
                     {formatDistanceToNow(new Date(file.updatedAt), {
                       addSuffix: true,
                     })}

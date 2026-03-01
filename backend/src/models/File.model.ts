@@ -123,6 +123,15 @@ fileSchema.index({ user: 1, mimeType: 1 });
 // 快传索引
 fileSchema.index({ hash: 1 });
 
+// 加速查询用户已加星文件
+fileSchema.index({ user: 1, isStarred: 1, isTrashed: 1 });
+
+// 秒传：同一用户同一 hash
+fileSchema.index({ user: 1, hash: 1 }, { sparse: true });
+
+// 加速回收站查询
+fileSchema.index({ user: 1, isTrashed: 1, trashedAt: -1 });
+
 // 删除钩子，文件被彻底删除时清理权限表
 fileSchema.post("findOneAndDelete", async function (doc: IFile) {
   if (doc) {

@@ -3,7 +3,9 @@ import { Socket } from "socket.io-client";
 import { connectSocket, disconnectSocket } from "@/lib/socket";
 import { useAgentStore } from "@/stores/useAgentStore";
 import { useBackgroundTasksStore } from "@/stores/useBackgroundTasksStore";
+import { useNotificationStore } from "@/stores/useNotificationStore";
 import type { PendingApproval } from "@/types/agent.types";
+import type { INotification } from "@/types/notification.types";
 import { toast } from "sonner";
 
 // Global socket connection hook.
@@ -86,9 +88,41 @@ export function useSocketConnection() {
       },
     );
 
+    // Real-time notification handler
+    socket.on("notifications", (notification: INotification) => {
+      const notifStore = useNotificationStore.getState();
+      notifStore.addNotification(notification);
+
+      // Show a toast for the incoming notification
+      const title =
+        notification.data?.title ||
+        notification.type.replace(/_/g, " ").toLowerCase();
+      const body = notification.data?.body;
+
+      switch (notification.type) {
+        case "AGENT_TASK_COMPLETE":
+          toast.success(title, { description: body });
+          break;
+        case "FILE_SHARED":
+        case "FOLDER_SHARED":
+          toast.info(title, { description: body });
+          break;
+        case "STORAGE_QUOTA_WARNING":
+        case "STORAGE_WARNING":
+          toast.warning(title, { description: body });
+          break;
+        case "ACCESS_REVOKED":
+          toast.error(title, { description: body });
+          break;
+        default:
+          toast(title, { description: body });
+      }
+    });
+
     return () => {
       socket.off("agent:approval_needed");
       socket.off("agent:approval_resolved");
+      socket.off("notifications");
       disconnectSocket();
     };
   }, []);

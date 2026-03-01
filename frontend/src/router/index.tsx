@@ -9,6 +9,7 @@ import { useAuth } from "@/hooks/auth/useAuth";
 import { Spinner } from "@/components/ui/spinner";
 import { AgentPanel } from "@/components/agent/AgentPanel";
 import { AgentTrigger } from "@/components/agent/AgentTrigger";
+import { AgentApprovalModal } from "@/components/agent/AgentApprovalModal";
 import { useAuthStore } from "@/stores/useAuthStore";
 import LoginPage from "@/pages/auth/LoginPage";
 import RegisterPage from "@/pages/auth/RegisterPage";
@@ -38,6 +39,7 @@ function AgentOverlay() {
   return (
     <>
       <AgentTrigger />
+      <AgentApprovalModal />
       <AgentPanel />
     </>
   );

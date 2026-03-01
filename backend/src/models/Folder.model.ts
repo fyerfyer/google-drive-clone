@@ -113,6 +113,12 @@ folderSchema.index({ user: 1, parent: 1, isTrashed: 1 });
 // 查询优化：搜索子树
 folderSchema.index({ ancestors: 1 });
 
+// 加速查询用户已加星文件夹
+folderSchema.index({ user: 1, isStarred: 1, isTrashed: 1 });
+
+// 加速回收站查询
+folderSchema.index({ user: 1, isTrashed: 1, trashedAt: -1 });
+
 folderSchema.post("findOneAndDelete", async function (doc: IFolder) {
   if (doc) {
     // 删除钩子，文件夹被彻底删除时清理权限表

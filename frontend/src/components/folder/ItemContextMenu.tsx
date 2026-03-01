@@ -28,6 +28,7 @@ import { RenameDialog } from "./RenameDialog";
 import { DeleteConfirmDialog } from "./DeleteConfirmDialog";
 import { MoveDialog } from "./MoveDialog";
 import { fileService } from "@/services/file.service";
+import { folderService } from "@/services/folder.service";
 import { toast } from "sonner";
 import { getEditorMode } from "@/lib/file-preview";
 
@@ -103,6 +104,9 @@ export const ItemContextMenu = ({
         toast.error("Failed to download file");
         console.error("Download error:", error);
       }
+    } else {
+      folderService.downloadFolderAsZip(item.id, item.name);
+      toast.success(`Downloading ${item.name}.zip`);
     }
   };
 
@@ -212,6 +216,15 @@ export const ItemContextMenu = ({
                 <ContextMenuSeparator />
               </>
             )}
+            {type === "folder" && (
+              <>
+                <ContextMenuItem onClick={handleDownload}>
+                  <Download className="size-4" />
+                  Download folder
+                </ContextMenuItem>
+                <ContextMenuSeparator />
+              </>
+            )}
             <ContextMenuItem onClick={() => setShowRenameDialog(true)}>
               <Edit className="size-4" />
               Rename
@@ -283,6 +296,15 @@ export const ItemContextMenu = ({
               <ContextMenuItem onClick={handleDownload}>
                 <Download className="size-4" />
                 Download
+              </ContextMenuItem>
+              <ContextMenuSeparator />
+            </>
+          )}
+          {type === "folder" && (
+            <>
+              <ContextMenuItem onClick={handleDownload}>
+                <Download className="size-4" />
+                Download folder
               </ContextMenuItem>
               <ContextMenuSeparator />
             </>

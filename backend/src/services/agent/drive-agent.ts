@@ -86,7 +86,7 @@ export class DriveAgent extends BaseAgent {
       ? `\n\n## Current Workspace Snapshot\nThe user is currently in this folder:\n\`\`\`json\n${context.workspaceSnapshot}\n\`\`\`\nFolder path: ${context.folderPath || "/"}`
       : "";
 
-    return `You are the **Drive Agent** for Google Drive Clone — a cloud storage platform.
+    return `You are the **Drive Agent** for Mind Drive — a cloud storage platform.
 You specialize in **workspace management**: creating, organizing, sharing, and searching files and folders.
 
 ## Your Capabilities

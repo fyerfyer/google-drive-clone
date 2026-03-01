@@ -51,6 +51,9 @@ const notificationSchema = new mongoose.Schema<INotification>(
         "ACCESS_REVOKED",
         "STORAGE_WARNING",
         "SYSTEM_ANNOUNCEMENT",
+        "AGENT_TASK_COMPLETE",
+        "FILE_UPLOAD_COMPLETE",
+        "STORAGE_QUOTA_WARNING",
       ],
       required: true,
       index: true,
@@ -104,10 +107,10 @@ const notificationSchema = new mongoose.Schema<INotification>(
   },
   {
     timestamps: true,
-  }
+  },
 );
 
 export const Notification = mongoose.model<INotification>(
   "Notification",
-  notificationSchema
+  notificationSchema,
 );

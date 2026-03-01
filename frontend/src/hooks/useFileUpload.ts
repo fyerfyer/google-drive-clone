@@ -274,22 +274,63 @@ export function useFileUpload(): UseFileUploadReturn {
         return newMap;
       });
 
-      // Choose upload strategy based on file size
-      let result: IFile;
-      if (file.size < SMALL_FILE_THRESHOLD) {
-        result = await uploadSmallFile(file, folderId, fileId);
-      } else {
-        result = await uploadLargeFile(file, folderId, fileId);
-      }
+      try {
+        // ── 秒传 (instant upload / dedup check) ──────────────────────────────
+        // Compute SHA-256 hash before any network I/O.  If a matching file
+        // already exists the backend creates a new record pointing to the
+        // same MinIO key and returns it, so we can skip the actual upload.
+        updateUploadProgress(fileId, { status: "uploading", progress: 5 });
 
-      // Invalidate queries unless explicitly skipped (for batch uploads)
-      if (!options?.skipInvalidation) {
-        invalidateQueries(folderId);
-      }
+        const hash = await fileService.calculateHash(file);
 
-      return result;
+        const dedupResult = await fileService.checkFileByHash({
+          hash,
+          folderId,
+          originalName: file.name,
+          mimeType: file.type || "application/octet-stream",
+          size: file.size,
+        });
+
+        if (dedupResult.exists && dedupResult.file) {
+          // Instant upload — no bytes transferred
+          updateUploadProgress(fileId, { status: "success", progress: 100 });
+          toast.success(
+            `"${file.name}" uploaded instantly (duplicate detected)`,
+          );
+
+          if (!options?.skipInvalidation) {
+            invalidateQueries(folderId);
+          }
+          return dedupResult.file;
+        }
+        // ─────────────────────────────────────────────────────────────────────
+
+        // Choose upload strategy based on file size
+        let result: IFile;
+        if (file.size < SMALL_FILE_THRESHOLD) {
+          result = await uploadSmallFile(file, folderId, fileId);
+        } else {
+          result = await uploadLargeFile(file, folderId, fileId);
+        }
+
+        // Invalidate queries unless explicitly skipped (for batch uploads)
+        if (!options?.skipInvalidation) {
+          invalidateQueries(folderId);
+        }
+
+        return result;
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error ? error.message : "Upload failed";
+        updateUploadProgress(fileId, {
+          status: "error",
+          progress: 0,
+          error: errorMessage,
+        });
+        throw error;
+      }
     },
-    [uploadSmallFile, uploadLargeFile, invalidateQueries],
+    [uploadSmallFile, uploadLargeFile, invalidateQueries, updateUploadProgress],
   );
 
   /**

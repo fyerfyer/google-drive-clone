@@ -23,6 +23,8 @@ interface AgentContext {
 interface AgentState {
   // Panel visibility
   isOpen: boolean;
+  isDrivePanelOpen: boolean;
+  isDocumentPanelOpen: boolean;
 
   // Current conversation
   conversationId: string | null;
@@ -70,6 +72,8 @@ interface AgentState {
   open: () => void;
   close: () => void;
   toggle: () => void;
+  setDrivePanelOpen: (open: boolean) => void;
+  setDocumentPanelOpen: (open: boolean) => void;
   setConversationId: (id: string | null) => void;
   addMessage: (message: AgentMessage) => void;
   setMessages: (messages: AgentMessage[]) => void;
@@ -114,6 +118,8 @@ export const useAgentStore = create<AgentState>()(
   devtools(
     (set, get) => ({
       isOpen: false,
+      isDrivePanelOpen: false,
+      isDocumentPanelOpen: false,
       conversationId: null,
       currentTaskId: null,
       messages: [],
@@ -142,6 +148,14 @@ export const useAgentStore = create<AgentState>()(
       open: () => set({ isOpen: true }),
       close: () => set({ isOpen: false }),
       toggle: () => set((s) => ({ isOpen: !s.isOpen })),
+      setDrivePanelOpen: (open) =>
+        set((s) =>
+          s.isDrivePanelOpen === open ? {} : { isDrivePanelOpen: open },
+        ),
+      setDocumentPanelOpen: (open) =>
+        set((s) =>
+          s.isDocumentPanelOpen === open ? {} : { isDocumentPanelOpen: open },
+        ),
 
       setConversationId: (id) => set({ conversationId: id }),
       addMessage: (message) =>

@@ -47,9 +47,22 @@ export const useAuthForm = <T extends Record<string, unknown>>({
     if (isAuthenticated) {
       const params = new URLSearchParams(location.search);
       const redirect = params.get("redirect");
-      // Use redirect parameter if exists, otherwise fallback to location.state.from, then dashboard
-      // Note: decodeURIComponent is generally handled by URLSearchParams
-      const from = redirect || location.state?.from || "/dashboard";
+
+      let from = redirect || location.state?.from || "/dashboard";
+
+      // If redirecting to /files, strip the folder parameter to avoid 403s
+      // when logging in as a different user who doesn't own the previous session's active folder.
+      if (
+        typeof from === "object" &&
+        from.pathname === "/files" &&
+        from.search
+      ) {
+        const fromParams = new URLSearchParams(from.search);
+        fromParams.delete("folder");
+        const newSearch = fromParams.toString();
+        from = { ...from, search: newSearch ? `?${newSearch}` : "" };
+      }
+
       navigate(from, { replace: true });
     }
   }, [isAuthenticated, location, navigate]);

@@ -27,17 +27,17 @@ export const folderService = {
       throw new Error(response.message || "Failed to create folder");
     } catch (error) {
       throw new Error(
-        error instanceof Error ? error.message : "Failed to create folder"
+        error instanceof Error ? error.message : "Failed to create folder",
       );
     }
   },
 
   getFolderContent: async (
-    folderId: string
+    folderId: string,
   ): Promise<FolderContentResponse> => {
     try {
       const response = await api.get<FolderContentResponse>(
-        `${FOLDER_API_BASE}/${folderId}/content`
+        `${FOLDER_API_BASE}/${folderId}/content`,
       );
       if (response.success && response.data) {
         return {
@@ -50,26 +50,26 @@ export const folderService = {
       throw new Error(response.message || "Failed to get folder content");
     } catch (error) {
       throw new Error(
-        error instanceof Error ? error.message : "Failed to get folder content"
+        error instanceof Error ? error.message : "Failed to get folder content",
       );
     }
   },
 
   moveFolder: async (
     folderId: string,
-    destinationId: string
+    destinationId: string,
   ): Promise<void> => {
     try {
       const response = await api.patch<void, { destinationId: string }>(
         `${FOLDER_API_BASE}/${folderId}/move`,
-        { destinationId }
+        { destinationId },
       );
       if (!response.success) {
         throw new Error(response.message || "Failed to move folder");
       }
     } catch (error) {
       throw new Error(
-        error instanceof Error ? error.message : "Failed to move folder"
+        error instanceof Error ? error.message : "Failed to move folder",
       );
     }
   },
@@ -78,14 +78,14 @@ export const folderService = {
     try {
       const response = await api.post<void, undefined>(
         `${FOLDER_API_BASE}/${folderId}/trash`,
-        undefined
+        undefined,
       );
       if (!response.success) {
         throw new Error(response.message || "Failed to trash folder");
       }
     } catch (error) {
       throw new Error(
-        error instanceof Error ? error.message : "Failed to trash folder"
+        error instanceof Error ? error.message : "Failed to trash folder",
       );
     }
   },
@@ -94,14 +94,14 @@ export const folderService = {
     try {
       const response = await api.patch<void, { newName: string }>(
         `${FOLDER_API_BASE}/${folderId}/rename`,
-        { newName }
+        { newName },
       );
       if (!response.success) {
         throw new Error(response.message || "Failed to rename folder");
       }
     } catch (error) {
       throw new Error(
-        error instanceof Error ? error.message : "Failed to rename folder"
+        error instanceof Error ? error.message : "Failed to rename folder",
       );
     }
   },
@@ -110,14 +110,14 @@ export const folderService = {
     try {
       const response = await api.post<void, undefined>(
         `${FOLDER_API_BASE}/${folderId}/restore`,
-        undefined
+        undefined,
       );
       if (!response.success) {
         throw new Error(response.message || "Failed to restore folder");
       }
     } catch (error) {
       throw new Error(
-        error instanceof Error ? error.message : "Failed to restore folder"
+        error instanceof Error ? error.message : "Failed to restore folder",
       );
     }
   },
@@ -130,7 +130,7 @@ export const folderService = {
       }
     } catch (error) {
       throw new Error(
-        error instanceof Error ? error.message : "Failed to delete folder"
+        error instanceof Error ? error.message : "Failed to delete folder",
       );
     }
   },
@@ -139,14 +139,14 @@ export const folderService = {
     try {
       const response = await api.patch<void, undefined>(
         `${FOLDER_API_BASE}/${folderId}/star`,
-        undefined
+        undefined,
       );
       if (!response.success) {
         throw new Error(response.message || "Failed to star folder");
       }
     } catch (error) {
       throw new Error(
-        error instanceof Error ? error.message : "Failed to star folder"
+        error instanceof Error ? error.message : "Failed to star folder",
       );
     }
   },
@@ -155,14 +155,14 @@ export const folderService = {
     try {
       const response = await api.patch<void, undefined>(
         `${FOLDER_API_BASE}/${folderId}/unstar`,
-        undefined
+        undefined,
       );
       if (!response.success) {
         throw new Error(response.message || "Failed to unstar folder");
       }
     } catch (error) {
       throw new Error(
-        error instanceof Error ? error.message : "Failed to unstar folder"
+        error instanceof Error ? error.message : "Failed to unstar folder",
       );
     }
   },
@@ -170,7 +170,7 @@ export const folderService = {
   getStarredFolders: async (): Promise<Folder[]> => {
     try {
       const response = await api.get<Folder[]>(
-        `${FOLDER_API_BASE}/view/starred`
+        `${FOLDER_API_BASE}/view/starred`,
       );
       if (response.success && response.data) {
         return normalizeFolders(response.data);
@@ -178,7 +178,9 @@ export const folderService = {
       throw new Error(response.message || "Failed to get starred folders");
     } catch (error) {
       throw new Error(
-        error instanceof Error ? error.message : "Failed to get starred folders"
+        error instanceof Error
+          ? error.message
+          : "Failed to get starred folders",
       );
     }
   },
@@ -186,7 +188,7 @@ export const folderService = {
   getTrashedFolders: async (): Promise<Folder[]> => {
     try {
       const response = await api.get<Folder[]>(
-        `${FOLDER_API_BASE}/view/trashed`
+        `${FOLDER_API_BASE}/view/trashed`,
       );
       if (response.success && response.data) {
         return normalizeFolders(response.data);
@@ -194,7 +196,9 @@ export const folderService = {
       throw new Error(response.message || "Failed to get trashed folders");
     } catch (error) {
       throw new Error(
-        error instanceof Error ? error.message : "Failed to get trashed folders"
+        error instanceof Error
+          ? error.message
+          : "Failed to get trashed folders",
       );
     }
   },
@@ -211,7 +215,7 @@ export const folderService = {
       throw new Error(response.message || "Failed to get recent folders");
     } catch (error) {
       throw new Error(
-        error instanceof Error ? error.message : "Failed to get recent folders"
+        error instanceof Error ? error.message : "Failed to get recent folders",
       );
     }
   },
@@ -219,7 +223,7 @@ export const folderService = {
   getFolderPath: async (folderId: string): Promise<BreadcrumbItem[]> => {
     try {
       const response = await api.get<{ breadcrumbs: BreadcrumbItem[] }>(
-        `${FOLDER_API_BASE}/${folderId}/path`
+        `${FOLDER_API_BASE}/${folderId}/path`,
       );
       if (response.success && response.data) {
         return response.data.breadcrumbs;
@@ -227,8 +231,23 @@ export const folderService = {
       throw new Error(response.message || "Failed to get folder path");
     } catch (error) {
       throw new Error(
-        error instanceof Error ? error.message : "Failed to get folder path"
+        error instanceof Error ? error.message : "Failed to get folder path",
       );
     }
+  },
+
+  /**
+   * Trigger a browser download of the folder contents as a ZIP archive.
+   * Uses a hidden anchor element so the streaming response is handed
+   * directly to the browser download manager.
+   */
+  downloadFolderAsZip: (folderId: string, folderName?: string): void => {
+    const url = `${FOLDER_API_BASE}/${folderId}/download`;
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = folderName ? `${folderName}.zip` : "folder.zip";
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
   },
 };

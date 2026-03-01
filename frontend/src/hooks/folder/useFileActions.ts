@@ -1,5 +1,6 @@
 import { triggerDownload } from "@/lib/download";
 import { fileService } from "@/services/file.service";
+import { folderService } from "@/services/folder.service";
 import type { IFile } from "@/types/file.types";
 import type { Folder } from "@/types/folder.types";
 import { useState } from "react";
@@ -64,6 +65,9 @@ export const useFileActions = () => {
               error: "Failed to download",
             },
           );
+        } else {
+          folderService.downloadFolderAsZip(item.id, item.name);
+          toast.success("Folder download started");
         }
 
         break;

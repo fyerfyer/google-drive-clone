@@ -31,6 +31,9 @@ export function createFileRouter(
 
   router.post("/create", fileController.createBlankFile.bind(fileController));
 
+  // 秒传检查：通过 hash 判断是否已有相同文件，避免重复上传
+  router.get("/check", fileController.checkFileByHash.bind(fileController));
+
   router.get(
     "/:fileId/download",
     requireAccess(permissionService, "viewer", { resourceType: "File" }),

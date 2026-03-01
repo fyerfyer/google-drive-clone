@@ -2,34 +2,60 @@ import { Worker } from "bullmq";
 import { QUEUE_NAMES } from "../../types/model.types";
 import logger from "../logger";
 import { Notification } from "../../models/Notification.model";
-import { getSocket } from "../socket";
 import { user_room } from "../../utils/socket.util";
 import { redisClient } from "../../config/redis";
-
-const io = getSocket();
+import { getSocket } from "../socket";
 
 export const notificationWorker = new Worker(
   QUEUE_NAMES.NOTIFICATIONS,
   async (job) => {
-    const { type, recipientId, senderId, data } = job.data;
+    const {
+      type,
+      recipientId,
+      senderId,
+      data,
+      // 兼容旧字段
+      resourceType,
+      resourceId,
+      resourceName,
+    } = job.data;
+
     logger.info(
-      `Processing notification job ${job.id} of type ${type} for recipient ${recipientId}`
+      `Processing notification job ${job.id} of type ${type} for recipient ${recipientId}`,
     );
 
-    // 持久化消息，这样离线后上线还能看到消息
+    // 优先使用 data，否则使用旧字段
+    const notificationData = data ?? {
+      title: resourceName || "Notification",
+      resourceId,
+      resourceType,
+      resourceName,
+    };
+
     const notification = await Notification.create({
       type,
       recipient: recipientId,
-      sender: senderId,
-      data,
+      sender: senderId || null,
+      data: notificationData,
     });
 
-    // 实时推送
-    io.to(user_room(recipientId)).emit(QUEUE_NAMES.NOTIFICATIONS, notification);
+    // 推送
+    try {
+      const io = getSocket();
+      io.to(user_room(recipientId)).emit(
+        QUEUE_NAMES.NOTIFICATIONS,
+        notification,
+      );
+    } catch (error) {
+      logger.warn(
+        { err: error, recipientId },
+        "Socket not initialized; skipped real-time notification",
+      );
+    }
     return true;
   },
   {
     connection: redisClient,
     concurrency: 5,
-  }
+  },
 );

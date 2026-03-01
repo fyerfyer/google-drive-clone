@@ -6,7 +6,7 @@ import {
 } from "@/components/ui/context-menu";
 import { TableCell, TableRow } from "@/components/ui/table";
 import { Checkbox } from "@radix-ui/react-checkbox";
-import { FileIcon, FolderIcon, MoreVertical } from "lucide-react";
+import { FileIcon, FolderIcon, MoreVertical, Users } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { formatFileSize } from "@/lib/format";
 import {
@@ -16,6 +16,12 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { FileActions } from "@/components/folder/FileActions";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 interface FileTableRowProps {
   item: FolderItem;
@@ -102,6 +108,41 @@ export const FileTableRow = ({
                 <FileIcon className="size-5 shrink-0 text-muted-foreground" />
               )}
               <span className="font-medium text-sm truncate">{item.name}</span>
+              {item.isShared && item.sharedUsers && (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div
+                        className="flex items-center gap-1 text-[10px] text-blue-500 bg-blue-500/10 px-1.5 py-0.5 rounded-full cursor-help hover:bg-blue-500/20 transition-colors"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onAction("share", item);
+                        }}
+                      >
+                        <Users className="size-3" />
+                        <span>Shared</span>
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">
+                      <div className="flex flex-col gap-1 max-w-[200px]">
+                        <p className="font-semibold text-xs border-b pb-1">
+                          Shared with:
+                        </p>
+                        {item.sharedUsers.slice(0, 5).map((u) => (
+                          <div key={u.id} className="text-xs truncate">
+                            {u.name || u.email}
+                          </div>
+                        ))}
+                        {item.sharedUsers.length > 5 && (
+                          <div className="text-xs text-muted-foreground mt-1 text-center">
+                            + {item.sharedUsers.length - 5} more
+                          </div>
+                        )}
+                      </div>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
             </div>
           </TableCell>
 

@@ -7,6 +7,12 @@ import User from "../models/User.model";
 import { StorageService } from "./storage.service";
 import { BUCKETS } from "../config/s3";
 import { logger } from "../lib/logger";
+import {
+  revokeSharedAccessAndNotify,
+  cascadeTrashShortcuts,
+  cascadeRestoreShortcuts,
+  cascadeDeleteShortcuts,
+} from "../utils/cascade.util";
 
 export interface BatchItemRequest {
   id: string;
@@ -118,7 +124,7 @@ export class BatchService {
 
       // 处理文件
       if (fileIds.length > 0) {
-        const fileResult = await File.updateMany(
+        await File.updateMany(
           {
             _id: { $in: fileIds },
             user: userObjectId,
@@ -163,6 +169,27 @@ export class BatchService {
       }
 
       await session.commitTransaction();
+
+      // 事务结束后进行级联清理操作
+      // 异步执行
+      const trashedFolderIds = results
+        .filter((r) => r.type === "folder" && r.success)
+        .map((r) => new mongoose.Types.ObjectId(r.id));
+      const trashedFileIds = results
+        .filter((r) => r.type === "file" && r.success)
+        .map((r) => new mongoose.Types.ObjectId(r.id));
+
+      if (trashedFolderIds.length > 0 || trashedFileIds.length > 0) {
+        this.runAsyncCascadeTrash(
+          trashedFolderIds,
+          trashedFileIds,
+          userObjectId,
+          userId,
+        ).catch((err) => {
+          logger.error({ err, userId }, "Async cascade trash failed");
+        });
+      }
+
       logger.info(
         { userId, successCount, failureCount },
         "Batch trash operation completed",
@@ -322,6 +349,26 @@ export class BatchService {
       }
 
       await session.commitTransaction();
+
+      // 事务结束后进行级联恢复操作
+      // 异步执行
+      const restoredFolderIds = results
+        .filter((r) => r.type === "folder" && r.success)
+        .map((r) => new mongoose.Types.ObjectId(r.id));
+      const restoredFileIds = results
+        .filter((r) => r.type === "file" && r.success)
+        .map((r) => new mongoose.Types.ObjectId(r.id));
+
+      if (restoredFolderIds.length > 0 || restoredFileIds.length > 0) {
+        this.runAsyncCascadeRestore(
+          restoredFolderIds,
+          restoredFileIds,
+          userObjectId,
+        ).catch((err) => {
+          logger.error({ err, userId }, "Async cascade restore failed");
+        });
+      }
+
       logger.info(
         { userId, successCount, failureCount },
         "Batch restore operation completed",
@@ -365,6 +412,8 @@ export class BatchService {
 
     let totalStorageFreed = 0;
     let minioCleanupTasks: Array<{ key: string; hash?: string }> = [];
+    const cascadeFolderIds: mongoose.Types.ObjectId[] = [];
+    const cascadeFileIds: mongoose.Types.ObjectId[] = [];
 
     try {
       // 处理文件夹
@@ -438,6 +487,9 @@ export class BatchService {
             minioCleanupTasks.push({ key: file.key, hash: file.hash });
           });
 
+          cascadeFolderIds.push(folder._id, ...subFolderIds);
+          cascadeFileIds.push(...fileIdsToDelete);
+
           results.push({
             id: folderId.toString(),
             type: "folder",
@@ -493,6 +545,8 @@ export class BatchService {
           filesToDelete.forEach((file) => {
             minioCleanupTasks.push({ key: file.key, hash: file.hash });
           });
+
+          cascadeFileIds.push(...validFileIds);
         }
 
         // 记录结果
@@ -528,6 +582,24 @@ export class BatchService {
       }
 
       await session.commitTransaction();
+
+      const uniqueFolderIds = [
+        ...new Set(cascadeFolderIds.map((id) => id.toString())),
+      ].map((id) => new mongoose.Types.ObjectId(id));
+      const uniqueFileIds = [
+        ...new Set(cascadeFileIds.map((id) => id.toString())),
+      ].map((id) => new mongoose.Types.ObjectId(id));
+
+      if (uniqueFolderIds.length > 0 || uniqueFileIds.length > 0) {
+        this.runAsyncCascadeDelete(
+          uniqueFolderIds,
+          uniqueFileIds,
+          userId,
+        ).catch((err) => {
+          logger.error({ err, userId }, "Async cascade delete failed");
+        });
+      }
+
       logger.info(
         {
           userId,
@@ -929,6 +1001,88 @@ export class BatchService {
         { key, hash, referenceCount: count },
         "Object still has file references, keeping in MinIO",
       );
+    }
+  }
+
+  private async runAsyncCascadeTrash(
+    trashedFolderIds: mongoose.Types.ObjectId[],
+    trashedFileIds: mongoose.Types.ObjectId[],
+    userObjectId: mongoose.Types.ObjectId,
+    userId: string,
+  ) {
+    const allFolderIds =
+      trashedFolderIds.length > 0
+        ? await Folder.find({
+            $or: [
+              { _id: { $in: trashedFolderIds } },
+              { ancestors: { $in: trashedFolderIds } },
+            ],
+            user: userObjectId,
+          }).distinct("_id")
+        : [];
+
+    const allFileIds = await File.find({
+      $or: [
+        { _id: { $in: trashedFileIds } },
+        { folder: { $in: allFolderIds } },
+      ],
+      user: userObjectId,
+    }).distinct("_id");
+
+    if (allFolderIds.length > 0) {
+      await cascadeTrashShortcuts(allFolderIds, "Folder");
+      await revokeSharedAccessAndNotify(allFolderIds, "Folder", userId);
+    }
+    if (allFileIds.length > 0) {
+      await cascadeTrashShortcuts(allFileIds, "File");
+      await revokeSharedAccessAndNotify(allFileIds, "File", userId);
+    }
+  }
+
+  private async runAsyncCascadeRestore(
+    restoredFolderIds: mongoose.Types.ObjectId[],
+    restoredFileIds: mongoose.Types.ObjectId[],
+    userObjectId: mongoose.Types.ObjectId,
+  ) {
+    const allFolderIds =
+      restoredFolderIds.length > 0
+        ? await Folder.find({
+            $or: [
+              { _id: { $in: restoredFolderIds } },
+              { ancestors: { $in: restoredFolderIds } },
+            ],
+            user: userObjectId,
+          }).distinct("_id")
+        : [];
+
+    const allFileIds = await File.find({
+      $or: [
+        { _id: { $in: restoredFileIds } },
+        { folder: { $in: allFolderIds } },
+      ],
+      user: userObjectId,
+    }).distinct("_id");
+
+    if (allFolderIds.length > 0) {
+      await cascadeRestoreShortcuts(allFolderIds, "Folder");
+    }
+    if (allFileIds.length > 0) {
+      await cascadeRestoreShortcuts(allFileIds, "File");
+    }
+  }
+
+  private async runAsyncCascadeDelete(
+    uniqueFolderIds: mongoose.Types.ObjectId[],
+    uniqueFileIds: mongoose.Types.ObjectId[],
+    userId: string,
+  ) {
+    if (uniqueFolderIds.length > 0) {
+      await cascadeDeleteShortcuts(uniqueFolderIds, "Folder");
+      await revokeSharedAccessAndNotify(uniqueFolderIds, "Folder", userId);
+    }
+    if (uniqueFileIds.length > 0) {
+      await cascadeDeleteShortcuts(uniqueFileIds, "File");
+      await revokeSharedAccessAndNotify(uniqueFileIds, "File", userId);
     }
   }
 }

@@ -5,6 +5,8 @@ import File from "../../models/File.model";
 import logger from "../logger";
 import Folder from "../../models/Folder.model";
 import { BatchItemRequest, BatchService } from "../../services/batch.service";
+import { StorageService } from "../../services/storage.service";
+import { BUCKETS } from "../../config/s3";
 
 const batchService = new BatchService();
 
@@ -32,7 +34,7 @@ export const maintainanceWorker = new Worker(
         }
 
         logger.info(
-          `Found ${expiredFiles.length} files and ${expiredFolders.length} folders to permanently delete from trash.`
+          `Found ${expiredFiles.length} files and ${expiredFolders.length} folders to permanently delete from trash.`,
         );
 
         const tasksByUser = new Map<string, BatchItemRequest[]>();
@@ -58,18 +60,18 @@ export const maintainanceWorker = new Worker(
         });
 
         logger.info(
-          `Prepared batch delete tasks for ${tasksByUser.size} users.`
+          `Prepared batch delete tasks for ${tasksByUser.size} users.`,
         );
 
         for (const [userId, items] of tasksByUser.entries()) {
           try {
             await batchService.batchDeletePermanent(userId, items);
             logger.info(
-              `Permanently deleted ${items.length} items for user ${userId} from trash.`
+              `Permanently deleted ${items.length} items for user ${userId} from trash.`,
             );
           } catch (error) {
             logger.error(
-              `Failed to permanently delete items for user ${userId} from trash: ${error}`
+              `Failed to permanently delete items for user ${userId} from trash: ${error}`,
             );
           }
         }
@@ -78,6 +80,57 @@ export const maintainanceWorker = new Worker(
         throw error;
       }
     }
+
+    if (job.name === QUEUE_TASKS.CLEANUP_STALE_MULTIPARTS) {
+      // 定期清理没上传完成的分片
+      const cutoffMs = 24 * 60 * 60 * 1000;
+      const cutoff = new Date(Date.now() - cutoffMs);
+
+      try {
+        const staleUploads = await StorageService.listMultipartUploads(
+          BUCKETS.FILES,
+        );
+
+        const toAbort = staleUploads.filter(
+          (u) => u.Initiated && u.Initiated < cutoff,
+        );
+
+        if (toAbort.length === 0) {
+          logger.info("No stale multipart uploads to clean up.");
+          return;
+        }
+
+        logger.info(
+          `Found ${toAbort.length} stale multipart uploads to abort.`,
+        );
+
+        let aborted = 0;
+        let failed = 0;
+        for (const upload of toAbort) {
+          try {
+            await StorageService.abortMultipartUpload(
+              BUCKETS.FILES,
+              upload.Key,
+              upload.UploadId,
+            );
+            aborted++;
+          } catch (err) {
+            logger.warn(
+              { key: upload.Key, uploadId: upload.UploadId, err },
+              "Failed to abort stale multipart upload",
+            );
+            failed++;
+          }
+        }
+
+        logger.info(
+          `Stale multipart cleanup: ${aborted} aborted, ${failed} failed.`,
+        );
+      } catch (error) {
+        logger.error(`Error during stale multipart cleanup: ${error}`);
+        throw error;
+      }
+    }
   },
-  { connection: redisClient }
+  { connection: redisClient },
 );

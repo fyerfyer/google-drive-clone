@@ -36,7 +36,7 @@ export const FileActions = ({ item, onAction, mode }: FileActionsProps) => {
 
   return (
     <>
-      {isFile && (
+      {isFile ? (
         <>
           <Item onClick={() => onAction("preview", item)}>
             <Eye className="mr-2 h-4 w-4" /> Preview
@@ -48,6 +48,13 @@ export const FileActions = ({ item, onAction, mode }: FileActionsProps) => {
           )}
           <Item onClick={() => onAction("download", item)}>
             <Download className="mr-2 h-4 w-4" /> Download
+          </Item>
+          <Separator />
+        </>
+      ) : (
+        <>
+          <Item onClick={() => onAction("download", item)}>
+            <Download className="mr-2 h-4 w-4" /> Download folder
           </Item>
           <Separator />
         </>

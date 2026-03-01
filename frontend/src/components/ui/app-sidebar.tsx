@@ -14,7 +14,7 @@ import { NavMain } from "@/components/nav/nav-main";
 import { NavUser } from "@/components/nav/nav-user";
 import { useAuth } from "@/hooks/auth/useAuth";
 import { useAgentStore } from "@/stores/useAgentStore";
-import GoogleDriveIcon from "@/assets/GoogleDriveIcon.svg";
+import MindDriveIcon from "@/assets/MindDriveIcon.svg";
 import {
   Sidebar,
   SidebarContent,
@@ -100,12 +100,12 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             >
               <a href="#" className="flex items-center gap-2">
                 <img
-                  src={GoogleDriveIcon}
-                  alt="Google Drive Icon"
+                  src={MindDriveIcon}
+                  alt="Mind Drive Icon"
                   className="w-6 h-6"
                 />
                 <span className="text-base font-semibold">
-                  Google Drive Copy
+                  Mind Drive
                 </span>
               </a>
             </SidebarMenuButton>
