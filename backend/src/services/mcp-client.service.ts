@@ -15,6 +15,24 @@ export interface McpToolCallResult {
   isError?: boolean;
 }
 
+export interface McpResourceContent {
+  uri: string;
+  text?: string;
+  blob?: string;
+  mimeType?: string;
+}
+
+export interface McpReadResourceResult {
+  contents: McpResourceContent[];
+}
+
+export interface McpResourceDefinition {
+  uri: string;
+  name: string;
+  description?: string;
+  mimeType?: string;
+}
+
 export class McpClientService {
   private client: Client | null = null;
   private server: McpServer | null = null;
@@ -83,6 +101,46 @@ export class McpClientService {
 
   invalidateCache(): void {
     this.cachedTools = null;
+  }
+
+  async readResource(uri: string): Promise<McpReadResourceResult> {
+    await this.connect();
+
+    logger.info({ uri }, "Reading MCP resource");
+
+    const result = await this.client!.readResource({ uri });
+
+    const contents: McpResourceContent[] = (result.contents || []).map((c) => ({
+      uri: c.uri,
+      text: "text" in c ? (c.text as string) : undefined,
+      blob: "blob" in c ? (c.blob as string) : undefined,
+      mimeType: c.mimeType,
+    }));
+
+    logger.info(
+      { uri, contentsCount: contents.length },
+      "MCP resource read result",
+    );
+
+    return { contents };
+  }
+
+  async listResources(): Promise<McpResourceDefinition[]> {
+    await this.connect();
+
+    const result = await this.client!.listResources();
+
+    const resources: McpResourceDefinition[] = (result.resources || []).map(
+      (r) => ({
+        uri: r.uri,
+        name: r.name,
+        description: r.description,
+        mimeType: r.mimeType,
+      }),
+    );
+
+    logger.info({ count: resources.length }, "MCP resources listed");
+    return resources;
   }
 
   async disconnect(): Promise<void> {

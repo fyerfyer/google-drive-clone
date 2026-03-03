@@ -657,48 +657,19 @@ export class AgentService {
 
   private async resolveResourceUris(
     uris: string[],
-    userId: string,
+    _userId: string,
   ): Promise<string> {
     const parts: string[] = [];
 
     for (const uri of uris.slice(0, 5)) {
       try {
-        const fileMatch = uri.match(/^drive:\/\/files\/(.+)$/);
-        const folderMatch = uri.match(/^drive:\/\/folders\/(.+)$/);
+        // 使用 MCP Client 获取资源
+        const result = await this.mcpClient.readResource(uri);
+        const content = result.contents[0]?.text ?? "";
 
-        if (fileMatch) {
-          const fileId = fileMatch[1];
-          const { KnowledgeService } = await import("./knowledge.service");
-          const knowledgeService = new KnowledgeService();
-          const { text, file } = await knowledgeService.extractFileContent(
-            fileId,
-            userId,
-          );
-
-          // Truncate large files
-          const MAX_CHARS = 100_000;
-          const content =
-            text.length > MAX_CHARS
-              ? text.slice(0, MAX_CHARS) +
-                `\n\n[... truncated at ${MAX_CHARS} chars, original: ${text.length} chars]`
-              : text;
-
-          parts.push(
-            `--- File: ${file.name} (${uri}) ---\n${content}\n--- End of ${file.name} ---`,
-          );
-        } else if (folderMatch) {
-          const folderId = folderMatch[1];
-          // Use mcpClient to call list_folder_contents for the tree
-          const result = await this.mcpClient.callTool("list_folder_contents", {
-            userId,
-            folderId,
-          });
-          parts.push(
-            `--- Folder Structure (${uri}) ---\n${typeof result.content === "string" ? result.content : JSON.stringify(result.content)}\n--- End of folder ---`,
-          );
-        } else {
-          logger.warn({ uri }, "Unknown resource URI scheme, skipping");
-        }
+        parts.push(
+          `--- Resource (${uri}) ---\n${content}\n--- End of resource ---`,
+        );
       } catch (error) {
         const msg = error instanceof Error ? error.message : "Unknown error";
         logger.warn({ uri, error: msg }, "Failed to resolve resource URI");
