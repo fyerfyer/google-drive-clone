@@ -3,7 +3,10 @@ import { FileService } from "../services/file.service";
 import { FolderService } from "../services/folder.service";
 import { ShareService } from "../services/share.service";
 import { PermissionService } from "../services/permission.service";
-import { registerWorkspaceResources } from "./resources";
+import {
+  registerWorkspaceResources,
+  registerDriveResources,
+} from "./resources";
 import {
   registerAuthTools,
   createAuthContext,
@@ -51,11 +54,14 @@ export function createMcpServer(
   registerSearchTools(server, services, ctx);
 
   // Knowledge Layer
-  registerKnowledgeTools(server, services.knowledgeService, ctx);
+  registerKnowledgeTools(server, services, ctx);
 
   registerDocumentTools(server, services, ctx);
 
   registerWorkspaceResources(server, services);
+
+  // 动态资源模板
+  registerDriveResources(server, services);
 
   logger.info("MCP Server capabilities registered successfully");
 

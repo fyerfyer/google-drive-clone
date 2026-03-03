@@ -20,6 +20,14 @@ interface AgentContext {
   fileName?: string;
 }
 
+/** A resource attached to the agent chat via @file or @folder mention */
+export interface ResourceAttachment {
+  uri: string; // e.g., "drive://files/abc123"
+  name: string; // Display name
+  type: "file" | "folder";
+  id: string; // File or folder ID
+}
+
 interface AgentState {
   // Panel visibility
   isOpen: boolean;
@@ -34,6 +42,9 @@ interface AgentState {
 
   // Context (from file browser or editor)
   context: AgentContext;
+
+  // Resource attachments via @file/@folder mentions
+  resourceAttachments: ResourceAttachment[];
 
   // Route decision from backend
   routeDecision: RouteDecision | null;
@@ -83,6 +94,9 @@ interface AgentState {
   newConversation: () => void;
   setAgentType: (type: AgentType) => void;
   setContext: (ctx: AgentContext) => void;
+  addResourceAttachment: (attachment: ResourceAttachment) => void;
+  removeResourceAttachment: (uri: string) => void;
+  clearResourceAttachments: () => void;
   setRouteDecision: (decision: RouteDecision | null) => void;
   setTaskPlan: (plan: TaskPlan | null) => void;
   updateTaskStep: (
@@ -125,6 +139,7 @@ export const useAgentStore = create<AgentState>()(
       messages: [],
       agentType: "drive",
       context: {},
+      resourceAttachments: [],
       routeDecision: null,
       taskPlan: null,
       pendingApprovals: [],
@@ -178,6 +193,7 @@ export const useAgentStore = create<AgentState>()(
           taskPlan: null,
           routeDecision: null,
           pendingApprovals: [],
+          resourceAttachments: [],
           agentType: "drive",
           isLoading: false,
           isStreaming: false,
@@ -195,6 +211,21 @@ export const useAgentStore = create<AgentState>()(
 
       setAgentType: (type) => set({ agentType: type }),
       setContext: (ctx) => set({ context: ctx }),
+      addResourceAttachment: (attachment) =>
+        set((s) => {
+          if (s.resourceAttachments.some((a) => a.uri === attachment.uri))
+            return {};
+          return {
+            resourceAttachments: [...s.resourceAttachments, attachment],
+          };
+        }),
+      removeResourceAttachment: (uri) =>
+        set((s) => ({
+          resourceAttachments: s.resourceAttachments.filter(
+            (a) => a.uri !== uri,
+          ),
+        })),
+      clearResourceAttachments: () => set({ resourceAttachments: [] }),
       setRouteDecision: (decision) => set({ routeDecision: decision }),
       setTaskPlan: (plan) => set({ taskPlan: plan }),
       updateTaskStep: (stepId, update) =>

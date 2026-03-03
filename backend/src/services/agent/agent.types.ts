@@ -88,6 +88,8 @@ export interface AgentTaskData {
     folderId?: string;
     fileId?: string;
   };
+  // resourceUris，作为 System Prompt 注入
+  resourceUris?: string[];
 }
 
 export interface AgentTaskResult {

@@ -1,5 +1,5 @@
 import { cn } from "@/lib/utils";
-import { IconUser, IconRobot } from "@tabler/icons-react";
+import { IconUser, IconRobot, IconFile, IconFolder } from "@tabler/icons-react";
 import type { AgentMessage as AgentMessageType } from "@/types/agent.types";
 import { AgentToolCall } from "./AgentToolCall";
 import ReactMarkdown from "react-markdown";
@@ -10,6 +10,9 @@ interface AgentMessageProps {
 }
 
 export function AgentMessage({ message }: AgentMessageProps) {
+  // Hide system messages (e.g., attached resource content) from the UI
+  if (message.role === "system") return null;
+
   const isUser = message.role === "user";
 
   return (
@@ -32,6 +35,25 @@ export function AgentMessage({ message }: AgentMessageProps) {
           <div className="w-full space-y-1">
             {message.toolCalls.map((tc, i) => (
               <AgentToolCall key={`${tc.toolName}-${i}`} toolCall={tc} />
+            ))}
+          </div>
+        )}
+
+        {/* Attachment indicators for user messages */}
+        {isUser && message.attachments && message.attachments.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 justify-end">
+            {message.attachments.map((att) => (
+              <div
+                key={att.uri}
+                className="flex items-center gap-1.5 rounded-md border bg-muted/50 px-2 py-1 text-[11px]"
+              >
+                {att.type === "folder" ? (
+                  <IconFolder className="size-3 shrink-0 text-blue-500" />
+                ) : (
+                  <IconFile className="size-3 shrink-0 text-emerald-500" />
+                )}
+                <span className="max-w-[120px] truncate">{att.name}</span>
+              </div>
             ))}
           </div>
         )}

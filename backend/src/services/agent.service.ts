@@ -72,6 +72,7 @@ export interface AgentChatRequest {
     folderId?: string;
     fileId?: string;
   };
+  resourceUris?: string[];
 }
 
 export interface AgentChatResponse {
@@ -281,6 +282,25 @@ export class AgentService {
       folderId: context?.folderId || conversation.context?.folderId,
       fileId: context?.fileId || conversation.context?.fileId,
     };
+
+    // 解析 resourceUris 并注入一条 system 消息，放在用户消息之前，确保 Agent 首先看到这些信息。
+    const resourceUris = request.resourceUris;
+    if (resourceUris && resourceUris.length > 0) {
+      const resolvedContent = await this.resolveResourceUris(
+        resourceUris,
+        userId,
+      );
+      if (resolvedContent) {
+        const resourceMessage: IMessage = {
+          role: "system",
+          content:
+            `[Attached Resources — the user has explicitly shared these for context]\n\n` +
+            resolvedContent,
+          timestamp: new Date(),
+        };
+        conversation.messages.push(resourceMessage);
+      }
+    }
 
     const userMessage: IMessage = {
       role: "user",
@@ -567,6 +587,7 @@ export class AgentService {
       message: request.message,
       conversationId: request.conversationId,
       context: request.context,
+      resourceUris: request.resourceUris,
     };
     await enqueueAgentTask(data);
     return { taskId };
@@ -586,6 +607,7 @@ export class AgentService {
         message: data.message,
         conversationId: data.conversationId,
         context: data.context,
+        resourceUris: data.resourceUris,
       };
 
       const result = await this.chat(
@@ -631,5 +653,59 @@ export class AgentService {
 
   async getTaskTraces(taskId: string) {
     return getTraces(taskId);
+  }
+
+  private async resolveResourceUris(
+    uris: string[],
+    userId: string,
+  ): Promise<string> {
+    const parts: string[] = [];
+
+    for (const uri of uris.slice(0, 5)) {
+      try {
+        const fileMatch = uri.match(/^drive:\/\/files\/(.+)$/);
+        const folderMatch = uri.match(/^drive:\/\/folders\/(.+)$/);
+
+        if (fileMatch) {
+          const fileId = fileMatch[1];
+          const { KnowledgeService } = await import("./knowledge.service");
+          const knowledgeService = new KnowledgeService();
+          const { text, file } = await knowledgeService.extractFileContent(
+            fileId,
+            userId,
+          );
+
+          // Truncate large files
+          const MAX_CHARS = 100_000;
+          const content =
+            text.length > MAX_CHARS
+              ? text.slice(0, MAX_CHARS) +
+                `\n\n[... truncated at ${MAX_CHARS} chars, original: ${text.length} chars]`
+              : text;
+
+          parts.push(
+            `--- File: ${file.name} (${uri}) ---\n${content}\n--- End of ${file.name} ---`,
+          );
+        } else if (folderMatch) {
+          const folderId = folderMatch[1];
+          // Use mcpClient to call list_folder_contents for the tree
+          const result = await this.mcpClient.callTool("list_folder_contents", {
+            userId,
+            folderId,
+          });
+          parts.push(
+            `--- Folder Structure (${uri}) ---\n${typeof result.content === "string" ? result.content : JSON.stringify(result.content)}\n--- End of folder ---`,
+          );
+        } else {
+          logger.warn({ uri }, "Unknown resource URI scheme, skipping");
+        }
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : "Unknown error";
+        logger.warn({ uri, error: msg }, "Failed to resolve resource URI");
+        parts.push(`--- ${uri}: [Error: ${msg}] ---`);
+      }
+    }
+
+    return parts.join("\n\n");
   }
 }

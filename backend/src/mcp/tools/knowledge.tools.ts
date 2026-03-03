@@ -1,17 +1,15 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { KnowledgeService } from "../../services/knowledge.service";
 import { McpAuthContext, resolveUserId } from "../auth/auth";
 import { logger } from "../../lib/logger";
+import { McpServices } from "../server";
 
 export function registerKnowledgeTools(
   server: McpServer,
-  knowledgeService: KnowledgeService,
+  services: McpServices,
   authContext: McpAuthContext,
 ): void {
-  // -----------------------------------------------------------------------
-  // index_file — 为单个文件建立语义索引
-  // -----------------------------------------------------------------------
+  const { knowledgeService } = services;
   server.registerTool(
     "index_file",
     {
@@ -65,9 +63,6 @@ export function registerKnowledgeTools(
     },
   );
 
-  // -----------------------------------------------------------------------
-  // index_all_files — 批量索引用户所有文本文件
-  // -----------------------------------------------------------------------
   server.registerTool(
     "index_all_files",
     {
@@ -112,17 +107,18 @@ export function registerKnowledgeTools(
     },
   );
 
-  // -----------------------------------------------------------------------
-  // semantic_search_files — 语义搜索
-  // -----------------------------------------------------------------------
   server.registerTool(
     "semantic_search_files",
     {
       description:
         "Search files using natural language semantic understanding. " +
+        "This is the PRIMARY tool for searching file contents — use it when you need to " +
+        "find information across files without knowing exactly which file contains it. " +
         "Uses vector embeddings to find relevant content across the user's indexed files. " +
         "Returns matching text chunks with relevance scores. " +
-        "Note: Files must be indexed first using 'index_file' or 'index_all_files'.",
+        "Automatically falls back to keyword search if semantic search is unavailable. " +
+        "Note: For best results, files should be indexed first using 'index_file' or 'index_all_files'. " +
+        "Tip: Use 'extract_file_content' when you know the exact file; use this tool when searching.",
       inputSchema: z.object({
         userId: z
           .string()
@@ -189,9 +185,6 @@ export function registerKnowledgeTools(
     },
   );
 
-  // -----------------------------------------------------------------------
-  // get_indexing_status — 索引状态
-  // -----------------------------------------------------------------------
   server.registerTool(
     "get_indexing_status",
     {

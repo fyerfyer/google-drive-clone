@@ -42,10 +42,21 @@ export function useAgentChat() {
       const s = useAgentStore.getState();
       if (!text.trim() || s.isLoading) return;
 
-      // Add user message
+      // Capture resource attachments before clearing
+      const attachments =
+        s.resourceAttachments.length > 0
+          ? s.resourceAttachments.map((a) => ({
+              uri: a.uri,
+              name: a.name,
+              type: a.type,
+            }))
+          : undefined;
+
+      // Add user message with attachment indicators
       const userMessage: AgentMessage = {
         role: "user",
         content: text.trim(),
+        ...(attachments ? { attachments } : {}),
         timestamp: new Date().toISOString(),
       };
       s.addMessage(userMessage);
@@ -56,6 +67,11 @@ export function useAgentChat() {
       useAgentStore.setState({ isStreaming: true, isLoading: true });
 
       try {
+        const resourceUris = attachments?.map((a) => a.uri);
+
+        // Clear resource attachments after capturing them
+        s.clearResourceAttachments();
+
         const res = await agentService.chatAsync({
           message: text.trim(),
           conversationId: s.conversationId || undefined,
@@ -64,6 +80,7 @@ export function useAgentChat() {
             folderId: s.context.folderId,
             fileId: s.context.fileId,
           },
+          ...(resourceUris && resourceUris.length > 0 ? { resourceUris } : {}),
         });
 
         const taskId = res.data?.taskId;

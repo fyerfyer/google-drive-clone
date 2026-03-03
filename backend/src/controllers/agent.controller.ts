@@ -171,7 +171,7 @@ export class AgentController {
   // 主聊天接口：将任务入队 BullMQ，前端通过 /tasks/:taskId/stream 接收 SSE 事件
   async chatAsync(req: Request, res: Response, next: NextFunction) {
     const userId = req.user!._id.toString();
-    const { message, conversationId, context } = req.body;
+    const { message, conversationId, context, resourceUris } = req.body;
 
     if (
       !message ||
@@ -206,10 +206,22 @@ export class AgentController {
       };
     }
 
+    // Validate resourceUris
+    let validatedResourceUris: string[] | undefined;
+    if (resourceUris && Array.isArray(resourceUris)) {
+      validatedResourceUris = resourceUris
+        .filter(
+          (uri: unknown) =>
+            typeof uri === "string" && uri.startsWith("drive://"),
+        )
+        .slice(0, 5); // Max 5 resource attachments
+    }
+
     const result = await this.agentService.chatAsync(userId, {
       message: message.trim(),
       conversationId,
       context: validatedContext,
+      resourceUris: validatedResourceUris,
     });
 
     return ResponseHelper.ok(res, result);

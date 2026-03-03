@@ -1,9 +1,10 @@
-// 文件相关操作
+// 文件相关操作 — Smart Tool 模式
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { McpServices } from "../server";
 import { McpAuthContext, resolveUserId } from "../auth/auth";
 import { logger } from "../../lib/logger";
+import { KnowledgeService } from "../../services/knowledge.service";
 
 const userIdParam = z
   .string()
@@ -16,6 +17,7 @@ export function registerFileTools(
   authContext: McpAuthContext,
 ): void {
   const { fileService } = services;
+  const knowledgeService = services.knowledgeService;
 
   server.registerTool(
     "list_files",
@@ -126,27 +128,33 @@ export function registerFileTools(
     },
   );
 
+  // 统一文件提取，不需要关心格式
   server.registerTool(
-    "read_file",
+    "extract_file_content",
     {
       description:
-        "Read the text content of a file. Only works for text-based files (txt, md, json, csv, etc.).",
+        "Read and extract the text content of ANY file, regardless of format. " +
+        "Automatically handles text files (.txt, .md, .json, .ts, .py, etc.), " +
+        "PDF documents (.pdf), and Word documents (.docx). " +
+        "The backend transparently parses binary formats and returns clean text. " +
+        "Use this tool when you need to read or review a file's content. " +
+        "For very large files (>100KB), content is automatically truncated with a note. " +
+        "For binary files that cannot be parsed (images, videos, etc.), use 'get_download_url' instead.",
       inputSchema: z.object({
         userId: userIdParam,
-        fileId: z.string().describe("The file ID to read"),
+        fileId: z.string().describe("The file ID to read content from"),
       }),
     },
     async ({ userId: rawUserId, fileId }) => {
       try {
         const userId = resolveUserId(rawUserId, authContext);
-        const result = await fileService.getFileContent({
-          userId,
-          fileId,
-        });
 
-        // 裁剪内容避免过长导致失败
-        const MAX_CONTENT_CHARS = 30000; // ~8K tokens
-        let content = result.content;
+        const { text, file, extractionMethod } =
+          await knowledgeService.extractFileContent(fileId, userId);
+
+        // 智能截断：超过限制时自动截断并给出提示
+        const MAX_CONTENT_CHARS = 100_000; // ~25K tokens
+        let content = text;
         let truncated = false;
         if (content && content.length > MAX_CONTENT_CHARS) {
           content = content.slice(0, MAX_CONTENT_CHARS);
@@ -160,16 +168,26 @@ export function registerFileTools(
               text: JSON.stringify(
                 {
                   file: {
-                    id: result.file.id,
-                    name: result.file.name,
-                    size: result.file.size,
-                    mimeType: result.file.mimeType,
+                    id: file._id?.toString() || fileId,
+                    name: file.name,
+                    size: file.size,
+                    mimeType: file.mimeType,
+                    extension: file.extension,
                   },
+                  extractionMethod,
                   content,
                   ...(truncated
                     ? {
                         truncated: true,
-                        note: `Content truncated to ${MAX_CONTENT_CHARS} characters (original: ${result.content.length}). Use semantic_search_files for targeted queries on large files.`,
+                        originalLength: text.length,
+                        note:
+                          `Content truncated to ${MAX_CONTENT_CHARS} characters (original: ${text.length}). ` +
+                          `Use 'semantic_search_files' for targeted queries on large files.`,
+                      }
+                    : {}),
+                  ...(content.trim() === ""
+                    ? {
+                        note: "File appears to be empty or no text could be extracted.",
                       }
                     : {}),
                 },
@@ -182,6 +200,10 @@ export function registerFileTools(
       } catch (error) {
         const message =
           error instanceof Error ? error.message : "Unknown error";
+        logger.error(
+          { error: message, rawUserId, fileId },
+          "MCP extract_file_content failed",
+        );
         return {
           content: [{ type: "text" as const, text: `Error: ${message}` }],
           isError: true,

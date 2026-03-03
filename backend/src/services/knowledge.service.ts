@@ -82,7 +82,7 @@ const BINARY_TEXT_MIMES: Record<string, string> = {
     "docx",
 };
 
-function isTextExtractable(mimeType: string): boolean {
+export function isTextExtractable(mimeType: string): boolean {
   if (TEXT_MIME_PREFIXES.some((p) => mimeType.startsWith(p))) return true;
   if (mimeType in BINARY_TEXT_MIMES) return true;
   return false;
@@ -139,7 +139,7 @@ function chunkText(text: string): ChunkResult[] {
 export class KnowledgeService {
   constructor() {}
 
-  private async extractText(file: IFile): Promise<string> {
+  async extractText(file: IFile): Promise<string> {
     const mimeType = file.mimeType;
 
     if (!isTextExtractable(mimeType)) {
@@ -163,7 +163,7 @@ export class KnowledgeService {
     }
     const buffer = Buffer.concat(chunks);
 
-    // PDF 提取 (pdf-parse v2 uses PDFParse class)
+    // PDF 提取
     if (mimeType === "application/pdf") {
       try {
         const { PDFParse } = await import("pdf-parse");
@@ -597,5 +597,37 @@ export class KnowledgeService {
 
   isIndexable(mimeType: string): boolean {
     return isTextExtractable(mimeType);
+  }
+
+  async extractFileContent(
+    fileId: string,
+    userId: string,
+  ): Promise<{ text: string; file: IFile; extractionMethod: string }> {
+    const file = await File.findOne({
+      _id: fileId,
+      isTrashed: false,
+    });
+
+    if (!file) {
+      throw new Error("File not found");
+    }
+
+    const mimeType = file.mimeType;
+
+    let extractionMethod = "plain_text";
+    if (mimeType === "application/pdf") {
+      extractionMethod = "pdf_parse";
+    } else if (BINARY_TEXT_MIMES[mimeType] === "docx") {
+      extractionMethod = "docx_parse";
+    } else if (!isTextExtractable(mimeType)) {
+      throw new Error(
+        `Cannot extract text from file type: ${mimeType}. ` +
+          `Supported types: text files, PDF (.pdf), Word (.docx). ` +
+          `For binary files, use 'get_download_url' to get a download link instead.`,
+      );
+    }
+
+    const text = await this.extractText(file);
+    return { text, file, extractionMethod };
   }
 }

@@ -196,6 +196,10 @@ export class MemoryManager {
         messages.push({ role: "user", content: msg.content });
       } else if (msg.role === "assistant") {
         messages.push({ role: "assistant", content: msg.content });
+      } else if (msg.role === "system") {
+        // 注入的 system 消息（比如 Attached resource）
+        // TODO：需要引入更严谨的逻辑吗？
+        messages.push({ role: "system", content: msg.content });
       }
     }
 

@@ -22,6 +22,8 @@ export interface AgentChatRequest {
     folderId?: string;
     fileId?: string;
   };
+  /** drive:// resource URIs to resolve and inject as system context */
+  resourceUris?: string[];
 }
 
 export const agentService = {

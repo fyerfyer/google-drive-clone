@@ -152,10 +152,17 @@ export interface ToolCall {
   isError?: boolean;
 }
 
+export interface MessageAttachment {
+  uri: string;
+  name: string;
+  type: "file" | "folder";
+}
+
 export interface AgentMessage {
   role: "user" | "assistant" | "system";
   content: string;
   toolCalls?: ToolCall[];
+  attachments?: MessageAttachment[];
   timestamp: string;
 }
 

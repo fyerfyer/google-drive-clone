@@ -6,14 +6,13 @@ export function registerWorkspaceResources(
   server: McpServer,
   _services: McpServices,
 ): void {
-  // ─── drive://config ───
+  // drive://config
   server.registerResource(
     "drive-config",
     "drive://config",
     {
       title: "Drive Configuration",
-      description:
-        "Mind Drive configuration and capability information",
+      description: "Mind Drive configuration and capability information",
       mimeType: "application/json",
     },
     async (uri) => ({
@@ -28,7 +27,7 @@ export function registerWorkspaceResources(
               capabilities: {
                 atomic: [
                   "list_files",
-                  "read_file",
+                  "extract_file_content",
                   "write_file",
                   "create_file",
                   "get_file_info",
@@ -58,19 +57,19 @@ export function registerWorkspaceResources(
                 semantic: [
                   "search_files",
                   "summarize_directory",
-                  "query_workspace_knowledge",
                   "semantic_search_files",
                   "index_file",
                   "index_all_files",
                   "get_indexing_status",
                 ],
                 auth: ["authenticate", "whoami"],
-                workflow: [
-                  // TODO：设计一些典型的工作流工具
-                  // "create_report_from_folder",
-                  // "notify_collaborators",
-                  // "generate_release_notes",
-                ],
+                document: ["patch_file"],
+                resources: [
+                  "drive://config",
+                  "drive://status",
+                  "drive://files/{fileId}",
+                  "drive://folders/{folderId}",
+                ]
               },
               storage: {
                 type: "MinIO (S3-compatible)",
@@ -106,7 +105,7 @@ export function registerWorkspaceResources(
     }),
   );
 
-  // ─── drive://status ───
+  // drive://status
   // 提供驱动器运行时状态
   server.registerResource(
     "drive-status",
