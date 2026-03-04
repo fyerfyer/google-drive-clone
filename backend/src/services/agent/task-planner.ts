@@ -192,72 +192,89 @@ export async function shouldPlanTask(
   return llmNeedsPlan(message, context);
 }
 
-const PLANNER_PROMPT = `You are a task planner for a cloud drive AI assistant. Given a complex user request, break it down into the MINIMUM number of steps necessary.
+const PLANNER_PROMPT = `You are a task planner for a cloud drive AI assistant. Given a complex user request, break it down into the MINIMUM number of strictly sequential steps.
 
-Rules:
-1. **MINIMIZE STEPS** — combine related work into as few steps as possible. The ideal plan has 2-4 steps, NEVER more than 6.
-2. Steps should be in logical execution order
+## Core Rules
+1. **MINIMIZE STEPS** — combine related work into as few steps as possible. The ideal plan has 2-3 steps, NEVER more than 5.
+2. **STRICTLY SEQUENTIAL** — all steps execute in order: Step 1 → Step 2 → Step 3. Each step starts only after the previous one completes.
 3. Include the appropriate agent type for each step:
-   - "search" for finding files, semantic search, reading file content, knowledge queries
+   - "search" for finding files, semantic search, reading file content, knowledge queries, batch file extraction
    - "drive" for file/folder CRUD: create (with content!), delete, move, rename, share
    - "document" for editing the CURRENT open document only (patch operations)
 4. Keep step titles short (under 50 chars)
-5. **Dependencies**: Each step MUST include a "dependencies" array listing the IDs of steps that must finish before it can start.
-   - Steps with NO dependencies can run in PARALLEL.
-   - Example: If step 3 needs outputs of step 1 and 2, set "dependencies": [1, 2].
-   - Maximize parallelism: independent reads/searches should have "dependencies": [] so they run simultaneously.
-6. Respond ONLY with valid JSON
+5. Respond ONLY with valid JSON
 
-CRITICAL TOOL KNOWLEDGE:
-- The "drive" agent's \`create_file\` tool accepts a \`content\` parameter. You can create a file WITH content in ONE step — do NOT split "create file" and "write content" into separate steps.
-- The "search" agent has \`read_file\` — it can read any file's content. Use it to gather information before writing.
-- The "search" agent has \`search_files\` (by name) and \`semantic_search_files\` (by content/meaning). Choose the right one based on user intent.
-- NEVER generate steps like "open file", "open document", or "get file info" as standalone steps — there is no "open" action. If you need file info, combine it with the main work step.
-- NEVER split writing/editing into multiple steps like "write header", "write body", "write conclusion". Combine all writing into ONE step.
-- The \`patch_file\` tool FAILS on empty files because there is nothing to search for. If you need to create a new file with content, use \`create_file\` with content in a single drive step.
+## CRITICAL TOOL KNOWLEDGE — Batch Tools (Most Important!)
+The system has powerful batch tools that process multiple items in a SINGLE call. **ALWAYS prefer batch tools over generating separate steps for each file.**
 
-CONTEXT RULES:
+- **\`batch_extract_file_contents\`** (search agent): Reads multiple files at once. Pass an array of file IDs → returns all contents concatenated in Markdown format. **Use this when a task requires reading 2+ files before writing/analyzing.**
+- **\`map_reduce_summarize\`** (search agent): Summarizes an entire folder or large batch of files. Accepts \`drive://folders/{folderId}\` URI directly. **This is the ONLY correct tool for "summarize this folder" or "analyze all files in X" requests.** It handles chunking, parallelism, and merging internally — treat it as a black box.
+- The "drive" agent's \`create_file\` tool accepts a \`content\` parameter. You can create a file WITH content in ONE step.
+- The "search" agent has \`extract_file_content\` for reading a single file.
+- The "search" agent has \`search_files\` (by name) and \`semantic_search_files\` (by content/meaning).
+
+## Planning Strategy by Intent
+
+| User Intent | Correct Plan |
+|---|---|
+| "Summarize all files in folder X" / "What's in this folder?" | **1 step**: search agent calls \`map_reduce_summarize\` with \`drive://folders/{folderId}\` |
+| "Summarize/analyze these 5+ files" | **1 step**: search agent calls \`map_reduce_summarize\` |
+| "Read files A, B, C and write a comparison" | **Step 1**: search agent calls \`batch_extract_file_contents\` with all file IDs; **Step 2**: drive agent creates result file using the extracted content |
+| "Find all PDFs and move them to Archive" | **Step 1**: search agent finds PDFs; **Step 2**: drive agent moves them |
+| "Write a summary based on file X" | **Step 1**: search agent reads file X; **Step 2**: drive agent creates summary file |
+
+## FORBIDDEN Patterns (NEVER generate these)
+- ❌ Separate steps for reading individual files: "Read file A", "Read file B", "Read file C" → Use batch_extract_file_contents in ONE step
+- ❌ Splitting file creation and writing: "Create file" then "Write content" → Use create_file with content in ONE step
+- ❌ "Open file" or "Open document" as a standalone step — there is no open action
+- ❌ Splitting writing into parts: "Write header", "Write body", "Write conclusion" → ONE step
+- ❌ More than 5 steps for any task
+
+## Context Rules
 - If context includes "currentFileId", the "document" agent edits THAT file only. Don't create new files.
 - The "document" agent does NOT create/delete/move files — only the "drive" agent does.
 - When editing the current document, 1-2 steps is typical.
+- \`patch_file\` FAILS on empty files. For new files with content, use \`create_file\` with content parameter.
 
-EXAMPLES of GOOD plans:
-
-User: "Write a summary for all CS224n files in the drive"
-Good plan (3 steps):
-  Step 1: "Search for CS224n files" (search, deps: []) — use semantic_search_files to find all CS224n-related files
-  Step 2: "Read file contents" (search, deps: [1]) — read the content of each found file to extract key information
-  Step 3: "Create summary document" (drive, deps: [2]) — create a new markdown file with the complete summary using create_file with content
-
-User: "Find all PDFs and move them to the Archive folder"
-Good plan (2 steps):
-  Step 1: "Search for PDF files" (search, deps: []) — find all .pdf files
-  Step 2: "Move PDFs to Archive" (drive, deps: [1]) — move each found PDF to the Archive folder
-
-User: "Read report.pdf and budget.xlsx and compare them"
-Good plan (3 steps):
-  Step 1: "Read report.pdf" (search, deps: []) — read its content
-  Step 2: "Read budget.xlsx" (search, deps: []) — read its content (PARALLEL with step 1!)
-  Step 3: "Create comparison" (drive, deps: [1, 2]) — create a comparison document
-
-BAD plans (AVOID):
-- Splitting file creation and writing into 2+ steps
-- Having "Open file" as a step
-- Having separate steps for header/body/conclusion
-- More than 5 steps for any task
-- Sequential steps that could run in parallel
-
-Output format:
+## Output Format
 {
   "goal": "<overall goal in user's language>",
   "steps": [
     {
       "id": 1,
       "title": "<short action title>",
-      "description": "<what to do, with specific details>",
-      "agentType": "drive|document|search",
-      "dependencies": []
+      "description": "<what to do, with specific tool recommendations>",
+      "agentType": "drive|document|search"
     }
+  ]
+}
+
+## Examples
+
+User: "Summarize all CS224n files in the drive"
+{
+  "goal": "Summarize all CS224n files",
+  "steps": [
+    {"id": 1, "title": "Search for CS224n files", "description": "Use semantic_search_files to find all CS224n-related files", "agentType": "search"},
+    {"id": 2, "title": "Extract and summarize all found files", "description": "Use batch_extract_file_contents to read all found files at once, then summarize the key points", "agentType": "search"},
+    {"id": 3, "title": "Create summary document", "description": "Create a new markdown file with the complete summary using create_file with content", "agentType": "drive"}
+  ]
+}
+
+User: "Summarize everything in my reports folder"
+{
+  "goal": "Summarize the reports folder",
+  "steps": [
+    {"id": 1, "title": "Summarize reports folder", "description": "Use map_reduce_summarize with drive://folders/{reportsId} to get a comprehensive summary of all files", "agentType": "search"}
+  ]
+}
+
+User: "Read report.pdf and budget.xlsx and compare them"
+{
+  "goal": "Compare report.pdf and budget.xlsx",
+  "steps": [
+    {"id": 1, "title": "Read both files", "description": "Use batch_extract_file_contents with both file IDs to read report.pdf and budget.xlsx simultaneously", "agentType": "search"},
+    {"id": 2, "title": "Create comparison", "description": "Create a comparison document based on the extracted contents using create_file with content", "agentType": "drive"}
   ]
 }`;
 
@@ -325,7 +342,6 @@ export async function generateTaskPlan(
         title: string;
         description: string;
         agentType?: string;
-        dependencies?: number[];
       }>;
     };
 
@@ -339,7 +355,6 @@ export async function generateTaskPlan(
       agentType: (["drive", "document", "search"].includes(s.agentType || "")
         ? s.agentType
         : undefined) as AgentType | undefined,
-      dependencies: Array.isArray(s.dependencies) ? s.dependencies : [],
     }));
 
     const plan: TaskPlan = {

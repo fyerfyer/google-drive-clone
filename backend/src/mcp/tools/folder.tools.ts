@@ -20,7 +20,10 @@ export function registerFolderTools(
     "list_folder_contents",
     {
       description:
-        "List the contents of a folder, including sub-folders and files. Use folderId='root' for the root directory.",
+        "List direct children (sub-folders and files) of a specific folder. " +
+        "WHEN TO USE: When the user asks 'what's in this folder' or you need to enumerate folder contents by ID. " +
+        "WHEN NOT TO USE: When a drive://folders/{folderId} resource already provides this data. For aggregate stats, use summarize_directory instead. " +
+        "NOTES: Use folderId='root' for root directory. Returns immediate children only, not recursive.",
       inputSchema: z.object({
         userId: userIdParam,
         folderId: z
@@ -86,7 +89,11 @@ export function registerFolderTools(
   server.registerTool(
     "create_folder",
     {
-      description: "Create a new folder inside a parent folder.",
+      description:
+        "Create a new empty folder inside a parent folder. " +
+        "WHEN TO USE: When the user asks to create a new folder. " +
+        "WHEN NOT TO USE: For creating files (use create_file). " +
+        "NOTES: Use parentId='root' or omit for root directory.",
       inputSchema: z.object({
         userId: userIdParam,
         name: z.string().describe("The name of the new folder"),
@@ -139,7 +146,11 @@ export function registerFolderTools(
   server.registerTool(
     "rename_folder",
     {
-      description: "Rename an existing folder.",
+      description:
+        "Rename an existing folder. " +
+        "WHEN TO USE: When the user wants to change a folder's name. " +
+        "WHEN NOT TO USE: For moving (use move_folder) or deleting (use trash_folder). " +
+        "NOTES: Does not change the folder's location.",
       inputSchema: z.object({
         userId: userIdParam,
         folderId: z.string().describe("The folder ID to rename"),
@@ -176,7 +187,11 @@ export function registerFolderTools(
   server.registerTool(
     "move_folder",
     {
-      description: "Move a folder to a different parent folder.",
+      description:
+        "Move a folder to a different parent folder. " +
+        "WHEN TO USE: When the user wants to reorganize folders. " +
+        "WHEN NOT TO USE: For renaming (use rename_folder). " +
+        "NOTES: Use 'root' as destinationId for root directory.",
       inputSchema: z.object({
         userId: userIdParam,
         folderId: z.string().describe("The folder ID to move"),
@@ -221,7 +236,11 @@ export function registerFolderTools(
   server.registerTool(
     "trash_folder",
     {
-      description: "Move a folder and its contents to the trash.",
+      description:
+        "Move a folder and all its contents to the trash (soft delete). " +
+        "WHEN TO USE: When the user wants to delete a folder. " +
+        "WHEN NOT TO USE: For permanent deletion (use delete_folder). " +
+        "NOTES: Requires user approval. Can be restored with restore_folder.",
       inputSchema: z.object({
         userId: userIdParam,
         folderId: z.string().describe("The folder ID to trash"),
@@ -257,7 +276,11 @@ export function registerFolderTools(
   server.registerTool(
     "restore_folder",
     {
-      description: "Restore a folder from the trash.",
+      description:
+        "Restore a folder from the trash back to its original location. " +
+        "WHEN TO USE: When the user wants to recover a trashed folder. " +
+        "WHEN NOT TO USE: Folder is not in trash. " +
+        "NOTES: Only works on trashed folders.",
       inputSchema: z.object({
         userId: userIdParam,
         folderId: z.string().describe("The folder ID to restore"),
@@ -294,7 +317,10 @@ export function registerFolderTools(
     "delete_folder",
     {
       description:
-        "Permanently delete a folder and all its contents. This action cannot be undone.",
+        "Permanently delete a folder and ALL its contents. This cannot be undone. " +
+        "WHEN TO USE: Only when the user explicitly requests permanent deletion. " +
+        "WHEN NOT TO USE: For soft delete (use trash_folder). " +
+        "NOTES: Irreversible. Requires user approval. Deletes all sub-folders and files.",
       inputSchema: z.object({
         userId: userIdParam,
         folderId: z.string().describe("The folder ID to permanently delete"),
@@ -331,7 +357,10 @@ export function registerFolderTools(
     "get_folder_path",
     {
       description:
-        "Get the breadcrumb path for a folder, showing its position in the folder hierarchy.",
+        "Get the breadcrumb path for a folder (e.g., 'Root / Projects / CS224n'). " +
+        "WHEN TO USE: When you need to display a folder's position in the folder hierarchy. " +
+        "WHEN NOT TO USE: When a drive://folders/{folderId} resource already includes the path. " +
+        "NOTES: Returns an array of {id, name} path segments.",
       inputSchema: z.object({
         userId: userIdParam,
         folderId: z.string().describe("The folder ID to get the path for"),
@@ -370,7 +399,11 @@ export function registerFolderTools(
   server.registerTool(
     "star_folder",
     {
-      description: "Star or unstar a folder.",
+      description:
+        "Star or unstar a folder to mark it as important. " +
+        "WHEN TO USE: When the user wants to bookmark/favorite a folder. " +
+        "WHEN NOT TO USE: For files (use star_file). " +
+        "NOTES: Pass star=true to star, star=false to unstar.",
       inputSchema: z.object({
         userId: userIdParam,
         folderId: z.string().describe("The folder ID"),

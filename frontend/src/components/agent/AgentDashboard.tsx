@@ -16,7 +16,6 @@ import {
   IconLoader2,
   IconCircleDashed,
   IconPlayerSkipForward,
-  IconArrowsSplit,
   IconChevronDown,
   IconChevronRight,
 } from "@tabler/icons-react";
@@ -307,7 +306,7 @@ function BackgroundTasksTab() {
 
 /* ───────────────── Tab 2 – Real-time Traces ───────────────── */
 
-/* ── Step status icons for DAG view ── */
+/* ── Step status icons ── */
 
 const STEP_STATUS_CFG: Record<
   TaskStatus,
@@ -340,48 +339,8 @@ const STEP_STATUS_CFG: Record<
   },
 };
 
-/** Compute topological batch levels from dependencies. Steps in the same level can run in parallel. */
-function computeBatchLevels(
-  steps: TaskStep[],
-): { level: number; stepIds: number[] }[] {
-  const levelMap = new Map<number, number>();
-  const stepMap = new Map<number, TaskStep>();
-  for (const s of steps) stepMap.set(s.id, s);
-
-  function getLevel(id: number): number {
-    if (levelMap.has(id)) return levelMap.get(id)!;
-    const step = stepMap.get(id);
-    if (!step || !step.dependencies || step.dependencies.length === 0) {
-      levelMap.set(id, 0);
-      return 0;
-    }
-    const maxDepLevel = Math.max(
-      ...step.dependencies.map((depId) => getLevel(depId)),
-    );
-    const lv = maxDepLevel + 1;
-    levelMap.set(id, lv);
-    return lv;
-  }
-
-  for (const s of steps) getLevel(s.id);
-
-  // Group by level
-  const grouped = new Map<number, number[]>();
-  for (const [id, lv] of levelMap) {
-    if (!grouped.has(lv)) grouped.set(lv, []);
-    grouped.get(lv)!.push(id);
-  }
-
-  return Array.from(grouped.entries())
-    .sort(([a], [b]) => a - b)
-    .map(([level, stepIds]) => ({
-      level,
-      stepIds: stepIds.sort((a, b) => a - b),
-    }));
-}
-
-/** A single step node in the DAG */
-function DAGStepNode({
+/** A single step node in the sequential execution view */
+function StepNode({
   step,
   isExpanded,
   onToggle,
@@ -491,12 +450,6 @@ function TracesTab() {
     return map;
   }, [traceEntries]);
 
-  // Compute batch levels from the plan
-  const batchLevels = useMemo(() => {
-    if (!taskPlan || !taskPlan.steps.length) return [];
-    return computeBatchLevels(taskPlan.steps);
-  }, [taskPlan]);
-
   const hasPlan = taskPlan && taskPlan.steps.length > 0;
   const hasTraces = traceEntries.length > 0;
 
@@ -506,12 +459,6 @@ function TracesTab() {
         Traces will appear here during execution and are saved per conversation.
       </p>
     );
-  }
-
-  // Step lookup
-  const stepMap = new Map<number, TaskStep>();
-  if (taskPlan) {
-    for (const s of taskPlan.steps) stepMap.set(s.id, s);
   }
 
   return (
@@ -532,60 +479,33 @@ function TracesTab() {
         </div>
       )}
 
-      {/* DAG Visualization */}
-      {hasPlan && batchLevels.length > 0 && (
+      {/* Sequential Step Visualization */}
+      {hasPlan && (
         <div className="space-y-1.5">
           <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
-            Execution DAG
+            Execution Steps
           </span>
 
-          <div className="space-y-2">
-            {batchLevels.map((batch, batchIdx) => (
-              <div key={batchIdx}>
-                {/* Batch header — show parallel icon if >1 step in batch */}
-                {batch.stepIds.length > 1 && (
-                  <div className="flex items-center gap-1.5 mb-1">
-                    <IconArrowsSplit className="size-3 text-blue-500" />
-                    <span className="text-[9px] text-blue-500 font-medium uppercase tracking-wider">
-                      Parallel Batch {batchIdx + 1}
-                    </span>
-                    <div className="flex-1 h-px bg-blue-500/20" />
-                  </div>
-                )}
-
-                {/* Steps in this batch — shown side by side if parallel */}
-                <div
-                  className={cn(
-                    "gap-1.5",
-                    batch.stepIds.length > 1
-                      ? "grid grid-cols-2"
-                      : "flex flex-col",
+          <div className="space-y-1.5">
+            {taskPlan.steps.map((step, idx) => {
+              const stepTraces = tracesByStep.get(step.id) || [];
+              return (
+                <div key={step.id}>
+                  <StepNode
+                    step={step}
+                    isExpanded={expandedSteps.has(step.id)}
+                    onToggle={() => toggleStep(step.id)}
+                    traces={stepTraces}
+                  />
+                  {/* Arrow between steps */}
+                  {idx < taskPlan.steps.length - 1 && (
+                    <div className="flex justify-center py-0.5">
+                      <div className="w-px h-3 bg-border" />
+                    </div>
                   )}
-                >
-                  {batch.stepIds.map((stepId) => {
-                    const step = stepMap.get(stepId);
-                    if (!step) return null;
-                    const stepTraces = tracesByStep.get(stepId) || [];
-                    return (
-                      <DAGStepNode
-                        key={stepId}
-                        step={step}
-                        isExpanded={expandedSteps.has(stepId)}
-                        onToggle={() => toggleStep(stepId)}
-                        traces={stepTraces}
-                      />
-                    );
-                  })}
                 </div>
-
-                {/* Arrow between batches */}
-                {batchIdx < batchLevels.length - 1 && (
-                  <div className="flex justify-center py-0.5">
-                    <div className="w-px h-3 bg-border" />
-                  </div>
-                )}
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}

@@ -14,9 +14,10 @@ export function registerKnowledgeTools(
     "index_file",
     {
       description:
-        "Index a file for semantic search. Extracts text content, splits it into chunks, " +
-        "and generates vector embeddings. Supports text files, PDF, and DOCX. " +
-        "After indexing, the file can be found through semantic_search_files.",
+        "Index a single file for semantic search. Extracts text, splits into chunks, generates vector embeddings. " +
+        "WHEN TO USE: When a specific file needs to be indexed before semantic search can find it. " +
+        "WHEN NOT TO USE: When the user just wants to search (use semantic_search_files — it works on already-indexed files). " +
+        "NOTES: Supports text, PDF, and DOCX. After indexing, the file is searchable via semantic_search_files.",
       inputSchema: z.object({
         userId: z
           .string()
@@ -67,8 +68,10 @@ export function registerKnowledgeTools(
     "index_all_files",
     {
       description:
-        "Index all text-based files in the user's drive for semantic search. " +
-        "This may take a while for large collections. Supports text files, PDF, and DOCX.",
+        "Batch-index ALL text-based files in the user's drive for semantic search. " +
+        "WHEN TO USE: When the user wants their entire drive searchable, or asks to 'index everything'. " +
+        "WHEN NOT TO USE: When only a single file needs indexing (use index_file). " +
+        "NOTES: May take a while for large collections. Supports text, PDF, and DOCX.",
       inputSchema: z.object({
         userId: z
           .string()
@@ -111,14 +114,10 @@ export function registerKnowledgeTools(
     "semantic_search_files",
     {
       description:
-        "Search files using natural language semantic understanding. " +
-        "This is the PRIMARY tool for searching file contents — use it when you need to " +
-        "find information across files without knowing exactly which file contains it. " +
-        "Uses vector embeddings to find relevant content across the user's indexed files. " +
-        "Returns matching text chunks with relevance scores. " +
-        "Automatically falls back to keyword search if semantic search is unavailable. " +
-        "Note: For best results, files should be indexed first using 'index_file' or 'index_all_files'. " +
-        "Tip: Use 'extract_file_content' when you know the exact file; use this tool when searching.",
+        "Search indexed files using natural language and vector embeddings. Returns matching text chunks with relevance scores. " +
+        "WHEN TO USE: When the user asks about topics, concepts, or content across files (e.g., 'what files discuss deployment?', 'find anything about budgets'). " +
+        "WHEN NOT TO USE: When the user asks for a specific file by name (use search_files). When you already have the file ID and need its full content (use extract_file_content). " +
+        "NOTES: Files must be indexed first (index_file / index_all_files). Falls back to keyword search if semantic search is unavailable.",
       inputSchema: z.object({
         userId: z
           .string()
@@ -189,8 +188,10 @@ export function registerKnowledgeTools(
     "get_indexing_status",
     {
       description:
-        "Get the current indexing status for the user's workspace. " +
-        "Shows how many files are indexed and how many chunks exist.",
+        "Get the current indexing status: how many files are indexed, chunk count, and indexing percentage. " +
+        "WHEN TO USE: When the user asks 'are my files indexed?' or when semantic search returns no results and you suspect files aren't indexed. " +
+        "WHEN NOT TO USE: When you just need to perform a search (use semantic_search_files directly). " +
+        "NOTES: If indexingPercentage is low, suggest using index_all_files.",
       inputSchema: z.object({
         userId: z
           .string()

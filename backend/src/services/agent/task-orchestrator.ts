@@ -1,15 +1,15 @@
 /**
- * Task Orchestrator 多 Agent 任务编排器 (DAG 并行版)
+ * Task Orchestrator — 纯串行编排器
  *
- * 当 TaskPlan 涉及多种 AgentType 的步骤时，由 Orchestrator 统一调度：
- *   1. 解析每个步骤的 dependencies 字段，构建 DAG
- *   2. 每轮迭代筛选所有依赖已完成的就绪节点，使用 Promise.all 并行执行
- *   3. 根据 step.agentType 选择对应 Agent
- *   4. 构建包含前序结果的上下文，让当前 Agent 知晓前面步骤的产出
- *   5. 收集所有步骤的 toolCalls / summaries
- *   6. 遇到 pendingApproval 时暂停编排
+ * 当 TaskPlan 涉及多步骤时，由 Orchestrator 统一调度：
+ *   1. 按步骤 id 从 1 到 N 严格顺序执行
+ *   2. 根据 step.agentType 选择对应 Agent
+ *   3. 构建包含前序结果的上下文，让当前 Agent 知晓前面步骤的产出
+ *   4. 收集所有步骤的 toolCalls / summaries
+ *   5. 遇到 pendingApproval 时暂停编排
+ *   6. 如果某一步失败（且达到重试上限），直接终止整个 Plan 执行
  *
- *   每个步骤仍通过 BaseAgent.run() 执行，Orchestrator 仅负责
+ *   每个步骤通过 BaseAgent.run() 执行，Orchestrator 仅负责
  *   选谁执行、传什么上下文、如何推进。
  */
 
@@ -28,6 +28,11 @@ import {
 } from "./agent.types";
 import { IMessage, IToolCall } from "../../models/Conversation.model";
 import { logger } from "../../lib/logger";
+import {
+  storeEphemeral,
+  CONTEXT_OFFLOAD_THRESHOLD_CHARS,
+  EphemeralItem,
+} from "./ephemeral-store";
 
 export interface StepResult {
   step: TaskStep;
@@ -36,6 +41,8 @@ export interface StepResult {
   pendingApprovals: AgentLoopResult["pendingApprovals"];
   success: boolean;
   error?: string;
+  /** If set, the full content was offloaded to ephemeral store */
+  ephemeralId?: string;
 }
 
 export interface OrchestratorResult {
@@ -55,6 +62,10 @@ export interface OrchestratorResult {
 
 export class TaskOrchestrator {
   private taskTracker: TaskPlanTracker;
+
+  // 缓存 enrichment 结果，key "agentType:folderId"
+  // 避免对同一 agentType 在同一 folderId 上重复调用 MCP 工具
+  private enrichmentCache = new Map<string, Partial<AgentContext>>();
 
   constructor(private agents: Record<AgentType, BaseAgent>) {
     this.taskTracker = new TaskPlanTracker();
@@ -85,19 +96,7 @@ export class TaskOrchestrator {
     const allToolCalls: IToolCall[] = [];
     const stepResults: StepResult[] = [];
     let updatedSummaries = [...existingSummaries];
-
-    // 通过当前 plan 状态构建 DAG
-    // 这样之后可以直接恢复部分完成状态的 plan
-    const completedStepIds = new Set<number>(
-      currentPlan.steps
-        .filter((s) => s.status === TASK_STATUS.COMPLETED)
-        .map((s) => s.id),
-    );
-    const failedStepIds = new Set<number>(
-      currentPlan.steps
-        .filter((s) => s.status === TASK_STATUS.FAILED)
-        .map((s) => s.id),
-    );
+    this.enrichmentCache.clear();
 
     logger.info(
       {
@@ -106,112 +105,19 @@ export class TaskOrchestrator {
         agentTypes: [
           ...new Set(currentPlan.steps.map((s) => s.agentType).filter(Boolean)),
         ],
-        hasDependencies: currentPlan.steps.some(
-          (s) => s.dependencies && s.dependencies.length > 0,
-        ),
       },
-      "Orchestrator: starting DAG-based parallel plan execution",
+      "Orchestrator: starting serial plan execution",
     );
 
-    while (true) {
-      // 找到所有已完成的 step
-      const readySteps = currentPlan.steps.filter((step) => {
-        if (step.status !== TASK_STATUS.PENDING) return false;
-        const deps = step.dependencies || [];
-        return deps.every(
-          (depId) => completedStepIds.has(depId) || failedStepIds.has(depId),
-        );
-      });
-
-      if (readySteps.length === 0) break;
-
-      logger.info(
-        {
-          readyCount: readySteps.length,
-          readyIds: readySteps.map((s) => s.id),
-        },
-        "Orchestrator: parallel batch ready",
-      );
-
-      // 并发执行
-      onEvent?.({
-        type: AGENT_EVENT_TYPE.PARALLEL_BATCH,
-        data: {
-          stepIds: readySteps.map((s) => s.id),
-          batchIndex: stepResults.length > 0 ? -1 : 0,
-        },
-      });
-
-      const batchPromises = readySteps.map((step) =>
-        this.executeStep(
-          step,
-          currentPlan,
-          baseContext,
-          originalMessages,
-          conversationId,
-          updatedSummaries,
-          stepResults,
-          onEvent,
-          signal,
-          taskId,
-        ),
-      );
-
-      const batchResults = await Promise.all(batchPromises);
-
-      for (const result of batchResults) {
-        const step = currentPlan.steps.find((s) => s.id === result.step.id)!;
-
-        if (result.success) {
-          step.status = TASK_STATUS.COMPLETED;
-          step.result = result.content.slice(0, 200);
-          completedStepIds.add(step.id);
-          allToolCalls.push(...result.toolCalls);
-
-          onEvent?.({
-            type: AGENT_EVENT_TYPE.TASK_STEP_UPDATE,
-            data: {
-              stepId: step.id,
-              status: TASK_STATUS.COMPLETED,
-              result: step.result,
-            },
-          });
-        } else {
-          step.status = TASK_STATUS.FAILED;
-          step.error = result.error;
-          failedStepIds.add(step.id);
-
-          onEvent?.({
-            type: AGENT_EVENT_TYPE.TASK_STEP_UPDATE,
-            data: {
-              stepId: step.id,
-              status: TASK_STATUS.FAILED,
-              error: result.error,
-            },
-          });
-        }
-
-        stepResults.push(result);
-        if (result.updatedSummaries) {
-          updatedSummaries = result.updatedSummaries;
-        }
-      }
-
-      const nextPending = currentPlan.steps.find(
-        (s) => s.status === TASK_STATUS.PENDING,
-      );
-      if (nextPending) {
-        currentPlan.currentStep = nextPending.id;
-      } else {
-        currentPlan.isComplete = true;
-      }
-    }
-
-    // 跳过所有不可达 step
+    // 按步骤 id 顺序严格串行执行
     for (const step of currentPlan.steps) {
-      if (step.status === TASK_STATUS.PENDING) {
+      // 只执行待处理的步骤（跳过已完成/已失败的步骤，支持恢复）
+      if (step.status !== TASK_STATUS.PENDING) continue;
+
+      // 检查 abort 信号
+      if (signal?.aborted) {
         step.status = TASK_STATUS.SKIPPED;
-        step.error = "Skipped due to failed dependencies";
+        step.error = "Aborted by user";
         onEvent?.({
           type: AGENT_EVENT_TYPE.TASK_STEP_UPDATE,
           data: {
@@ -220,8 +126,110 @@ export class TaskOrchestrator {
             error: step.error,
           },
         });
+        continue;
+      }
+
+      currentPlan.currentStep = step.id;
+
+      const result = await this.executeStep(
+        step,
+        currentPlan,
+        baseContext,
+        originalMessages,
+        conversationId,
+        updatedSummaries,
+        stepResults,
+        onEvent,
+        signal,
+        taskId,
+      );
+
+      if (result.success) {
+        step.status = TASK_STATUS.COMPLETED;
+        step.result = result.content.slice(0, 200);
+        allToolCalls.push(...result.toolCalls);
+
+        // 检查是否需要将大结果卸载到临时存储
+        if (result.content.length > CONTEXT_OFFLOAD_THRESHOLD_CHARS) {
+          const items: EphemeralItem[] = [
+            {
+              label: `Step ${step.id}: ${step.title}`,
+              content: result.content,
+              meta: { stepId: step.id, agentType: step.agentType },
+            },
+          ];
+          const ephId = storeEphemeral(result.content, items, {
+            sourceType: "batch_results",
+            itemCount: 1,
+            totalChars: result.content.length,
+            description: `Result from Step ${step.id}: ${step.title}`,
+          });
+          result.ephemeralId = ephId;
+          logger.info(
+            { ephemeralId: ephId, chars: result.content.length },
+            "Orchestrator: step result offloaded to ephemeral store",
+          );
+        }
+
+        onEvent?.({
+          type: AGENT_EVENT_TYPE.TASK_STEP_UPDATE,
+          data: {
+            stepId: step.id,
+            status: TASK_STATUS.COMPLETED,
+            result: step.result,
+          },
+        });
+      } else {
+        step.status = TASK_STATUS.FAILED;
+        step.error = result.error;
+
+        onEvent?.({
+          type: AGENT_EVENT_TYPE.TASK_STEP_UPDATE,
+          data: {
+            stepId: step.id,
+            status: TASK_STATUS.FAILED,
+            error: result.error,
+          },
+        });
+
+        // 串行模式下，某一步失败直接终止整个 Plan
+        logger.warn(
+          { stepId: step.id, error: result.error },
+          "Orchestrator: step failed, terminating plan execution",
+        );
+
+        // 标记所有后续步骤为跳过
+        for (const remaining of currentPlan.steps) {
+          if (
+            remaining.status === TASK_STATUS.PENDING &&
+            remaining.id > step.id
+          ) {
+            remaining.status = TASK_STATUS.SKIPPED;
+            remaining.error = `Skipped: previous Step ${step.id} failed`;
+            onEvent?.({
+              type: AGENT_EVENT_TYPE.TASK_STEP_UPDATE,
+              data: {
+                stepId: remaining.id,
+                status: TASK_STATUS.SKIPPED,
+                error: remaining.error,
+              },
+            });
+          }
+        }
+
+        stepResults.push(result);
+        if (result.updatedSummaries) {
+          updatedSummaries = result.updatedSummaries;
+        }
+        break; // 终止 Plan
+      }
+
+      stepResults.push(result);
+      if (result.updatedSummaries) {
+        updatedSummaries = result.updatedSummaries;
       }
     }
+
     currentPlan.isComplete = true;
 
     const content = this.buildFinalResponse(currentPlan, stepResults);
@@ -285,8 +293,35 @@ export class TaskOrchestrator {
         title: step.title,
       },
     });
+    
+    const folderId = baseContext.folderId || "root";
+    const cacheKey = `${agentType}:${folderId}`;
+    let stepContext: AgentContext;
+    let skipEnrichment = false;
 
-    const stepContext = this.buildStepContext(baseContext, step, agentType);
+    if (this.enrichmentCache.has(cacheKey)) {
+      stepContext = {
+        ...this.buildStepContext(baseContext, step, agentType),
+        ...this.enrichmentCache.get(cacheKey)!,
+      };
+      skipEnrichment = true;
+      logger.debug(
+        { stepId: step.id, cacheKey },
+        "Orchestrator: reusing cached enrichment for step",
+      );
+    } else {
+      const rawContext = this.buildStepContext(baseContext, step, agentType);
+      stepContext = await agent.enrichContext(rawContext);
+      this.enrichmentCache.set(cacheKey, {
+        workspaceSnapshot: stepContext.workspaceSnapshot,
+        folderPath: stepContext.folderPath,
+        relatedContext: stepContext.relatedContext,
+        documentContent: stepContext.documentContent,
+        documentName: stepContext.documentName,
+      });
+      skipEnrichment = true; 
+    }
+
     const stepMessages = this.buildStepMessages(
       originalMessages,
       step,
@@ -299,7 +334,6 @@ export class TaskOrchestrator {
         stepId: step.id,
         title: step.title,
         agentType,
-        dependencies: step.dependencies,
         messageCount: stepMessages.length,
       },
       "Orchestrator: executing step",
@@ -331,6 +365,7 @@ export class TaskOrchestrator {
             signal,
             taskId,
             stepId: step.id,
+            skipEnrichment,
           },
         );
 
@@ -389,11 +424,10 @@ export class TaskOrchestrator {
     };
   }
 
-  // 为当前步骤构建 AgentContext。
-  // 保留原始 userId / folderId / fileId，但切换 type 到步骤指定的 agent。
+  // 为当前步骤构建 AgentContext
   private buildStepContext(
     base: AgentContext,
-    step: TaskStep,
+    _step: TaskStep,
     agentType: AgentType,
   ): AgentContext {
     return {
@@ -402,10 +436,7 @@ export class TaskOrchestrator {
     };
   }
 
-  // 为当前步骤构建消息序列：
-  // 1. 原始对话历史（MemoryManager 处理）
-  // 2. 前序步骤结果（作为一条合成 assistant 消息，让 Agent 知道之前做了什么）
-  // 3. 当前步骤指令（作为一条合成 user 消息）
+  // 为当前步骤构建消息序列
   private buildStepMessages(
     originalMessages: IMessage[],
     currentStep: TaskStep,
@@ -418,15 +449,34 @@ export class TaskOrchestrator {
     if (previousResults.length > 0) {
       const summaryParts = previousResults.map((r) => {
         if (r.success) {
+          if (r.ephemeralId) {
+            return (
+              `[Step ${r.step.id}] ✅ ${r.step.title}: ${r.content.slice(0, 150)}\n` +
+              `  ⚠️ Full data offloaded to ephemeral memory: Reference ID = "${r.ephemeralId}"\n` +
+              `  Use 'query_ephemeral_memory' to look up specific items, or 'map_reduce_summarize' for a full summary.`
+            );
+          }
           return `[Step ${r.step.id}] ✅ ${r.step.title}: ${r.content.slice(0, 300)}`;
         } else {
           return `[Step ${r.step.id}] ❌ ${r.step.title}: ${r.error || "Failed"}`;
         }
       });
 
+      const offloadedIds = new Set(
+        previousResults.filter((r) => r.ephemeralId).map((r) => r.ephemeralId!),
+      );
+
+      let assistantContent = `I've completed the following steps so far:\n\n${summaryParts.join("\n\n")}`;
+
+      if (offloadedIds.size > 0) {
+        assistantContent +=
+          `\n\n---\n**NOTE**: Some step results were too large for direct context injection and have been offloaded to ephemeral memory. ` +
+          `Use the Reference IDs above with 'query_ephemeral_memory' or 'map_reduce_summarize' tools to access this data.`;
+      }
+
       messages.push({
         role: "assistant" as const,
-        content: `I've completed the following steps so far:\n\n${summaryParts.join("\n\n")}`,
+        content: assistantContent,
         timestamp: new Date(),
       });
     }
@@ -448,20 +498,17 @@ export class TaskOrchestrator {
     return messages;
   }
 
-  // 组装最终返回给用户的回复文本。
-  // 以最后一个成功步骤的 content 为主体，附加任务计划进度。
+  // 组装最终返回给用户的回复文本
   private buildFinalResponse(
     plan: TaskPlan,
     stepResults: StepResult[],
   ): string {
     const parts: string[] = [];
 
-    // 选取最后一个成功步骤的回复作为主体
     const lastSuccess = [...stepResults].reverse().find((r) => r.success);
     if (lastSuccess) {
       parts.push(lastSuccess.content);
     } else if (stepResults.length > 0) {
-      // 全部失败
       parts.push(
         "I encountered errors while executing the task plan. Here's what happened:",
       );
@@ -474,7 +521,6 @@ export class TaskOrchestrator {
       }
     }
 
-    // 附加进度
     parts.push("");
     parts.push("---");
     parts.push(this.taskTracker.formatPlanForUser(plan));

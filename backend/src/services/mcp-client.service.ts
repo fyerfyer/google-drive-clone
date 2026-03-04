@@ -77,15 +77,23 @@ export class McpClientService {
     return this.cachedTools;
   }
 
+  // Map Reduce 等并发操作耗时会久一些
+  private static readonly DEFAULT_TOOL_TIMEOUT_MS = 300_000;
+
   async callTool(
     name: string,
     args: Record<string, unknown>,
+    timeout?: number,
   ): Promise<McpToolCallResult> {
     await this.connect();
 
     logger.info({ tool: name, args }, "Calling MCP tool");
 
-    const result = await this.client!.callTool({ name, arguments: args });
+    const result = await this.client!.callTool(
+      { name, arguments: args },
+      undefined,
+      { timeout: timeout ?? McpClientService.DEFAULT_TOOL_TIMEOUT_MS },
+    );
 
     const content =
       (result.content as Array<{ type: string; text: string }>) || [];

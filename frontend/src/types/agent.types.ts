@@ -55,8 +55,6 @@ export interface TaskStep {
   description: string;
   status: TaskStatus;
   agentType?: AgentType;
-  /** IDs of steps that must complete before this step can start */
-  dependencies?: number[];
   result?: string;
   error?: string;
 }
@@ -97,7 +95,6 @@ export const AGENT_EVENT_TYPE = {
   ROUTE_DECISION: "route_decision",
   TASK_PLAN: "task_plan",
   TASK_STEP_UPDATE: "task_step_update",
-  PARALLEL_BATCH: "parallel_batch",
   TOOL_CALL_START: "tool_call_start",
   TOOL_CALL_END: "tool_call_end",
   CONTENT: "content",
@@ -234,10 +231,4 @@ export interface TraceEntry {
   timestamp: number;
   stepId?: number;
   toolName?: string;
-}
-
-/** A batch of step IDs that were executed in parallel by the orchestrator */
-export interface ParallelBatch {
-  stepIds: number[];
-  timestamp: number;
 }

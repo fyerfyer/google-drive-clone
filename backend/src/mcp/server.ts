@@ -21,6 +21,7 @@ import {
   registerSearchTools,
   registerShareTools,
   registerDocumentTools,
+  registerEphemeralTools,
 } from "./tools";
 
 export interface McpServices {
@@ -52,12 +53,9 @@ export function createMcpServer(
   registerFolderTools(server, services, ctx);
   registerShareTools(server, services, ctx);
   registerSearchTools(server, services, ctx);
-
-  // Knowledge Layer
   registerKnowledgeTools(server, services, ctx);
-
   registerDocumentTools(server, services, ctx);
-
+  registerEphemeralTools(server, services, ctx);
   registerWorkspaceResources(server, services);
 
   // 动态资源模板

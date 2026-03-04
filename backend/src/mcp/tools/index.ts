@@ -4,3 +4,4 @@ export * from "./search.tools";
 export * from "./share.tools";
 export * from "./knowledge.tools";
 export * from "./document.tools";
+export * from "./ephemeral.tools";

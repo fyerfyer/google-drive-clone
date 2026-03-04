@@ -9,7 +9,6 @@ import type {
   PendingApproval,
   ToolCall,
   TraceEntry,
-  ParallelBatch,
 } from "@/types/agent.types";
 import { TASK_STATUS } from "@/types/agent.types";
 
@@ -76,9 +75,6 @@ interface AgentState {
   // Trace entries for current task
   traceEntries: TraceEntry[];
 
-  // Parallel batch tracking for DAG visualization
-  parallelBatches: ParallelBatch[];
-
   // Actions
   open: () => void;
   close: () => void;
@@ -124,7 +120,6 @@ interface AgentState {
   setTokenExceeded: (exceeded: boolean, reason?: string) => void;
   addTraceEntry: (entry: TraceEntry) => void;
   clearTraceEntries: () => void;
-  addParallelBatch: (batch: ParallelBatch) => void;
   finalizeStreaming: (finalMessage?: AgentMessage) => void;
 }
 
@@ -158,7 +153,6 @@ export const useAgentStore = create<AgentState>()(
       tokenExceeded: false,
       tokenExceededReason: null,
       traceEntries: [],
-      parallelBatches: [],
 
       open: () => set({ isOpen: true }),
       close: () => set({ isOpen: false }),
@@ -206,7 +200,6 @@ export const useAgentStore = create<AgentState>()(
           tokenExceeded: false,
           tokenExceededReason: null,
           traceEntries: [],
-          parallelBatches: [],
         }),
 
       setAgentType: (type) => set({ agentType: type }),
@@ -304,7 +297,6 @@ export const useAgentStore = create<AgentState>()(
           tokenExceeded: false,
           tokenExceededReason: null,
           traceEntries: [],
-          parallelBatches: [],
         }),
 
       // Token & trace actions
@@ -315,8 +307,6 @@ export const useAgentStore = create<AgentState>()(
       addTraceEntry: (entry) =>
         set((s) => ({ traceEntries: [...s.traceEntries, entry] })),
       clearTraceEntries: () => set({ traceEntries: [] }),
-      addParallelBatch: (batch) =>
-        set((s) => ({ parallelBatches: [...s.parallelBatches, batch] })),
 
       finalizeStreaming: (finalMessage) => {
         const state = get();

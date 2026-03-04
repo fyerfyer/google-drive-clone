@@ -15,6 +15,10 @@ export interface AgentContext {
   documentContent?: string;
   documentName?: string;
   relatedContext?: string;
+  /** True when the user explicitly attached file/folder resources via @ mentions */
+  hasExplicitResources?: boolean;
+  /** The resource URIs that were attached */
+  attachedResourceUris?: string[];
 }
 
 export interface RouteDecision {
@@ -124,7 +128,6 @@ export interface TaskStep {
   description: string;
   status: TaskStatus;
   agentType?: AgentType;
-  dependencies?: number[];
   result?: string;
   error?: string;
 }
@@ -268,16 +271,21 @@ export const DRIVE_AGENT_TOOLS = new Set([
   "list_shared_with_me",
 
   "search_files",
-  "list_files",
+  // Batch
+  "batch_extract_file_contents",
+  "query_ephemeral_memory",
+  "map_reduce_summarize",
 ]);
 
 export const DOCUMENT_AGENT_TOOLS = new Set([
-  "read_file",
+  "extract_file_content",
   "patch_file",
   "get_file_info",
   // Context 增强
   "list_folder_contents",
   "search_files",
+  "query_ephemeral_memory",
+  "map_reduce_summarize",
 ]);
 
 export const SEARCH_AGENT_TOOLS = new Set([
@@ -291,17 +299,20 @@ export const SEARCH_AGENT_TOOLS = new Set([
   "index_all_files",
   "get_indexing_status",
   "get_file_info",
-  "read_file",
+  "extract_file_content",
+  "batch_extract_file_contents",
   "list_folder_contents",
   "get_folder_path",
   "list_files",
+  "query_ephemeral_memory",
+  "map_reduce_summarize",
 ]);
 
 export const OPERATION_RISK: Record<string, OperationRisk> = {
   // Safe
   list_files: "safe",
   get_file_info: "safe",
-  read_file: "safe",
+  extract_file_content: "safe",
   list_folder_contents: "safe",
   get_folder_path: "safe",
   search_files: "safe",
@@ -315,6 +326,9 @@ export const OPERATION_RISK: Record<string, OperationRisk> = {
   semantic_search_files: "safe",
   whoami: "safe",
   authenticate: "safe",
+  query_ephemeral_memory: "safe",
+  map_reduce_summarize: "safe",
+  batch_extract_file_contents: "safe",
 
   // Moderate
   create_file: "moderate",
@@ -373,7 +387,6 @@ export const AGENT_EVENT_TYPE = {
   ROUTE_DECISION: "route_decision",
   TASK_PLAN: "task_plan",
   TASK_STEP_UPDATE: "task_step_update",
-  PARALLEL_BATCH: "parallel_batch",
   TOOL_CALL_START: "tool_call_start",
   TOOL_CALL_END: "tool_call_end",
   CONTENT: "content",

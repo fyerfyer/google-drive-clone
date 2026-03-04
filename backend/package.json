@@ -45,6 +45,7 @@
     "mongoose": "^8.19.2",
     "multer": "^2.0.2",
     "nanoid": "^5.1.6",
+    "p-limit": "^7.3.0",
     "pdf-parse": "^2.4.5",
     "pino": "^10.1.0",
     "pino-http": "^11.0.0",

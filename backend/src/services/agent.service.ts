@@ -154,7 +154,6 @@ export class AgentService {
           description: step.description,
           status: step.status,
           agentType: step.agentType,
-          dependencies: step.dependencies,
           result: step.result,
           error: step.error,
         };
@@ -239,11 +238,26 @@ export class AgentService {
 
     // 只在新会话或无活跃计划时触发任务分解
     if (!activePlan || activePlan.isComplete) {
-      const contextInfo = context?.fileId
-        ? `Environment: Document Editor. The user is currently viewing/editing a specific file.\ncurrentFileId: ${context.fileId}\nThe "document" agent should edit THIS file only. Do NOT plan steps to create new files for writing tasks.`
-        : context?.folderId
-          ? `Environment: Drive Browser. The user is currently browsing a specific folder in their drive.\ncurrentFolderId: ${context.folderId}\nThe "drive" agent should operate within this folder context. When the task requires gathering information from the drive and then editing a document, plan steps to first collect drive information, then navigate to and edit the target document. File operations like create, move, rename should default to this folder unless specified otherwise.`
-          : `Environment: Drive Browser. No specific file or folder selected. The user is at the root of their drive.`;
+      // 第一阶段：将空间上下文与资源注入解耦。
+      // 当存在显式资源附件时，抑制“根目录”上下文的干扰。
+      // 重要提示：必须在检查 folderId 之前检查 hasExplicitResources，
+      // 因为 folderId 总是会被设置（前端在驱动器根页面时会发送 "root"）。
+
+      // 将空间上下文与资源注入解耦。
+      // 当用户显式附加资源时，不将当前文件夹作为默认上下文
+      const hasExplicitResourcesForPlan =
+        request.resourceUris && request.resourceUris.length > 0;
+
+      let contextInfo: string;
+      if (context?.fileId) {
+        contextInfo = `Environment: Document Editor. The user is currently viewing/editing a specific file.\ncurrentFileId: ${context.fileId}\nThe "document" agent should edit THIS file only. Do NOT plan steps to create new files for writing tasks.`;
+      } else if (hasExplicitResourcesForPlan) {
+        contextInfo = `Environment: Resource-Focused Context. The user has explicitly attached specific files/folders as reference materials.\nThe full content/structure of these resources is already injected into the conversation as system messages.\nDo NOT call any list/browse/search tools to re-fetch this data. Operate directly on the provided materials.\nDo NOT be curious about the root folder or surrounding directory structure unless the user explicitly asks.\nIf the task result needs to be saved as a file, create it in the current folder (folderId: ${context?.folderId || "root"}).`;
+      } else if (context?.folderId) {
+        contextInfo = `Environment: Drive Browser. The user is currently browsing a specific folder in their drive.\ncurrentFolderId: ${context.folderId}\nThe "drive" agent should operate within this folder context. When the task requires gathering information from the drive and then editing a document, plan steps to first collect drive information, then navigate to and edit the target document. File operations like create, move, rename should default to this folder unless specified otherwise.`;
+      } else {
+        contextInfo = `Environment: Drive Browser. No specific file or folder selected. The user is at the root of their drive.`;
+      }
 
       const planNeeded = await shouldPlanTask(message, contextInfo);
 
@@ -276,11 +290,17 @@ export class AgentService {
     });
 
     // Agent Context
+    const hasExplicitResources =
+      request.resourceUris !== undefined && request.resourceUris.length > 0;
     const agentContext: AgentContext = {
       type: agentType,
       userId,
       folderId: context?.folderId || conversation.context?.folderId,
       fileId: context?.fileId || conversation.context?.fileId,
+      hasExplicitResources,
+      attachedResourceUris: hasExplicitResources
+        ? request.resourceUris
+        : undefined,
     };
 
     // 解析 resourceUris 并注入一条 system 消息，放在用户消息之前，确保 Agent 首先看到这些信息。

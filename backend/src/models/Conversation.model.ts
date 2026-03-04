@@ -33,7 +33,6 @@ export interface ITaskStep {
   description: string;
   status: "pending" | "in-progress" | "completed" | "failed" | "skipped";
   agentType?: "drive" | "document" | "search";
-  dependencies?: number[];
   result?: string;
   error?: string;
 }
@@ -121,7 +120,6 @@ const taskStepSchema = new Schema(
       default: "pending",
     },
     agentType: { type: String, enum: ["drive", "document", "search"] },
-    dependencies: { type: [Number], default: undefined },
     result: { type: String },
     error: { type: String },
   },

@@ -266,12 +266,10 @@ export function registerDocumentTools(
     "patch_file",
     {
       description:
-        "Apply targeted patch operations to a document. Preferred over write_file for editing because it's non-destructive, auditable, and collaboration-safe. " +
-        "Supports: replace, insert_after, insert_before, append, prepend, delete. " +
-        "Each operation uses exact text matching to find the target location. " +
-        "IMPORTANT: For EMPTY documents (content is \"\"), you MUST use 'append' or 'prepend' operations. " +
-        "Do NOT use 'replace' on empty documents — there is no text to match. " +
-        "Always read the file first to check if it has content before choosing the operation type.",
+        "Apply targeted patch operations to a document: replace, insert_after, insert_before, append, prepend, delete. " +
+        "WHEN TO USE: For any document editing — this is the preferred editing tool (non-destructive, auditable, collaboration-safe). " +
+        "WHEN NOT TO USE: For a complete content replacement (use write_file). Do NOT use replace/insert/delete on EMPTY documents — use append or prepend instead. " +
+        "NOTES: Each operation uses exact text matching. Read the file first if you're unsure of its content. On empty files, only append/prepend work.",
       inputSchema: z.object({
         userId: userIdParam,
         fileId: z.string().describe("The file ID to patch"),

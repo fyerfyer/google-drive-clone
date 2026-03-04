@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { McpServices } from "../server";
 import { McpAuthContext, resolveUserId } from "../auth/auth";
 import { logger } from "../../lib/logger";
+import { formatBytes } from "../../utils/mcp.util";
 
 const userIdParam = z
   .string()
@@ -20,7 +21,10 @@ export function registerSearchTools(
     "search_files",
     {
       description:
-        "Search for files by name pattern. Returns matching files across the user's entire drive.",
+        "Search for files by name pattern (case-insensitive substring match). " +
+        "WHEN TO USE: When the user asks for a file by name, extension, or filename pattern (e.g., 'find budget.xlsx', 'find all PDFs'). " +
+        "WHEN NOT TO USE: When the user searches by content or meaning (use semantic_search_files). " +
+        "NOTES: Searches file names only, not content. Supports optional fileType filter for extensions.",
       inputSchema: z.object({
         userId: userIdParam,
         query: z
@@ -97,7 +101,10 @@ export function registerSearchTools(
     "summarize_directory",
     {
       description:
-        "Get a summary of a directory's contents including file count, total size, and file type distribution.",
+        "Get a statistical summary of a directory: file count, total size, type distribution, recently modified files. " +
+        "WHEN TO USE: When the user asks 'what\'s in this folder', 'how big is this directory', or wants an overview without listing every file. " +
+        "WHEN NOT TO USE: When the user needs a full file listing (use list_folder_contents). If a drive://folders/{folderId} resource already provides this, do not call. " +
+        "NOTES: Use folderId='root' for root directory. Returns aggregate stats, not individual file contents.",
       inputSchema: z.object({
         userId: userIdParam,
         folderId: z
@@ -173,12 +180,4 @@ export function registerSearchTools(
       }
     },
   );
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return "0 B";
-  const k = 1024;
-  const sizes = ["B", "KB", "MB", "GB", "TB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
 }

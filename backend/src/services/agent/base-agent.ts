@@ -46,6 +46,8 @@ export interface AgentRunOptions {
   // taskId 用于 tracing
   taskId?: string;
   stepId?: number;
+  // 用于在 attach 内容后避免重复 enrich
+  skipEnrichment?: boolean;
 }
 
 export interface AgentLoopResult {
@@ -93,7 +95,9 @@ export abstract class BaseAgent {
     conversationId: string,
     options?: AgentRunOptions,
   ): Promise<AgentLoopResult> {
-    const enrichedCtx = await this.enrichContext(context);
+    const enrichedCtx = options?.skipEnrichment
+      ? context
+      : await this.enrichContext(context);
 
     // 通过 MemoryManager 构建记忆状态
     const memoryState = await this.memoryManager.buildMemoryState(

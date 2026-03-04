@@ -228,12 +228,6 @@ function handleMainStoreEvent(event: AgentStreamEvent, taskId: string) {
       s.setTaskPlan((event.data as { plan: any }).plan);
       break;
 
-    case AGENT_EVENT_TYPE.PARALLEL_BATCH: {
-      const d = event.data as { stepIds: number[] };
-      s.addParallelBatch({ stepIds: d.stepIds, timestamp: Date.now() });
-      break;
-    }
-
     case AGENT_EVENT_TYPE.TASK_STEP_UPDATE: {
       const d = event.data as {
         stepId: number;
@@ -365,10 +359,6 @@ function handleBackgroundEvent(event: AgentStreamEvent, taskId: string) {
       bgStore.updateTask(taskId, {
         taskPlan: (event.data as { plan: any }).plan,
       });
-      break;
-
-    case AGENT_EVENT_TYPE.PARALLEL_BATCH:
-      // Background tasks: no-op for now (parallel batches tracked only in foreground)
       break;
 
     case AGENT_EVENT_TYPE.TASK_STEP_UPDATE: {
