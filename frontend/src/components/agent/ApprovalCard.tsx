@@ -128,16 +128,16 @@ function ShareConfigForm({ toolName, args, onChange }: ShareConfigFormProps) {
           </button>
           <button
             type="button"
-            onClick={() => handleRoleChange("editor")}
+            onClick={() => handleRoleChange("copier")}
             className={cn(
               "flex flex-1 items-center justify-center gap-1.5 rounded-md border px-2 py-1.5 text-[11px] font-medium transition-colors",
-              role === "editor"
+              role === "copier"
                 ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
                 : "border-border text-muted-foreground hover:bg-muted/50",
             )}
           >
             <IconEdit className="size-3" />
-            Editor
+            Copier
           </button>
         </div>
       </div>

@@ -87,21 +87,21 @@ describe("Share Service Tests", () => {
         role: "viewer",
       });
 
-      // 第二次分享，升级为 editor 权限
+      // 第二次分享，升级为 copier 权限
       await shareService.shareWithUsers({
         actorId: String(owner._id),
         resourceId: String(rootFolder._id),
         resourceType: "Folder",
         resourceName: "RootFolder",
         targetUserIds: [String(user1._id)],
-        role: "editor",
+        role: "copier",
       });
 
       const permissions = await getSharedAccessForResource(
         String(rootFolder._id),
       );
       expect(permissions).toHaveLength(1);
-      expect(permissions[0].role).toBe("editor");
+      expect(permissions[0].role).toBe("copier");
     });
 
     it("should remove permission", async () => {
@@ -140,13 +140,13 @@ describe("Share Service Tests", () => {
         resourceId: String(rootFolder._id),
         resourceType: "Folder",
         targetUserId: String(user1._id),
-        newRole: "editor",
+        newRole: "copier",
       });
 
       const permissions = await getSharedAccessForResource(
         String(rootFolder._id),
       );
-      expect(permissions[0].role).toBe("editor");
+      expect(permissions[0].role).toBe("copier");
     });
 
     it("should deny sharing when requester is not owner", async () => {
@@ -189,7 +189,7 @@ describe("Share Service Tests", () => {
         "Folder",
         String(owner._id),
         String(user1._id),
-        "editor",
+        "copier",
       );
 
       await createSharedAccess(
@@ -217,7 +217,7 @@ describe("Share Service Tests", () => {
         "Folder",
         String(owner._id),
         String(user1._id),
-        "editor",
+        "copier",
       );
 
       // Child 分享给 user2
@@ -271,7 +271,7 @@ describe("Share Service Tests", () => {
         "File",
         String(owner._id),
         String(user1._id),
-        "editor",
+        "copier",
       );
 
       const result = await shareService.listSharedWithMe({
@@ -305,7 +305,7 @@ describe("Share Service Tests", () => {
         "File",
         String(owner._id),
         String(user1._id),
-        "editor",
+        "copier",
       );
 
       const result = await shareService.listSharedWithMe({

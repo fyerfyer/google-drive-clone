@@ -38,7 +38,7 @@ const sharedAccessSchema = new mongoose.Schema<ISharedAccess>(
     },
     role: {
       type: String,
-      enum: ["viewer", "editor", "commenter", "owner"],
+      enum: ["viewer", "copier", "owner"],
       default: "viewer",
     },
     expiresAt: {
@@ -49,7 +49,7 @@ const sharedAccessSchema = new mongoose.Schema<ISharedAccess>(
   },
   {
     timestamps: true,
-  }
+  },
 );
 
 // 确保一个人对一个资源只有一种权限
@@ -61,5 +61,5 @@ sharedAccessSchema.index({ sharedWith: 1, resourceType: 1, createdAt: -1 });
 
 export const SharedAccess = mongoose.model<ISharedAccess>(
   "SharedAccess",
-  sharedAccessSchema
+  sharedAccessSchema,
 );

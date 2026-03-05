@@ -29,10 +29,10 @@ export function registerShareTools(
           .enum(["File", "Folder"])
           .describe("Whether the resource is a File or Folder"),
         role: z
-          .enum(["viewer", "editor"])
+          .enum(["viewer", "copier"])
           .optional()
           .describe(
-            "The permission role for link recipients. Defaults to 'viewer'.",
+            "The permission role for link recipients. 'viewer' = read-only preview, 'copier' = can also download & copy to own drive. Defaults to 'viewer'.",
           ),
         password: z
           .string()
@@ -200,8 +200,10 @@ export function registerShareTools(
           .array(z.string().email())
           .describe("Array of email addresses to share with"),
         role: z
-          .enum(["viewer", "editor"])
-          .describe("The permission role to give to the users"),
+          .enum(["viewer", "copier"])
+          .describe(
+            "The permission role to give to the users. 'viewer' = read-only, 'copier' = can download & copy.",
+          ),
       }),
     },
 

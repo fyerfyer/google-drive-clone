@@ -77,7 +77,7 @@ describe("Permission Service Tests", () => {
         "Folder",
         String(owner._id),
         String(user1._id),
-        "editor",
+        "copier",
       );
 
       const hasAccess = await permissionService.checkPermission({
@@ -90,7 +90,7 @@ describe("Permission Service Tests", () => {
       expect(hasAccess).toBe(true);
     });
 
-    it("should respect role hierarchy: editor > viewer", async () => {
+    it("should respect role hierarchy: copier > viewer", async () => {
       await createSharedAccess(
         String(rootFolder._id),
         "Folder",
@@ -99,14 +99,14 @@ describe("Permission Service Tests", () => {
         "viewer",
       );
 
-      const canEdit = await permissionService.checkPermission({
+      const canCopy = await permissionService.checkPermission({
         userId: String(user1._id),
         resourceId: String(rootFolder._id),
         resourceType: "Folder",
-        requireRole: "editor",
+        requireRole: "copier",
       });
 
-      expect(canEdit).toBe(false);
+      expect(canCopy).toBe(false);
     });
 
     it("should deny expired ACL access", async () => {
@@ -118,7 +118,7 @@ describe("Permission Service Tests", () => {
         "Folder",
         String(owner._id),
         String(user1._id),
-        "editor",
+        "copier",
         pastDate,
       );
 
@@ -140,7 +140,7 @@ describe("Permission Service Tests", () => {
         "Folder",
         String(owner._id),
         String(user1._id),
-        "editor",
+        "copier",
       );
 
       // 检查子文件夹是否继承权限
@@ -148,7 +148,7 @@ describe("Permission Service Tests", () => {
         userId: String(user1._id),
         resourceId: String(childFolder._id),
         resourceType: "Folder",
-        requireRole: "editor",
+        requireRole: "copier",
       });
 
       expect(hasAccess).toBe(true);
@@ -184,24 +184,24 @@ describe("Permission Service Tests", () => {
         "viewer",
       );
 
-      // Child: editor
+      // Child: copier
       await createSharedAccess(
         String(childFolder._id),
         "Folder",
         String(owner._id),
         String(user1._id),
-        "editor",
+        "copier",
       );
 
-      // Grandchild 应该获取最高权限 (editor)
-      const hasEditorAccess = await permissionService.checkPermission({
+      // Grandchild 应该获取最高权限 (copier)
+      const hasCopierAccess = await permissionService.checkPermission({
         userId: String(user1._id),
         resourceId: String(grandchildFolder._id),
         resourceType: "Folder",
-        requireRole: "editor",
+        requireRole: "copier",
       });
 
-      expect(hasEditorAccess).toBe(true);
+      expect(hasCopierAccess).toBe(true);
     });
 
     it("should inherit permissions for files in shared folder", async () => {
@@ -210,7 +210,7 @@ describe("Permission Service Tests", () => {
         "Folder",
         String(owner._id),
         String(user1._id),
-        "editor",
+        "copier",
       );
 
       const file = await createTestFile(

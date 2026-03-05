@@ -34,6 +34,7 @@ const EditorPage = () => {
   const navigate = useNavigate();
   const fileId = searchParams.get("fileId");
   const initialMode = searchParams.get("mode") || "edit"; // "edit" | "view"
+  const readonlyMode = searchParams.get("readonlyMode") === "true";
   const [showDocAgent, setShowDocAgent] = useState(false);
   const newConversation = useAgentStore((s) => s.newConversation);
 
@@ -55,18 +56,22 @@ const EditorPage = () => {
     reloadContent,
   } = useFileEditor({
     fileId,
-    initialMode: initialMode as "edit" | "view",
-    enableAutosave: true,
+    initialMode: readonlyMode ? "view" : (initialMode as "edit" | "view"),
+    enableAutosave: !readonlyMode,
   });
 
-  // Keyboard shortcut: Ctrl+S to save
-  useKeyboardShortcuts([
-    {
-      key: "s",
-      ctrlKey: true,
-      handler: handleSave,
-    },
-  ]);
+  // Keyboard shortcut: Ctrl+S to save (disabled in readonlyMode)
+  useKeyboardShortcuts(
+    readonlyMode
+      ? []
+      : [
+          {
+            key: "s",
+            ctrlKey: true,
+            handler: handleSave,
+          },
+        ],
+  );
 
   const handleDownload = async () => {
     if (!fileId) return;
@@ -133,6 +138,8 @@ const EditorPage = () => {
     );
   }
 
+  const actualMode: "edit" | "view" = readonlyMode ? "view" : editorMode;
+
   return (
     <div className="flex flex-col h-screen bg-background">
       {/* Editor Header */}
@@ -147,12 +154,20 @@ const EditorPage = () => {
               {file.name}
             </h1>
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              {hasUnsavedChanges && (
-                <span className="text-amber-500">● Unsaved changes</span>
-              )}
-              {isSaving && <span className="text-blue-500">Saving...</span>}
-              {!hasUnsavedChanges && !isSaving && (
-                <span className="text-emerald-500">Saved</span>
+              {readonlyMode ? (
+                <span className="text-muted-foreground">
+                  Read Only (Shared)
+                </span>
+              ) : (
+                <>
+                  {hasUnsavedChanges && (
+                    <span className="text-amber-500">● Unsaved changes</span>
+                  )}
+                  {isSaving && <span className="text-blue-500">Saving...</span>}
+                  {!hasUnsavedChanges && !isSaving && (
+                    <span className="text-emerald-500">Saved</span>
+                  )}
+                </>
               )}
             </div>
           </div>
@@ -160,29 +175,31 @@ const EditorPage = () => {
 
         <div className="flex items-center gap-2">
           <TooltipProvider>
-            {/* AI Assistant toggle */}
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant={showDocAgent ? "default" : "outline"}
-                  size="sm"
-                  onClick={handleToggleDocAgent}
-                >
-                  <Bot className="h-4 w-4 mr-1" />
-                  AI Assist
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>
-                  {showDocAgent
-                    ? "Close AI editing assistant"
-                    : "Open AI editing assistant"}
-                </p>
-              </TooltipContent>
-            </Tooltip>
+            {/* AI Assistant toggle — hidden in readonlyMode */}
+            {!readonlyMode && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant={showDocAgent ? "default" : "outline"}
+                    size="sm"
+                    onClick={handleToggleDocAgent}
+                  >
+                    <Bot className="h-4 w-4 mr-1" />
+                    AI Assist
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>
+                    {showDocAgent
+                      ? "Close AI editing assistant"
+                      : "Open AI editing assistant"}
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+            )}
 
-            {/* View/Edit toggle */}
-            {resolvedEditorMode === "text" && (
+            {/* View/Edit toggle — hidden in readonlyMode */}
+            {!readonlyMode && resolvedEditorMode === "text" && (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
@@ -214,25 +231,27 @@ const EditorPage = () => {
               </Tooltip>
             )}
 
-            {/* Save button */}
-            {resolvedEditorMode === "text" && editorMode === "edit" && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="default"
-                    size="sm"
-                    onClick={handleSave}
-                    disabled={isSaving || !hasUnsavedChanges}
-                  >
-                    <Save className="h-4 w-4 mr-1" />
-                    Save
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>Save (Ctrl+S)</p>
-                </TooltipContent>
-              </Tooltip>
-            )}
+            {/* Save button — hidden in readonlyMode */}
+            {!readonlyMode &&
+              resolvedEditorMode === "text" &&
+              editorMode === "edit" && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="default"
+                      size="sm"
+                      onClick={handleSave}
+                      disabled={isSaving || !hasUnsavedChanges}
+                    >
+                      <Save className="h-4 w-4 mr-1" />
+                      Save
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Save (Ctrl+S)</p>
+                  </TooltipContent>
+                </Tooltip>
+              )}
 
             {/* Download button */}
             <Tooltip>
@@ -256,9 +275,9 @@ const EditorPage = () => {
           {resolvedEditorMode === "text" && (
             <TextEditor
               value={content}
-              onChange={setContent}
+              onChange={readonlyMode ? () => {} : setContent}
               fileName={file.name}
-              readOnly={editorMode === "view"}
+              readOnly={actualMode === "view"}
               height="100%"
             />
           )}
@@ -270,7 +289,7 @@ const EditorPage = () => {
               fileUrl={onlyOfficeUrl}
               serverConfig={onlyOfficeServerConfig}
               documentServerUrl={ONLYOFFICE_URL}
-              mode={editorMode}
+              mode={actualMode}
               token={onlyOfficeToken}
             />
           )}
@@ -288,8 +307,8 @@ const EditorPage = () => {
           )}
         </main>
 
-        {/* Document Agent Sidebar */}
-        {showDocAgent && fileId && file && (
+        {/* Document Agent Sidebar — only shown when not in readonlyMode */}
+        {!readonlyMode && showDocAgent && fileId && file && (
           <DocumentAgentPanel
             fileId={fileId}
             fileName={file.name}

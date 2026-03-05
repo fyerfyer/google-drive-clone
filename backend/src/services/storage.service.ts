@@ -2,6 +2,7 @@ import { Readable } from "stream";
 import {
   AbortMultipartUploadCommand,
   CompleteMultipartUploadCommand,
+  CopyObjectCommand,
   CreateMultipartUploadCommand,
   DeleteObjectCommand,
   GetObjectCommand,
@@ -268,5 +269,19 @@ export class StorageService {
     }
 
     return uploads;
+  }
+
+  static async copyObject(
+    bucketName: BucketsType,
+    sourceKey: string,
+    destinationKey: string,
+  ): Promise<void> {
+    const command = new CopyObjectCommand({
+      Bucket: bucketName,
+      CopySource: `${bucketName}/${sourceKey}`,
+      Key: destinationKey,
+    });
+
+    await s3Client.send(command);
   }
 }

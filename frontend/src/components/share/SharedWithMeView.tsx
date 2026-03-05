@@ -70,6 +70,7 @@ export const SharedWithMeView = () => {
     ResourceType | "all"
   >("all");
   const [previewFile, setPreviewFile] = useState<IFile | null>(null);
+  const [previewRole, setPreviewRole] = useState<string | null>(null);
   const [shortcutTarget, setShortcutTarget] = useState<SharedWithMeItem | null>(
     null,
   );
@@ -127,6 +128,7 @@ export const SharedWithMeView = () => {
       const file = convertToIFile(item);
       if (file) {
         setPreviewFile(file);
+        setPreviewRole(item.role);
       }
     }
   };
@@ -150,7 +152,7 @@ export const SharedWithMeView = () => {
         shortcutTarget.resourceType,
         { targetFolderId },
       );
-      toast.success("Shortcut saved to your Drive");
+      toast.success("File copied to your Drive");
 
       // Invalidate caches so the UI refreshes when returning to Drive
       queryClient.invalidateQueries({
@@ -170,7 +172,7 @@ export const SharedWithMeView = () => {
       setShortcutTarget(null);
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : "Failed to save shortcut";
+        error instanceof Error ? error.message : "Failed to copy file";
       toast.error(message);
     } finally {
       setIsSavingShortcut(false);
@@ -270,7 +272,7 @@ export const SharedWithMeView = () => {
                   </TableCell>
                   <TableCell>
                     <Badge
-                      variant={item.role === "editor" ? "default" : "secondary"}
+                      variant={item.role === "copier" ? "default" : "secondary"}
                     >
                       {item.role.charAt(0).toUpperCase() + item.role.slice(1)}
                     </Badge>
@@ -293,15 +295,17 @@ export const SharedWithMeView = () => {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleOpenSaveShortcut(item);
-                          }}
-                        >
-                          <Save className="mr-2 h-4 w-4" />
-                          Save to My Drive
-                        </DropdownMenuItem>
+                        {item.role === "copier" && (
+                          <DropdownMenuItem
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenSaveShortcut(item);
+                            }}
+                          >
+                            <Save className="mr-2 h-4 w-4" />
+                            Copy to My Drive
+                          </DropdownMenuItem>
+                        )}
                         <DropdownMenuItem
                           onClick={(e) => {
                             e.stopPropagation();
@@ -362,8 +366,13 @@ export const SharedWithMeView = () => {
       {/* File Preview Modal */}
       <FilePreviewModal
         isOpen={!!previewFile}
-        onClose={() => setPreviewFile(null)}
+        onClose={() => {
+          setPreviewFile(null);
+          setPreviewRole(null);
+        }}
         file={previewFile}
+        forceReadOnly
+        hideDownload={previewRole === "viewer"}
       />
 
       <FolderPicker
@@ -375,13 +384,13 @@ export const SharedWithMeView = () => {
           }
         }}
         onSelect={handleSaveShortcut}
-        title="Save Shortcut"
+        title="Copy to My Drive"
         description={
           shortcutTarget
-            ? `Choose where to save shortcut for "${shortcutTarget.resource.name}"`
-            : "Choose where to save this shared resource"
+            ? `Choose where to save a copy of "${shortcutTarget.resource.name}"`
+            : "Choose where to save a copy of this shared resource"
         }
-        actionLabel="Save Shortcut"
+        actionLabel="Copy Here"
         isLoading={isSavingShortcut}
       />
     </div>

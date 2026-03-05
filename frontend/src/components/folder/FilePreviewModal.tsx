@@ -41,6 +41,10 @@ interface FilePreviewModalProps {
   isOpen: boolean;
   onClose: () => void;
   file: IFile | null;
+  /** When true, the editor opens in forced read-only mode (no edit toggle, no save). */
+  forceReadOnly?: boolean;
+  /** When true, download buttons and the Edit button are hidden everywhere. */
+  hideDownload?: boolean;
 }
 
 /** Icon for file type shown in the header */
@@ -75,6 +79,8 @@ export const FilePreviewModal = ({
   isOpen,
   onClose,
   file,
+  forceReadOnly = false,
+  hideDownload = false,
 }: FilePreviewModalProps) => {
   const navigate = useNavigate();
 
@@ -110,7 +116,50 @@ export const FilePreviewModal = ({
     };
   }, [isOpen]);
 
-  const defaultLayoutPluginInstance = defaultLayoutPlugin();
+  const defaultLayoutPluginInstance = defaultLayoutPlugin(
+    hideDownload
+      ? {
+          renderToolbar: (Toolbar) => (
+            <Toolbar>
+              {(slots) => {
+                const {
+                  CurrentPageInput,
+                  GoToNextPage,
+                  GoToPreviousPage,
+                  NumberOfPages,
+                  ShowSearchPopover,
+                  Zoom,
+                  ZoomIn,
+                  ZoomOut,
+                  EnterFullScreen,
+                } = slots;
+                return (
+                  <div className="flex items-center w-full px-2 py-1">
+                    <div className="flex items-center gap-1">
+                      <ShowSearchPopover />
+                    </div>
+                    <div className="flex items-center gap-1 mx-auto">
+                      <GoToPreviousPage />
+                      <CurrentPageInput />
+                      <span className="text-xs text-muted-foreground">
+                        / <NumberOfPages />
+                      </span>
+                      <GoToNextPage />
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <ZoomOut />
+                      <Zoom />
+                      <ZoomIn />
+                      <EnterFullScreen />
+                    </div>
+                  </div>
+                );
+              }}
+            </Toolbar>
+          ),
+        }
+      : undefined,
+  );
 
   const handleDownload = useCallback(async () => {
     if (!file) return;
@@ -130,8 +179,10 @@ export const FilePreviewModal = ({
   const handleOpenInEditor = useCallback(() => {
     if (!file) return;
     onClose();
-    navigate(`/editor?fileId=${file.id}&mode=edit`);
-  }, [file, onClose, navigate]);
+    const mode = forceReadOnly ? "view" : "edit";
+    const readonlyParam = forceReadOnly ? "&readonlyMode=true" : "";
+    navigate(`/editor?fileId=${file.id}&mode=${mode}${readonlyParam}`);
+  }, [file, onClose, navigate, forceReadOnly]);
 
   // ── Render preview content ──────────────────────────────────
   const renderPreview = () => {
@@ -247,7 +298,7 @@ export const FilePreviewModal = ({
                   : "Configure OnlyOffice Document Server to preview Office documents in the browser."}
               </p>
               <div className="flex items-center gap-3 justify-center">
-                {canOpenInEditor && (
+                {canOpenInEditor && !hideDownload && (
                   <Button
                     onClick={handleOpenInEditor}
                     variant="secondary"
@@ -257,10 +308,16 @@ export const FilePreviewModal = ({
                     Open in Editor
                   </Button>
                 )}
-                <Button onClick={handleDownload} variant="secondary" size="sm">
-                  <Download className="h-4 w-4 mr-2" />
-                  Download
-                </Button>
+                {!hideDownload && (
+                  <Button
+                    onClick={handleDownload}
+                    variant="secondary"
+                    size="sm"
+                  >
+                    <Download className="h-4 w-4 mr-2" />
+                    Download
+                  </Button>
+                )}
               </div>
             </div>
           </div>
@@ -275,10 +332,12 @@ export const FilePreviewModal = ({
               <p className="text-white/60 text-sm">
                 This file type can't be previewed in the browser.
               </p>
-              <Button onClick={handleDownload} variant="secondary" size="sm">
-                <Download className="mr-2 h-4 w-4" />
-                Download to view
-              </Button>
+              {!hideDownload && (
+                <Button onClick={handleDownload} variant="secondary" size="sm">
+                  <Download className="mr-2 h-4 w-4" />
+                  Download to view
+                </Button>
+              )}
             </div>
           </div>
         );
@@ -316,7 +375,7 @@ export const FilePreviewModal = ({
         {/* Right: actions */}
         <div className="flex items-center gap-1 shrink-0 ml-4">
           <TooltipProvider delayDuration={300}>
-            {canOpenInEditor && (
+            {canOpenInEditor && !hideDownload && (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <button
@@ -331,18 +390,20 @@ export const FilePreviewModal = ({
               </Tooltip>
             )}
 
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  onClick={handleDownload}
-                  className="inline-flex items-center justify-center h-9 px-3 rounded-md text-sm text-white/80 hover:text-white hover:bg-white/10 transition-colors"
-                >
-                  <Download className="h-4 w-4 mr-1.5" />
-                  Download
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom">Download file</TooltipContent>
-            </Tooltip>
+            {!hideDownload && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    onClick={handleDownload}
+                    className="inline-flex items-center justify-center h-9 px-3 rounded-md text-sm text-white/80 hover:text-white hover:bg-white/10 transition-colors"
+                  >
+                    <Download className="h-4 w-4 mr-1.5" />
+                    Download
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">Download file</TooltipContent>
+              </Tooltip>
+            )}
 
             <div className="w-px h-5 bg-white/20 mx-1" />
 
@@ -383,10 +444,12 @@ export const FilePreviewModal = ({
             <div className="bg-white/10 backdrop-blur-md rounded-2xl p-8 max-w-md space-y-4">
               <p className="text-red-400 font-medium">Failed to load preview</p>
               <p className="text-white/50 text-sm">{error}</p>
-              <Button onClick={handleDownload} variant="secondary" size="sm">
-                <Download className="mr-2 h-4 w-4" />
-                Download file instead
-              </Button>
+              {!hideDownload && (
+                <Button onClick={handleDownload} variant="secondary" size="sm">
+                  <Download className="mr-2 h-4 w-4" />
+                  Download file instead
+                </Button>
+              )}
             </div>
           </div>
         )}

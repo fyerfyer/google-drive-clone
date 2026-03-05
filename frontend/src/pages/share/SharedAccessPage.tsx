@@ -325,7 +325,7 @@ const SharedAccessPage = () => {
           password: password || undefined,
         },
       );
-      toast.success(`Saved "${resource.name}" to your Drive`);
+      toast.success(`Copied "${resource.name}" to your Drive`);
 
       // Invalidate the exact target folder
       queryClient.invalidateQueries({
@@ -347,7 +347,7 @@ const SharedAccessPage = () => {
       setShowFolderPicker(false);
     } catch (err) {
       toast.error(
-        err instanceof Error ? err.message : "Failed to save to Drive",
+        err instanceof Error ? err.message : "Failed to copy to Drive",
       );
     } finally {
       setIsSaving(false);
@@ -532,7 +532,7 @@ const SharedAccessPage = () => {
             <p className="text-sm text-muted-foreground">
               {formatFileSize(previewFile.size)} • {previewFile.mimeType}
             </p>
-            {resource.allowDownload && (
+            {(resource.role === "copier" || resource.allowDownload) && (
               <Button onClick={handleDownload} className="mt-4">
                 <Download className="mr-2 h-4 w-4" />
                 Download File
@@ -558,21 +558,23 @@ const SharedAccessPage = () => {
               <h1 className="text-xl font-semibold">Shared Folder</h1>
             </div>
 
-            <Button
-              onClick={handleSaveToDrive}
-              variant={isAuthenticated ? "default" : "outline"}
-            >
-              {isAuthenticated ? (
-                <Save className="mr-2 h-4 w-4" />
-              ) : (
-                <img
-                  src={MindDriveIcon}
-                  alt="Mind Drive"
-                  className="mr-2 h-4 w-4"
-                />
-              )}
-              {isAuthenticated ? "Save to Drive" : "Sign in to Save"}
-            </Button>
+            {resource.role === "copier" && (
+              <Button
+                onClick={handleSaveToDrive}
+                variant={isAuthenticated ? "default" : "outline"}
+              >
+                {isAuthenticated ? (
+                  <Save className="mr-2 h-4 w-4" />
+                ) : (
+                  <img
+                    src={MindDriveIcon}
+                    alt="Mind Drive"
+                    className="mr-2 h-4 w-4"
+                  />
+                )}
+                {isAuthenticated ? "Copy to My Drive" : "Sign in to Copy"}
+              </Button>
+            )}
           </div>
 
           {/* Breadcrumbs */}
@@ -647,10 +649,10 @@ const SharedAccessPage = () => {
           open={showFolderPicker}
           onOpenChange={setShowFolderPicker}
           onSelect={handleSaveLocationSelected}
-          title="Save to Drive"
-          description={`Choose where to create a shortcut for "${resource.name}"`}
+          title="Copy to My Drive"
+          description={`Choose where to copy "${resource.name}"`}
           isLoading={isSaving}
-          actionLabel="Save Shortcut"
+          actionLabel="Copy Here"
         />
       </div>
     );
@@ -680,22 +682,24 @@ const SharedAccessPage = () => {
               </div>
             </div>
             <div className="flex gap-2">
-              <Button
-                onClick={handleSaveToDrive}
-                variant={isAuthenticated ? "secondary" : "outline"}
-              >
-                {isAuthenticated ? (
-                  <Save className="mr-2 h-4 w-4" />
-                ) : (
-                  <img
-                    src={MindDriveIcon}
-                    alt="Mind Drive"
-                    className="mr-2 h-4 w-4"
-                  />
-                )}
-                {isAuthenticated ? "Save" : "Sign in to Save"}
-              </Button>
-              {resource.allowDownload && (
+              {resource.role === "copier" && (
+                <Button
+                  onClick={handleSaveToDrive}
+                  variant={isAuthenticated ? "secondary" : "outline"}
+                >
+                  {isAuthenticated ? (
+                    <Save className="mr-2 h-4 w-4" />
+                  ) : (
+                    <img
+                      src={MindDriveIcon}
+                      alt="Mind Drive"
+                      className="mr-2 h-4 w-4"
+                    />
+                  )}
+                  {isAuthenticated ? "Copy" : "Sign in to Copy"}
+                </Button>
+              )}
+              {(resource.role === "copier" || resource.allowDownload) && (
                 <Button onClick={handleDownload}>
                   <Download className="mr-2 h-4 w-4" />
                   Download
@@ -712,10 +716,10 @@ const SharedAccessPage = () => {
           open={showFolderPicker}
           onOpenChange={setShowFolderPicker}
           onSelect={handleSaveLocationSelected}
-          title="Save to Drive"
-          description={`Choose where to create a shortcut for "${resource.name}"`}
+          title="Copy to My Drive"
+          description={`Choose where to copy "${resource.name}"`}
           isLoading={isSaving}
-          actionLabel="Save Shortcut"
+          actionLabel="Copy Here"
         />
       </div>
     );
@@ -775,33 +779,36 @@ const SharedAccessPage = () => {
               </>
             )}
 
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center">
-                <span className="w-full border-t" />
-              </div>
-              <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-background px-2 text-muted-foreground">
-                  Or
-                </span>
-              </div>
-            </div>
+            {resource.role === "copier" && (
+              <>
+                <div className="relative">
+                  <div className="absolute inset-0 flex items-center">
+                    <span className="w-full border-t" />
+                  </div>
+                  <div className="relative flex justify-center text-xs uppercase">
+                    <span className="bg-background px-2 text-muted-foreground">
+                      Or
+                    </span>
+                  </div>
+                </div>
 
-            <Button
-              onClick={handleSaveToDrive}
-              variant="outline"
-              className="w-full"
-            >
-              <Save className="mr-2 h-4 w-4" />
-              {isAuthenticated
-                ? "Save Shortcut to Drive"
-                : "Sign in to Save to Drive"}
-            </Button>
+                <Button
+                  onClick={handleSaveToDrive}
+                  variant="outline"
+                  className="w-full"
+                >
+                  <Save className="mr-2 h-4 w-4" />
+                  {isAuthenticated
+                    ? "Copy to My Drive"
+                    : "Sign in to Copy to Drive"}
+                </Button>
+              </>
+            )}
           </div>
 
-          {!isAuthenticated && (
+          {!isAuthenticated && resource.role === "copier" && (
             <div className="text-center text-xs text-muted-foreground mt-4">
-              Sign in to save this shared item to your personal Drive for easy
-              access later.
+              Sign in to copy this shared item to your personal Drive.
             </div>
           )}
         </CardContent>
@@ -811,10 +818,10 @@ const SharedAccessPage = () => {
         open={showFolderPicker}
         onOpenChange={setShowFolderPicker}
         onSelect={handleSaveLocationSelected}
-        title="Save to Drive"
-        description={`Choose where to create a shortcut for "${resource.name}"`}
+        title="Copy to My Drive"
+        description={`Choose where to copy "${resource.name}"`}
         isLoading={isSaving}
-        actionLabel="Save Shortcut"
+        actionLabel="Copy Here"
       />
     </div>
   );

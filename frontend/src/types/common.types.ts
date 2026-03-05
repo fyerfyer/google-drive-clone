@@ -20,10 +20,10 @@ export interface UserBasic {
 // 共享信息
 export interface ShareInfo {
   user: UserBasic;
-  role: "viewer" | "editor";
+  role: "viewer" | "copier";
 }
 
-export type AccessRole = "viewer" | "editor" | "commenter" | "owner";
+export type AccessRole = "viewer" | "copier" | "owner";
 export type LinkAccessStatus = AccessRole | "none";
 
 export type ViewMode = "grid" | "list";

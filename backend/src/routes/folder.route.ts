@@ -15,25 +15,25 @@ export function createFolderRouter(
 
   router.patch(
     "/:folderId/move",
-    requireAccess(permissionService, "editor", { resourceType: "Folder" }),
+    requireAccess(permissionService, "owner", { resourceType: "Folder" }),
     folderController.moveFolder.bind(folderController),
   );
 
   router.patch(
     "/:folderId/rename",
-    requireAccess(permissionService, "editor", { resourceType: "Folder" }),
+    requireAccess(permissionService, "owner", { resourceType: "Folder" }),
     folderController.renameFolder.bind(folderController),
   );
 
   router.post(
     "/:folderId/trash",
-    requireAccess(permissionService, "editor", { resourceType: "Folder" }),
+    requireAccess(permissionService, "owner", { resourceType: "Folder" }),
     folderController.trashFolder.bind(folderController),
   );
 
   router.post(
     "/:folderId/restore",
-    requireAccess(permissionService, "editor", { resourceType: "Folder" }),
+    requireAccess(permissionService, "owner", { resourceType: "Folder" }),
     folderController.restoreFolder.bind(folderController),
   );
 

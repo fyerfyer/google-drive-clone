@@ -471,12 +471,12 @@ export class ShareController {
     });
 
     return ResponseHelper.created(res, {
-      message: "Resource saved successfully",
-      shortcut: result,
+      message: "File copied to your Drive successfully",
+      copy: result,
     });
   }
 
-  // 保存 Share 快捷方式到自己的 Drive
+  // 保存分享资源的完整副本到自己的 Drive
   async saveDirectSharedResource(req: Request, res: Response) {
     if (!req.user) {
       throw new AppError(
@@ -497,8 +497,8 @@ export class ShareController {
     });
 
     return ResponseHelper.created(res, {
-      message: "Resource saved successfully",
-      shortcut: result,
+      message: "File copied to your Drive successfully",
+      copy: result,
     });
   }
 }

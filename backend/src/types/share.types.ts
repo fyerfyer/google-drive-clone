@@ -211,8 +211,8 @@ export interface SaveSharedResourceRequest {
 }
 
 export interface SaveSharedResourceResult {
-  shortcutId: string;
-  shortcutType: ResourceType;
+  copyId: string;
+  copyType: ResourceType;
   name: string;
   targetFolderId: string;
 }

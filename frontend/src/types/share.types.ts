@@ -22,7 +22,7 @@ export interface PermissionSource {
   };
 }
 
-export type AccessRole = "viewer" | "commenter" | "editor" | "owner";
+export type AccessRole = "viewer" | "copier" | "owner";
 
 export interface PermissionSet {
   canView: boolean;
@@ -205,9 +205,9 @@ export interface SaveSharedResourceRequest {
 
 export interface SaveSharedResourceResponse {
   message: string;
-  shortcut: {
-    shortcutId: string;
-    shortcutType: ResourceType;
+  copy: {
+    copyId: string;
+    copyType: ResourceType;
     name: string;
     targetFolderId: string;
   };

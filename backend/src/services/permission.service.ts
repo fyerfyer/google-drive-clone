@@ -30,8 +30,7 @@ type LeanShareLink = {
 // 角色权限等级映射
 const ROLE_LEVELS: Record<AccessRole, number> = {
   viewer: 1,
-  commenter: 2,
-  editor: 3,
+  copier: 2,
   owner: 4,
 };
 
@@ -47,17 +46,10 @@ const ROLE_PERMISSIONS: Record<
     canShare: false,
     canDelete: false,
   },
-  commenter: {
+  copier: {
     canView: true,
-    canComment: true,
+    canComment: false,
     canEdit: false,
-    canShare: false,
-    canDelete: false,
-  },
-  editor: {
-    canView: true,
-    canComment: true,
-    canEdit: true,
     canShare: false,
     canDelete: false,
   },

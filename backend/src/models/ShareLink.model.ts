@@ -29,7 +29,7 @@ const shareLinkPolicySchema = new Schema<IShareLinkPolicy>(
   {
     role: {
       type: String,
-      enum: ["viewer", "commenter", "editor", "owner"],
+      enum: ["viewer", "copier", "owner"],
       default: "viewer",
     },
     requireLogin: {

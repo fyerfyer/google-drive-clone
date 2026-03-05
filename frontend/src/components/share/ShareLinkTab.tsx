@@ -53,12 +53,12 @@ const roleOptions: { value: AccessRole; label: string; description: string }[] =
     {
       value: "viewer",
       label: "Viewer",
-      description: "Can view and download",
+      description: "Can preview only (no download or copy)",
     },
     {
-      value: "editor",
-      label: "Editor",
-      description: "Can view, download, and edit",
+      value: "copier",
+      label: "Copier",
+      description: "Can preview, download, and copy to own Drive",
     },
   ];
 

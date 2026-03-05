@@ -8,6 +8,7 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { useFolderOperations } from "./useFolderOperations";
 import { useFileOperations } from "./useFileOperations";
+import { useShareDialogStore } from "@/stores/useShareDialogStore";
 
 export type ItemActions =
   | "preview"
@@ -27,6 +28,7 @@ export const useFileActions = () => {
   const navigate = useNavigate();
   const folderOps = useFolderOperations();
   const fileOps = useFileOperations();
+  const { openShareDialog } = useShareDialogStore();
   const [previewedFile, setPreviewedFile] = useState<IFile | null>(null);
   const [renamedItem, setRenamedItem] = useState<FolderItem | null>(null);
   const [deletedItem, setDeletedItem] = useState<FolderItem | null>(null);
@@ -102,10 +104,11 @@ export const useFileActions = () => {
         }
         break;
 
-      case "share":
-        setSharedItem(item);
-        toast.info("Share functionality coming soon");
+      case "share": {
+        const resourceType = item.type === "folder" ? "Folder" : "File";
+        openShareDialog(item.id, resourceType, item.name);
         break;
+      }
 
       case "copy":
         toast.info("Copy functionality coming soon");

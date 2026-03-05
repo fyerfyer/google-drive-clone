@@ -49,7 +49,7 @@ interface SharePeopleTabProps {
 
 const roleOptions: { value: AccessRole; label: string }[] = [
   { value: "viewer", label: "Viewer" },
-  { value: "editor", label: "Editor" },
+  { value: "copier", label: "Copier" },
 ];
 
 const getInitials = (name: string) => {

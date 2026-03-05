@@ -4,9 +4,11 @@ import bcrypt from "bcryptjs";
 import { StatusCodes } from "http-status-codes";
 
 import { PermissionService } from "./permission.service";
+import { StorageService } from "./storage.service";
 import { AppError } from "../middlewares/errorHandler";
 import { logger } from "../lib/logger";
 import { notificationQueue } from "../lib/queue/queue";
+import { BUCKETS } from "../config/s3";
 
 import { ShareLink, IShareLink } from "../models/ShareLink.model";
 import { SharedAccess, ISharedAccess } from "../models/SharedAccess.model";
@@ -810,22 +812,6 @@ export class ShareService {
       );
     }
 
-    const resource =
-      resourceType === "Folder"
-        ? await Folder.findById(resourceId).select("name user").lean()
-        : await File.findById(resourceId).select("name user").lean();
-
-    if (!resource) {
-      throw new AppError(StatusCodes.NOT_FOUND, "Resource not found");
-    }
-
-    if (resource.user.toString() === userId) {
-      throw new AppError(
-        StatusCodes.BAD_REQUEST,
-        "Cannot save your own resource as shortcut",
-      );
-    }
-
     const userObjectId = new mongoose.Types.ObjectId(userId);
 
     let ancestors: mongoose.Types.ObjectId[] = [];
@@ -840,75 +826,193 @@ export class ShareService {
       ancestors = [...targetFolder.ancestors, targetFolder._id];
     }
 
-    // 创建快捷方式
-    let shortcut;
     if (resourceType === "Folder") {
-      shortcut = await Folder.create({
-        name: resource.name,
-        user: userObjectId,
-        parent: targetFolderId === "root" ? null : targetFolderId,
+      const copy = await this.deepCopyFolder(
+        resourceId,
+        userId,
+        targetFolderId,
         ancestors,
-        isShortcut: true,
-        shortcutTarget: {
-          targetId: resource._id,
-          targetType: "Folder",
-        },
-        isStarred: false,
-        isTrashed: false,
-      });
+      );
+
+      logger.info(
+        { userId, resourceId, resourceType, copyId: copy._id },
+        "Shared folder saved as deep copy",
+      );
+
+      return {
+        copyId: copy._id.toString(),
+        copyType: "Folder",
+        name: copy.name,
+        targetFolderId,
+      };
     } else {
-      shortcut = await File.create({
-        name: resource.name,
-        originalName: resource.name,
-        user: userObjectId,
-        folder: targetFolderId === "root" ? null : targetFolderId,
-        mimeType: "application/vnd.drive.shortcut",
-        extension: "shortcut",
-        size: 0,
+      const copy = await this.hardCopyFile(
+        resourceId,
+        userId,
+        targetFolderId,
         ancestors,
-        isShortcut: true,
-        shortcutTarget: {
-          targetId: resource._id,
-          targetType: "File",
-        },
-        isStarred: false,
-        isTrashed: false,
-      });
+      );
+
+      logger.info(
+        { userId, resourceId, resourceType, copyId: copy._id },
+        "Shared file saved as hard copy",
+      );
+
+      return {
+        copyId: copy._id.toString(),
+        copyType: "File",
+        name: copy.name,
+        targetFolderId,
+      };
+    }
+  }
+
+  private async hardCopyFile(
+    sourceFileId: string,
+    userId: string,
+    targetFolderId: string,
+    ancestors: mongoose.Types.ObjectId[],
+  ) {
+    const sourceFile = await File.findById(sourceFileId)
+      .select("+key name originalName extension mimeType size user")
+      .lean();
+
+    if (!sourceFile) {
+      throw new AppError(StatusCodes.NOT_FOUND, "Source file not found");
     }
 
-    // 同时创建 ACL（如果通过链接访问）
-    if (shareLinkToken) {
-      await SharedAccess.findOneAndUpdate(
-        {
-          resource: resourceId,
-          sharedWith: userObjectId,
-        },
-        {
-          resourceType,
-          sharedBy: resource.user,
-          role: permissions.effectiveRole || "viewer",
-        },
-        { upsert: true, new: true, setDefaultsOnInsert: true },
+    if (sourceFile.user.toString() === userId) {
+      throw new AppError(
+        StatusCodes.BAD_REQUEST,
+        "Cannot copy your own file from shared view",
       );
     }
 
-    logger.info(
-      { userId, resourceId, resourceType, shortcutId: shortcut._id },
-      "Shared resource saved as shortcut",
+    const userObjectId = new mongoose.Types.ObjectId(userId);
+
+    const updateUser = await User.findOneAndUpdate(
+      {
+        _id: userObjectId,
+        $expr: {
+          $lte: [{ $add: ["$storageUsage", sourceFile.size] }, "$storageQuota"],
+        },
+      },
+      { $inc: { storageUsage: sourceFile.size } },
+      { new: true },
     );
 
-    return {
-      shortcutId: shortcut._id.toString(),
-      shortcutType: resourceType,
-      name: shortcut.name,
-      targetFolderId,
-    };
+    if (!updateUser) {
+      throw new AppError(
+        StatusCodes.BAD_REQUEST,
+        "Storage quota exceeded. Cannot copy this file.",
+      );
+    }
+
+    const newKey = `files/${userId}/${Date.now()}-${sourceFile.originalName}`;
+    try {
+      await StorageService.copyObject(BUCKETS.FILES, sourceFile.key, newKey);
+    } catch (err) {
+      await User.updateOne(
+        { _id: userObjectId },
+        { $inc: { storageUsage: -sourceFile.size } },
+      );
+      logger.error({ err, sourceFileId, newKey }, "S3 CopyObject failed");
+      throw new AppError(
+        StatusCodes.INTERNAL_SERVER_ERROR,
+        "Failed to copy file storage",
+      );
+    }
+
+    const copy = await File.create({
+      name: sourceFile.name,
+      originalName: sourceFile.originalName,
+      user: userObjectId,
+      folder: targetFolderId === "root" ? null : targetFolderId,
+      ancestors,
+      key: newKey,
+      mimeType: sourceFile.mimeType,
+      extension: sourceFile.extension,
+      size: sourceFile.size,
+      isStarred: false,
+      isTrashed: false,
+    });
+
+    return copy;
   }
 
-  /**
-   * 验证分享链接并获取文件详情（用于下载/预览）
-   * 包含 key 字段，用于 S3 操作
-   */
+  private async deepCopyFolder(
+    sourceFolderId: string,
+    userId: string,
+    targetParentId: string,
+    parentAncestors: mongoose.Types.ObjectId[],
+  ) {
+    const sourceFolder = await Folder.findById(sourceFolderId)
+      .select("name color description user")
+      .lean();
+
+    if (!sourceFolder) {
+      throw new AppError(StatusCodes.NOT_FOUND, "Source folder not found");
+    }
+
+    if (sourceFolder.user.toString() === userId) {
+      throw new AppError(
+        StatusCodes.BAD_REQUEST,
+        "Cannot copy your own folder from shared view",
+      );
+    }
+
+    const userObjectId = new mongoose.Types.ObjectId(userId);
+
+    const folderCopy = await Folder.create({
+      name: sourceFolder.name,
+      user: userObjectId,
+      parent: targetParentId === "root" ? null : targetParentId,
+      ancestors: parentAncestors,
+      color: sourceFolder.color || "#6366f1",
+      description: sourceFolder.description,
+      isStarred: false,
+      isTrashed: false,
+    });
+
+    const childAncestors = [...parentAncestors, folderCopy._id];
+
+    const childFolders = await Folder.find({
+      parent: sourceFolderId,
+      isTrashed: false,
+      isShortcut: { $ne: true },
+    })
+      .select("_id")
+      .lean();
+
+    for (const childFolder of childFolders) {
+      await this.deepCopyFolder(
+        childFolder._id.toString(),
+        userId,
+        folderCopy._id.toString(),
+        childAncestors,
+      );
+    }
+
+    const childFiles = await File.find({
+      folder: sourceFolderId,
+      isTrashed: false,
+      isShortcut: { $ne: true },
+    })
+      .select("_id")
+      .lean();
+
+    for (const childFile of childFiles) {
+      await this.hardCopyFile(
+        childFile._id.toString(),
+        userId,
+        folderCopy._id.toString(),
+        childAncestors,
+      );
+    }
+
+    return folderCopy;
+  }
+
   async getSharedFileForDownload(
     token: string,
     password?: string,
@@ -940,10 +1044,6 @@ export class ShareService {
     };
   }
 
-  /**
-   * 获取分享文件夹内容
-   * 支持访问子文件夹，会验证子文件夹是否在分享范围内
-   */
   async getSharedFolderContent(
     token: string,
     subfolderId?: string,
@@ -1037,10 +1137,6 @@ export class ShareService {
     };
   }
 
-  /**
-   * 获取分享文件夹内的路径面包屑
-   * 返回从分享根文件夹到目标文件夹的路径
-   */
   async getSharedFolderPath(
     token: string,
     targetFolderId: string,

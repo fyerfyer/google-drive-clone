@@ -48,7 +48,7 @@ export function createFileRouter(
 
   router.put(
     "/:fileId/content",
-    requireAccess(permissionService, "editor", { resourceType: "File" }),
+    requireAccess(permissionService, "owner", { resourceType: "File" }),
     fileController.updateFileContent.bind(fileController),
   );
 
@@ -73,13 +73,13 @@ export function createFileRouter(
 
   router.patch(
     "/:fileId/rename",
-    requireAccess(permissionService, "editor", { resourceType: "File" }),
+    requireAccess(permissionService, "owner", { resourceType: "File" }),
     fileController.renameFile.bind(fileController),
   );
 
   router.patch(
     "/:fileId/move",
-    requireAccess(permissionService, "editor", { resourceType: "File" }),
+    requireAccess(permissionService, "owner", { resourceType: "File" }),
     fileController.moveFile.bind(fileController),
   );
 
@@ -97,13 +97,13 @@ export function createFileRouter(
 
   router.post(
     "/:fileId/trash",
-    requireAccess(permissionService, "editor", { resourceType: "File" }),
+    requireAccess(permissionService, "owner", { resourceType: "File" }),
     fileController.trashFile.bind(fileController),
   );
 
   router.post(
     "/:fileId/restore",
-    requireAccess(permissionService, "editor", { resourceType: "File" }),
+    requireAccess(permissionService, "owner", { resourceType: "File" }),
     fileController.restoreFile.bind(fileController),
   );
 

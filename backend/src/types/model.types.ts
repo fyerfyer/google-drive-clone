@@ -3,8 +3,7 @@ import { IFolder } from "../models/Folder.model";
 
 export const ACCESS_ROLES = {
   VIEWER: "viewer",
-  EDITOR: "editor",
-  COMMENTER: "commenter", // TODO: 未来预留
+  COPIER: "copier", // can view + download + copy
   OWNER: "owner",
 } as const;
 
