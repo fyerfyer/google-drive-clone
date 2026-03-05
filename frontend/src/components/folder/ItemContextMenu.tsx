@@ -180,7 +180,7 @@ export const ItemContextMenu = ({
             <ContextMenuSeparator />
             <ContextMenuItem
               onClick={handlePermanentDelete}
-              className="text-destructive"
+              className="text-destructive focus:text-destructive"
             >
               <Trash2 className="size-4" />
               Delete permanently
@@ -241,7 +241,7 @@ export const ItemContextMenu = ({
             <ContextMenuSeparator />
             <ContextMenuItem
               onClick={() => setShowDeleteDialog(true)}
-              className="text-destructive"
+              className="text-destructive focus:text-destructive"
             >
               <Trash2 className="size-4" />
               Move to trash
@@ -342,7 +342,7 @@ export const ItemContextMenu = ({
           <ContextMenuSeparator />
           <ContextMenuItem
             onClick={() => setShowDeleteDialog(true)}
-            className="text-destructive"
+            className="text-destructive focus:text-destructive"
           >
             <Trash2 className="size-4" />
             Move to trash

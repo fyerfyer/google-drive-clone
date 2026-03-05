@@ -10,8 +10,6 @@ import Redlock, { Lock } from "redlock";
 import { redisClient } from "../../config/redis";
 import { logger } from "../../lib/logger";
 
-/* ───────────── Redlock 实例（单 Redis 节点模式） ──────────── */
-
 const redlock = new Redlock([redisClient], {
   // 重试配置
   retryCount: 3,

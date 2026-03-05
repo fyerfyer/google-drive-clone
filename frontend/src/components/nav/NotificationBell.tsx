@@ -241,11 +241,9 @@ export function NotificationBell() {
     clearAllNotifications,
   } = useNotificationStore();
 
-  // Initial load and periodic unread count refresh
+  // Fetch unread count on mount — real-time updates come via Socket.IO
   useEffect(() => {
     fetchUnreadCount();
-    const interval = setInterval(fetchUnreadCount, 60_000); // refresh every minute
-    return () => clearInterval(interval);
   }, [fetchUnreadCount]);
 
   // Fetch notifications when popover opens

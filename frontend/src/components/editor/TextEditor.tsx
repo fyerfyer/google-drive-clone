@@ -9,6 +9,7 @@ import { xml } from "@codemirror/lang-xml";
 import { languages } from "@codemirror/language-data";
 import { getFileExtension } from "@/lib/file-preview";
 import type { Extension } from "@codemirror/state";
+import { EditorView } from "@codemirror/view";
 
 interface TextEditorProps {
   value: string;
@@ -18,6 +19,73 @@ interface TextEditorProps {
   height?: string;
   className?: string;
 }
+
+/**
+ * Custom Markdown styling for CodeMirror — enhances headings, bold, italic,
+ * code spans, and code blocks with visual distinction.
+ */
+const markdownStyles = EditorView.theme({
+  // Headings
+  ".cm-header-1": {
+    fontSize: "1.6em",
+    fontWeight: "700",
+    lineHeight: "1.4",
+  },
+  ".cm-header-2": {
+    fontSize: "1.35em",
+    fontWeight: "700",
+    lineHeight: "1.4",
+  },
+  ".cm-header-3": {
+    fontSize: "1.15em",
+    fontWeight: "600",
+    lineHeight: "1.4",
+  },
+  ".cm-header-4": {
+    fontSize: "1.05em",
+    fontWeight: "600",
+    lineHeight: "1.4",
+  },
+  ".cm-header-5, .cm-header-6": {
+    fontSize: "1em",
+    fontWeight: "600",
+    lineHeight: "1.4",
+  },
+  // Inline code
+  ".ͼ1f": {
+    fontFamily: "var(--font-mono, monospace)",
+    backgroundColor: "rgba(135,131,120,0.15)",
+    borderRadius: "3px",
+    padding: "0.1em 0.3em",
+    fontSize: "0.92em",
+  },
+  // Fenced code block lines
+  ".cm-line.cm-codeblock": {
+    fontFamily: "var(--font-mono, monospace)",
+    backgroundColor: "rgba(135,131,120,0.08)",
+    fontSize: "0.92em",
+  },
+  // Emphasis / strong
+  ".cm-strong": { fontWeight: "700" },
+  ".cm-em": { fontStyle: "italic" },
+  // Blockquote
+  ".cm-quote": {
+    color: "var(--muted-foreground, #6b7280)",
+    borderLeft: "3px solid var(--border, #d1d5db)",
+    paddingLeft: "0.8em",
+  },
+  // Links
+  ".cm-url, .cm-link": {
+    color: "var(--primary, #3b82f6)",
+    textDecoration: "underline",
+  },
+  // Horizontal rule
+  ".cm-hr": {
+    borderTop: "1px solid var(--border, #d1d5db)",
+    display: "block",
+    marginBlock: "0.5em",
+  },
+});
 
 /**
  * CodeMirror-based text editor with language-aware syntax highlighting.
@@ -41,28 +109,35 @@ export const TextEditor = ({
 
   const extensions = useMemo((): Extension[] => {
     const ext = getFileExtension(fileName);
+    // Always enable line wrapping for all file types
+    const base: Extension[] = [EditorView.lineWrapping];
+
     switch (ext) {
       case "md":
       case "markdown":
-        return [markdown({ base: markdownLanguage, codeLanguages: languages })];
+        return [
+          ...base,
+          markdown({ base: markdownLanguage, codeLanguages: languages }),
+          markdownStyles,
+        ];
       case "js":
       case "jsx":
-        return [javascript({ jsx: true })];
+        return [...base, javascript({ jsx: true })];
       case "ts":
       case "tsx":
-        return [javascript({ jsx: true, typescript: true })];
+        return [...base, javascript({ jsx: true, typescript: true })];
       case "json":
-        return [json()];
+        return [...base, json()];
       case "html":
       case "htm":
-        return [html()];
+        return [...base, html()];
       case "css":
-        return [css()];
+        return [...base, css()];
       case "xml":
       case "svg":
-        return [xml()];
+        return [...base, xml()];
       default:
-        return [];
+        return base;
     }
   }, [fileName]);
 

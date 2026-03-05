@@ -161,14 +161,19 @@ export const FileTableRow = ({
             {item.type === "folder" ? "-" : formatFileSize(item.size)}
           </TableCell>
 
-          <TableCell className="w-12" onClick={(e) => e.stopPropagation()}>
+          <TableCell className="w-12" onClick={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()}>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button className="p-2 hover:bg-muted rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary/20">
                   <MoreVertical className="size-4 text-muted-foreground" />
                 </button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
+              <DropdownMenuContent
+                align="end"
+                onClick={(e) => e.stopPropagation()}
+                onPointerDown={(e) => e.stopPropagation()}
+                onCloseAutoFocus={(e) => e.preventDefault()}
+              >
                 <FileActions item={item} onAction={onAction} mode="dropdown" />
               </DropdownMenuContent>
             </DropdownMenu>

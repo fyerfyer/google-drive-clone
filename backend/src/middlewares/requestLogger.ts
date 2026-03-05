@@ -3,17 +3,6 @@ import { v4 as uuidv4 } from "uuid";
 import { logger } from "../lib/logger";
 import { Request } from "express";
 
-/**
- * HTTP request logging middleware using pino-http
- *
- * Features:
- * - Logs all incoming requests and outgoing responses
- * - Generates unique request IDs for tracing
- * - Tracks response time automatically
- * - Includes method, URL, status code, and user info
- * - Attaches logger to req.log for use in route handlers
- */
-
 export const requestLogger = pinoHttp({
   logger: logger,
 
@@ -102,18 +91,18 @@ export const requestLogger = pinoHttp({
     }),
   },
 
-  // Don't log health check endpoints to reduce noise
+  // Don't log health check or frequent polling endpoints to reduce noise
   autoLogging: {
     ignore: (req) => {
-      return req.url === "/health" || req.url === "/api";
+      return (
+        req.url === "/health" ||
+        req.url === "/api" ||
+        req.url === "/api/notifications/unread-count"
+      );
     },
   },
 });
 
-/**
- * Type augmentation for Express Request
- * Adds the logger instance to the request object
- */
 declare global {
   namespace Express {
     interface Request {

@@ -9,11 +9,17 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import type { Folder } from "@/types/folder.types";
 import type { IFile } from "@/types/file.types";
 import { ItemContextMenu } from "./ItemContextMenu";
+import { FileActions } from "./FileActions";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
-import { useFileActions } from "@/hooks/folder/useFileActions";
+import { useFileActions, type ItemActions, type FolderItem } from "@/hooks/folder/useFileActions";
 import { FilePreviewModal } from "./FilePreviewModal";
 import { RenameDialog } from "./RenameDialog";
 import { DeleteConfirmDialog } from "./DeleteConfirmDialog";
@@ -26,14 +32,14 @@ interface FolderCardProps {
   folder: Folder;
   isSelected: boolean;
   onFolderClick: (folderId: string) => void;
-  onToggleSelection: (id: string) => void;
+  onAction: (action: ItemActions, item: FolderItem) => void;
 }
 
 const FolderCard = ({
   folder,
   isSelected,
   onFolderClick,
-  onToggleSelection,
+  onAction,
 }: FolderCardProps) => {
   // Make folders both draggable and droppable
   const {
@@ -126,15 +132,29 @@ const FolderCard = ({
                   </p>
                 </div>
               </div>
-              <button
-                className="p-1 hover:bg-muted rounded"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onToggleSelection(folder.id);
-                }}
-              >
-                <MoreVertical className="size-4" />
-              </button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    className="p-1 hover:bg-muted rounded"
+                    onClick={(e) => e.stopPropagation()}
+                    onPointerDown={(e) => e.stopPropagation()}
+                  >
+                    <MoreVertical className="size-4" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent
+                  align="end"
+                  onClick={(e) => e.stopPropagation()}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onCloseAutoFocus={(e) => e.preventDefault()}
+                >
+                  <FileActions
+                    item={{ ...folder, type: "folder" as const }}
+                    onAction={onAction}
+                    mode="dropdown"
+                  />
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </CardContent>
         </Card>
@@ -148,14 +168,14 @@ interface FileCardProps {
   file: IFile;
   isSelected: boolean;
   onFileClick: (file: IFile) => void;
-  onToggleSelection: (id: string) => void;
+  onAction: (action: ItemActions, item: FolderItem) => void;
 }
 
 const FileCard = ({
   file,
   isSelected,
   onFileClick,
-  onToggleSelection,
+  onAction,
 }: FileCardProps) => {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: file.id,
@@ -223,15 +243,29 @@ const FileCard = ({
                   </p>
                 </div>
               </div>
-              <button
-                className="p-1 hover:bg-muted rounded"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onToggleSelection(file.id);
-                }}
-              >
-                <MoreVertical className="size-4" />
-              </button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    className="p-1 hover:bg-muted rounded"
+                    onClick={(e) => e.stopPropagation()}
+                    onPointerDown={(e) => e.stopPropagation()}
+                  >
+                    <MoreVertical className="size-4" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent
+                  align="end"
+                  onClick={(e) => e.stopPropagation()}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onCloseAutoFocus={(e) => e.preventDefault()}
+                >
+                  <FileActions
+                    item={{ ...file, type: "file" as const }}
+                    onAction={onAction}
+                    mode="dropdown"
+                  />
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </CardContent>
         </Card>
@@ -242,7 +276,7 @@ const FileCard = ({
 
 export const FolderGridView = () => {
   // UI state from Zustand
-  const { currentFolderId, selectedItems, toggleSelection } =
+  const { currentFolderId, selectedItems } =
     useFolderUIStore();
 
   // Data from React Query
@@ -309,7 +343,7 @@ export const FolderGridView = () => {
                 folder={folder}
                 isSelected={selectedItems.has(folder.id)}
                 onFolderClick={handleFolderClick}
-                onToggleSelection={toggleSelection}
+                onAction={handleAction}
               />
             ))}
           </div>
@@ -328,7 +362,7 @@ export const FolderGridView = () => {
                 file={file}
                 isSelected={selectedItems.has(file.id)}
                 onFileClick={handleFileClick}
-                onToggleSelection={toggleSelection}
+                onAction={handleAction}
               />
             ))}
           </div>

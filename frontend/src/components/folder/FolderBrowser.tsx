@@ -14,7 +14,6 @@ import { useAgentStore } from "@/stores/useAgentStore";
 import { useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/queryClient";
 import { Upload } from "lucide-react";
-import { toast } from "sonner";
 
 interface FolderBrowserProps {
   initialFolderId: string;
@@ -88,12 +87,11 @@ export const FolderBrowser = ({ initialFolderId }: FolderBrowserProps) => {
     setShowDriveAgent(!showDriveAgent);
   }, [showDriveAgent, newConversation]);
 
-  /** Called when the Drive Agent modifies files/folders — refresh folder content */
+  /** Called when the Drive Agent modifies files/folders — refresh folder content silently */
   const handleDriveUpdate = useCallback(() => {
     queryClient.invalidateQueries({
       queryKey: queryKeys.folders.content(initialFolderId),
     });
-    toast.info("Drive updated by AI Agent");
   }, [queryClient, initialFolderId]);
 
   if (isLoading) {

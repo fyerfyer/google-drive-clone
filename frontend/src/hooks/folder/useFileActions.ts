@@ -17,6 +17,7 @@ export type ItemActions =
   | "star"
   | "unstar"
   | "move"
+  | "copy"
   | "share"
   | "delete";
 
@@ -104,6 +105,10 @@ export const useFileActions = () => {
       case "share":
         setSharedItem(item);
         toast.info("Share functionality coming soon");
+        break;
+
+      case "copy":
+        toast.info("Copy functionality coming soon");
         break;
     }
   };

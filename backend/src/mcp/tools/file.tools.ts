@@ -4,8 +4,6 @@ import { z } from "zod";
 import type { McpServices } from "../server";
 import { McpAuthContext, resolveUserId } from "../auth/auth";
 import { logger } from "../../lib/logger";
-import { KnowledgeService } from "../../services/knowledge.service";
-import { isTextExtractable } from "../../services/knowledge.service";
 
 const userIdParam = z
   .string()

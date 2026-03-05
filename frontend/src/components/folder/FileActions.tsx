@@ -7,6 +7,7 @@ import {
   Star,
   StarOff,
   FolderInput,
+  Copy,
   Pencil,
 } from "lucide-react";
 import {
@@ -63,24 +64,30 @@ export const FileActions = ({ item, onAction, mode }: FileActionsProps) => {
         <Edit className="mr-2 h-4 w-4" /> Rename
       </Item>
       <Item onClick={() => onAction("move", item)}>
-        <FolderInput className="mr-2 h-4 w-4" /> Move
+        <FolderInput className="mr-2 h-4 w-4" /> Move to
+      </Item>
+      <Item onClick={() => onAction("copy", item)}>
+        <Copy className="mr-2 h-4 w-4" /> Make a copy
       </Item>
       <Separator />
       {item.isStarred ? (
         <Item onClick={() => onAction("unstar", item)}>
-          <StarOff className="mr-2 h-4 w-4" /> Unstar
+          <StarOff className="mr-2 h-4 w-4" /> Remove from starred
         </Item>
       ) : (
         <Item onClick={() => onAction("star", item)}>
-          <Star className="mr-2 h-4 w-4" /> Star
+          <Star className="mr-2 h-4 w-4" /> Add to starred
         </Item>
       )}
       <Item onClick={() => onAction("share", item)}>
         <Share2 className="mr-2 h-4 w-4" /> Share
       </Item>
       <Separator />
-      <Item onClick={() => onAction("delete", item)}>
-        <Trash2 className="mr-2 h-4 w-4" /> Delete
+      <Item
+        onClick={() => onAction("delete", item)}
+        className="text-destructive focus:text-destructive"
+      >
+        <Trash2 className="mr-2 h-4 w-4" /> Move to trash
       </Item>
     </>
   );

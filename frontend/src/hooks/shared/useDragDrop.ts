@@ -5,7 +5,7 @@ import {
   PointerSensor,
   useSensor,
   useSensors,
-  closestCenter,
+  rectIntersection,
   MouseSensor,
   TouchSensor,
   type DragEndEvent,
@@ -53,22 +53,22 @@ export const useDragDrop = ({
 
   const dropZoneRef = useRef<HTMLDivElement>(null);
 
-  // Configure sensors for drag detection
+  // Configure sensors for drag detection — require intentional dragging
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
-        distance: 8, // 8px movement required to start drag
+        distance: 15, // 15px movement required to start drag
       },
     }),
     useSensor(MouseSensor, {
       activationConstraint: {
-        distance: 8,
+        distance: 15,
       },
     }),
     useSensor(TouchSensor, {
       activationConstraint: {
-        delay: 250, // Long press on touch
-        tolerance: 5,
+        delay: 300, // Long press on touch
+        tolerance: 8,
       },
     }),
   );
@@ -199,7 +199,7 @@ export const useDragDrop = ({
     handleDragStart,
     handleDragOver,
     handleDragEnd,
-    collisionDetection: closestCenter,
+    collisionDetection: rectIntersection,
 
     // Active drag state
     activeItem,

@@ -15,8 +15,11 @@ interface AgentToolCallProps {
 }
 
 const TOOL_LABELS: Record<string, string> = {
+  // File operations
   list_files: "List Files",
   get_file_info: "Get File Info",
+  extract_file_content: "Extract File Content",
+  batch_extract_file_contents: "Batch Extract Files",
   read_file: "Read File",
   write_file: "Write File",
   create_file: "Create File",
@@ -27,7 +30,8 @@ const TOOL_LABELS: Record<string, string> = {
   delete_file: "Delete File",
   star_file: "Star File",
   get_download_url: "Get Download URL",
-  list_folder_contents: "List Folder",
+  // Folder operations
+  list_folder_contents: "List Folder Contents",
   create_folder: "Create Folder",
   rename_folder: "Rename Folder",
   move_folder: "Move Folder",
@@ -36,29 +40,46 @@ const TOOL_LABELS: Record<string, string> = {
   delete_folder: "Delete Folder",
   get_folder_path: "Get Folder Path",
   star_folder: "Star Folder",
+  // Document operations
   patch_file: "Patch File",
+  // Search operations
   search_files: "Search Files",
   summarize_directory: "Summarize Directory",
-  query_workspace_knowledge: "Query Knowledge",
+  // Share operations
   create_share_link: "Create Share Link",
   list_share_links: "List Share Links",
   revoke_share_link: "Revoke Share Link",
   share_with_users: "Share with Users",
   get_permissions: "Get Permissions",
   list_shared_with_me: "Shared with Me",
-  // Knowledge Layer
+  // Knowledge layer
   index_file: "Index File",
   index_all_files: "Index All Files",
   semantic_search_files: "Semantic Search",
   get_indexing_status: "Indexing Status",
+  query_workspace_knowledge: "Query Knowledge",
+  // Ephemeral tools
+  query_ephemeral_memory: "Query Memory",
+  map_reduce_summarize: "Summarize Documents",
   // Auth
   authenticate: "Authenticate",
   whoami: "Who Am I",
 };
 
+/** Auto-format unknown tool names: snake_case → Title Case */
+function formatToolName(name: string): string {
+  return (
+    TOOL_LABELS[name] ??
+    name
+      .split("_")
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+      .join(" ")
+  );
+}
+
 export function AgentToolCall({ toolCall }: AgentToolCallProps) {
   const [expanded, setExpanded] = useState(false);
-  const label = TOOL_LABELS[toolCall.toolName] || toolCall.toolName;
+  const label = formatToolName(toolCall.toolName);
   const isPending = toolCall.result === undefined || toolCall.result === null;
 
   return (

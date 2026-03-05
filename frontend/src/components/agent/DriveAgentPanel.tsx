@@ -120,9 +120,23 @@ export function DriveAgentPanel({
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, streamingContent, streamingToolCalls, isStreaming]);
 
+  // Track how many messages we've already seen — skip drive-update checks for
+  // messages that were loaded from history (prevents toast on conversation load).
+  const seenMsgCountRef = useRef(messages.length);
+
+  // When the conversation changes (e.g. loading history), reset the counter
+  // to the current message count so we don't fire toast for old messages.
+  useEffect(() => {
+    seenMsgCountRef.current = messages.length;
+  }, [conversationId, messages.length]);
+
   // Watch for drive-modifying tool calls to trigger refresh
   useEffect(() => {
     if (!onDriveUpdate || messages.length === 0) return;
+    // Only react to genuinely new messages (not history loads)
+    if (messages.length <= seenMsgCountRef.current) return;
+    seenMsgCountRef.current = messages.length;
+
     const lastMsg = messages[messages.length - 1];
     if (lastMsg.role === "assistant" && lastMsg.toolCalls) {
       const modifyingTools = [
