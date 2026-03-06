@@ -72,7 +72,7 @@ export interface IFilePublic {
   extension: string;
   mimeType: string;
   size: number;
-  folder: string | null; // Can be null for root-level files
+  folder: string | null;
   user: IUserBasic;
   isStarred: boolean;
   isTrashed: boolean;
@@ -85,6 +85,38 @@ export interface IFilePublic {
 
 export class FileService {
   constructor(private permissionService: PermissionService) {}
+
+  // 如果因同名冲突失败，则自动重试并生成唯一名称
+  private async createFileWithUniqueName(
+    doc: Record<string, unknown>,
+  ): Promise<IFile> {
+    const baseName = doc.name as string;
+    let name = baseName;
+    const MAX = 50;
+
+    for (let attempt = 0; attempt < MAX; attempt++) {
+      try {
+        return await File.create({ ...doc, name });
+      } catch (err: unknown) {
+        const mongoErr = err as { code?: number; message?: string };
+        if (
+          mongoErr.code === 11000 &&
+          mongoErr.message?.includes("user_1_folder_1_name_1")
+        ) {
+          const dotIdx = baseName.lastIndexOf(".");
+          const stem = dotIdx > 0 ? baseName.substring(0, dotIdx) : baseName;
+          const ext = dotIdx > 0 ? baseName.substring(dotIdx) : "";
+          name = `${stem} (${attempt + 1})${ext}`;
+          continue;
+        }
+        throw err;
+      }
+    }
+    throw new AppError(
+      StatusCodes.CONFLICT,
+      "Unable to generate unique file name",
+    );
+  }
 
   private async resolveFileForRead(file: IFile): Promise<IFile> {
     if (
@@ -203,20 +235,35 @@ export class FileService {
     const extension = mimeTypes.extension(mimeType) || "";
 
     // 创建文件记录
-    const file = await File.create({
-      user: userObjectId,
-      folder: folderObjectId,
-      ancestors,
-      key,
-      size: fileSize,
-      mimeType,
-      originalName,
-      name: originalName,
-      extension,
-      hash,
-      isStarred: false,
-      isTrashed: false,
-    });
+    let file;
+    try {
+      file = await this.createFileWithUniqueName({
+        user: userObjectId,
+        folder: folderObjectId,
+        ancestors,
+        key,
+        size: fileSize,
+        mimeType,
+        originalName,
+        name: originalName,
+        extension,
+        hash,
+        isStarred: false,
+        isTrashed: false,
+      });
+    } catch (err) {
+      // 回滚用户配额
+      await User.updateOne(
+        { _id: userObjectId },
+        { $inc: { storageUsage: -fileSize } },
+      ).catch((rollbackErr) => {
+        logger.error(
+          { rollbackErr, userId, key, fileSize },
+          "Failed to rollback storageUsage after File.create failure",
+        );
+      });
+      throw err;
+    }
 
     const userBasic = await this.getUserBasic(userId);
 
@@ -911,6 +958,7 @@ export class FileService {
       mimeType: targetFile.mimeType,
       fileName: targetFile.originalName,
       size: targetFile.size,
+      key: targetFile.key,
     };
   }
 
@@ -1362,20 +1410,35 @@ export class FileService {
 
     const ext = mimeTypes.extension(mimeType) || "";
 
-    const newFile = await File.create({
-      user: userObjectId,
-      folder: folderObjectId,
-      ancestors,
-      key: existingFile.key, // Reuse the same MinIO key
-      size,
-      mimeType,
-      originalName,
-      name: originalName,
-      extension: ext,
-      hash,
-      isStarred: false,
-      isTrashed: false,
-    });
+    let newFile;
+    try {
+      newFile = await this.createFileWithUniqueName({
+        user: userObjectId,
+        folder: folderObjectId,
+        ancestors,
+        key: existingFile.key, // 复用 MinIO key
+        size,
+        mimeType,
+        originalName,
+        name: originalName,
+        extension: ext,
+        hash,
+        isStarred: false,
+        isTrashed: false,
+      });
+    } catch (err) {
+      // 创建文件记录失败，回滚用户配额
+      await User.updateOne(
+        { _id: userObjectId },
+        { $inc: { storageUsage: -size } },
+      ).catch((rollbackErr) => {
+        logger.error(
+          { rollbackErr, userId, size },
+          "Failed to rollback storageUsage after dedup File.create failure",
+        );
+      });
+      throw err;
+    }
 
     const userBasic = await this.getUserBasic(userId);
 

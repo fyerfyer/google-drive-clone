@@ -50,6 +50,7 @@ export const QUEUE_TASKS = {
   CLEANUP_TRASH: "cleanup-trash",
   CLEANUP_TEMP_FILES: "cleanup-temp-files",
   CLEANUP_STALE_MULTIPARTS: "cleanup-stale-multiparts",
+  RECONCILE_STORAGE: "reconcile-storage",
   AGENT_CHAT: "agent-chat",
 } as const;
 

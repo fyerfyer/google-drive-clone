@@ -149,6 +149,42 @@ export class UploadController {
     return ResponseHelper.success(res, { url });
   }
 
+  /**
+   * Batch sign multiple parts in a single request.
+   * Reduces N presign API calls to 1 for large multipart uploads.
+   */
+  async signParts(req: Request, res: Response, next: NextFunction) {
+    const uploadId = extractParam(req.params.uploadId);
+    const { key, partNumbers } = req.body;
+
+    if (
+      !uploadId ||
+      !key ||
+      !Array.isArray(partNumbers) ||
+      partNumbers.length === 0
+    ) {
+      throw new AppError(
+        StatusCodes.BAD_REQUEST,
+        "Missing required parameters: uploadId, key, partNumbers[]",
+      );
+    }
+
+    const urls: Record<number, string> = {};
+    await Promise.all(
+      partNumbers.map(async (partNumber: number) => {
+        const url = await StorageService.getPresignedPartUrl(
+          BUCKETS.FILES,
+          key as string,
+          uploadId,
+          partNumber,
+        );
+        urls[partNumber] = url;
+      }),
+    );
+
+    return ResponseHelper.success(res, { urls });
+  }
+
   async listParts(req: Request, res: Response, next: NextFunction) {
     const uploadId = extractParam(req.params.uploadId);
     const { key } = req.query;

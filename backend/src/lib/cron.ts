@@ -20,4 +20,11 @@ export async function initScheduledJobs() {
     {},
     { repeat: { pattern: "0 4 * * *" } },
   );
+
+  // 每天凌晨 5 点校正用户 storageUsage，修复因崩溃导致的计数偏移
+  await maintainanceQueue.add(
+    QUEUE_TASKS.RECONCILE_STORAGE,
+    {},
+    { repeat: { pattern: "0 5 * * *" } },
+  );
 }

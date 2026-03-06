@@ -16,10 +16,11 @@ export const authService = {
     try {
       const response = await api.post<AuthResponse, LoginRequest>(
         `${AUTH_API_BASE}/login`,
-        req
+        req,
       );
       if (response.success && response.data) {
         localStorage.setItem("token", response.data.token);
+        localStorage.setItem("refreshToken", response.data.refreshToken);
         return response.data;
       }
       throw new Error(response.message || "Login failed");
@@ -37,29 +38,51 @@ export const authService = {
 
       const response = await api.post<AuthResponse, RegisterPayload>(
         `${AUTH_API_BASE}/register`,
-        payload
+        payload,
       );
       if (response.success && response.data) {
         localStorage.setItem("token", response.data.token);
+        localStorage.setItem("refreshToken", response.data.refreshToken);
         return response.data;
       }
 
       throw new Error(response.message || "Registration failed");
     } catch (error) {
       throw new Error(
-        error instanceof Error ? error.message : "Registration failed"
+        error instanceof Error ? error.message : "Registration failed",
       );
     }
+  },
+
+  refreshToken: async (): Promise<{ token: string; refreshToken: string }> => {
+    const refreshToken = localStorage.getItem("refreshToken");
+    if (!refreshToken) {
+      throw new Error("No refresh token available");
+    }
+
+    const response = await api.post<
+      { token: string; refreshToken: string },
+      { refreshToken: string }
+    >(`${AUTH_API_BASE}/refresh`, { refreshToken });
+
+    if (response.success && response.data) {
+      localStorage.setItem("token", response.data.token);
+      localStorage.setItem("refreshToken", response.data.refreshToken);
+      return response.data;
+    }
+
+    throw new Error("Token refresh failed");
   },
 
   logout: async (): Promise<void> => {
     try {
       await api.post(`${AUTH_API_BASE}/logout`);
     } catch (error) {
-      // Ignore error, always clear local token
+      // Ignore error, always clear local tokens
       console.error("Logout error:", error);
     } finally {
       localStorage.removeItem("token");
+      localStorage.removeItem("refreshToken");
     }
   },
 

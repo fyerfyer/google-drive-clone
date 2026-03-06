@@ -39,6 +39,7 @@ import { KnowledgeService } from "./services/knowledge.service";
 import { NotificationService } from "./services/notification.service";
 import { NotificationController } from "./controllers/notification.controller";
 import { createNotificationRouter } from "./routes/notification.route";
+import { authLimiter, generalLimiter } from "./middlewares/rateLimiter";
 
 const userService = new UserService();
 const authService = new AuthService(userService);
@@ -113,16 +114,26 @@ app.get("/api", (req, res) => {
   });
 });
 
-app.use("/api/auth", createAuthRouter(authController));
-app.use("/api/users", createUserRouter(userController));
-app.use("/api/files", createFileRouter(fileController, permissionService));
+app.use("/api/auth", authLimiter, createAuthRouter(authController));
+app.use("/api/users", generalLimiter, createUserRouter(userController));
+app.use(
+  "/api/files",
+  generalLimiter,
+  createFileRouter(fileController, permissionService),
+);
 app.use(
   "/api/folders",
+  generalLimiter,
   createFolderRouter(folderController, permissionService),
 );
+// NOTE: Do NOT apply uploadLimiter at app level here.
+// The route-level limiters inside createUploadRouter run AFTER jwtAuth,
+// so they can correctly key by req.user.id instead of falling back to req.ip.
+// Applying uploadLimiter here (before auth) caused 429s on large multipart
+// uploads because all requests from the same IP shared a 30/min quota.
 app.use("/api/upload", createUploadRouter(uploadController));
-app.use("/api/batch", createBatchRouter(batchController));
-app.use("/api/share", createShareRouter(shareController));
+app.use("/api/batch", generalLimiter, createBatchRouter(batchController));
+app.use("/api/share", generalLimiter, createShareRouter(shareController));
 
 const apiKeyService = new ApiKeyService();
 const apiKeyController = new ApiKeyController(apiKeyService);

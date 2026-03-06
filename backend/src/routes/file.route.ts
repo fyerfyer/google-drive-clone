@@ -59,6 +59,12 @@ export function createFileRouter(
   );
 
   router.get(
+    "/:fileId/stream",
+    requireAccess(permissionService, "viewer", { resourceType: "File" }),
+    fileController.streamFile.bind(fileController),
+  );
+
+  router.get(
     "/:fileId/preview-url",
     requireAccess(permissionService, "viewer", { resourceType: "File" }),
     fileController.getPreviewUrl.bind(fileController),

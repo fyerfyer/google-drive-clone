@@ -5,7 +5,7 @@ import type {
   CreateFolderRequest,
   BreadcrumbItem,
 } from "@/types/folder.types";
-import { api } from "@/services/api";
+import { api, apiClient } from "@/services/api";
 import {
   normalizeFolder,
   normalizeFolders,
@@ -238,16 +238,28 @@ export const folderService = {
 
   /**
    * Trigger a browser download of the folder contents as a ZIP archive.
-   * Uses a hidden anchor element so the streaming response is handed
-   * directly to the browser download manager.
+   * Uses apiClient (Axios) so the Authorization header is included,
+   * then creates a blob URL for the browser download.
    */
-  downloadFolderAsZip: (folderId: string, folderName?: string): void => {
-    const url = `${FOLDER_API_BASE}/${folderId}/download`;
+  downloadFolderAsZip: async (
+    folderId: string,
+    folderName?: string,
+  ): Promise<void> => {
+    const response = await apiClient.get(
+      `${FOLDER_API_BASE}/${folderId}/download`,
+      {
+        responseType: "blob",
+        timeout: 0, // no timeout for potentially large ZIP streams
+      },
+    );
+    const blob = new Blob([response.data], { type: "application/zip" });
+    const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
     anchor.download = folderName ? `${folderName}.zip` : "folder.zip";
     document.body.appendChild(anchor);
     anchor.click();
     document.body.removeChild(anchor);
+    URL.revokeObjectURL(url);
   },
 };

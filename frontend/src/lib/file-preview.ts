@@ -62,19 +62,24 @@ export const getFileCategory = (
   if (mimeType.startsWith("text/")) return "text";
   if (mimeType === "application/pdf") return "pdf";
 
-  if (
-    mimeType.includes("document") ||
-    mimeType.includes("word") ||
-    mimeType.includes("spreadsheet") ||
-    mimeType.includes("excel") ||
-    mimeType.includes("presentation") ||
-    mimeType.includes("powerpoint") ||
-    mimeType.includes("officedocument")
-  ) {
+  // Distinguish spreadsheet, presentation, and document by MIME or extension
+  if (mimeType.includes("spreadsheet") || mimeType.includes("excel")) {
+    return "spreadsheet";
+  }
+  if (mimeType.includes("presentation") || mimeType.includes("powerpoint")) {
+    return "presentation";
+  }
+  if (mimeType.includes("document") || mimeType.includes("word")) {
     return "document";
   }
 
+  // Fallback to extension-based classification for office files
   if (isOfficeDocument(fileName)) {
+    const ext = getFileExtension(fileName);
+    if ((OFFICE_EXTENSIONS.EXCEL as readonly string[]).includes(ext))
+      return "spreadsheet";
+    if ((OFFICE_EXTENSIONS.POWERPOINT as readonly string[]).includes(ext))
+      return "presentation";
     return "document";
   }
 

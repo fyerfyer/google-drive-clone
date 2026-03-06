@@ -17,6 +17,8 @@ export function createAuthRouter(authController: AuthController) {
     authController.login.bind(authController),
   );
 
+  authRouter.post("/refresh", authController.refresh.bind(authController));
+
   authRouter.use(jwtAuth);
   authRouter.post("/logout", authController.logout.bind(authController));
 

@@ -105,8 +105,14 @@ export const ItemContextMenu = ({
         console.error("Download error:", error);
       }
     } else {
-      folderService.downloadFolderAsZip(item.id, item.name);
-      toast.success(`Downloading ${item.name}.zip`);
+      folderService
+        .downloadFolderAsZip(item.id, item.name)
+        .then(() => {
+          toast.success(`Downloading ${item.name}.zip`);
+        })
+        .catch(() => {
+          toast.error("Failed to download folder");
+        });
     }
   };
 

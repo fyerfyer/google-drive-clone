@@ -2,6 +2,7 @@ import { Worker } from "bullmq";
 import { QUEUE_NAMES, QUEUE_TASKS } from "../../types/model.types";
 import { redisClient } from "../../config/redis";
 import File from "../../models/File.model";
+import User from "../../models/User.model";
 import logger from "../logger";
 import Folder from "../../models/Folder.model";
 import { BatchItemRequest, BatchService } from "../../services/batch.service";
@@ -128,6 +129,45 @@ export const maintainanceWorker = new Worker(
         );
       } catch (error) {
         logger.error(`Error during stale multipart cleanup: ${error}`);
+        throw error;
+      }
+    }
+
+    if (job.name === QUEUE_TASKS.RECONCILE_STORAGE) {
+      try {
+        const users = await User.find({}).select("_id storageUsage").lean();
+        let fixed = 0;
+
+        for (const user of users) {
+          const actualUsage = await File.aggregate([
+            { $match: { user: user._id, isTrashed: false } },
+            { $group: { _id: null, total: { $sum: "$size" } } },
+          ]);
+
+          const actual = actualUsage[0]?.total ?? 0;
+          const recorded = user.storageUsage ?? 0;
+
+          if (actual !== recorded) {
+            await User.updateOne(
+              { _id: user._id },
+              { $set: { storageUsage: actual } },
+            );
+            logger.warn(
+              {
+                userId: user._id,
+                recorded,
+                actual,
+                diff: recorded - actual,
+              },
+              "Reconciled storageUsage drift",
+            );
+            fixed++;
+          }
+        }
+
+        logger.info(`Storage reconciliation complete: ${fixed} users fixed.`);
+      } catch (error) {
+        logger.error(`Error during storage reconciliation: ${error}`);
         throw error;
       }
     }

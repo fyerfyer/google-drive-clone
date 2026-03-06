@@ -11,7 +11,6 @@ export interface IFile extends Document {
 
   // MinIO
   key: string;
-  thumbnailKey: string;
 
   user: mongoose.Types.ObjectId;
   folder: mongoose.Types.ObjectId | null;
@@ -51,7 +50,6 @@ const fileSchema = new Schema<IFile>(
     hash: { type: String, select: false }, // 只有上传校验的时候查询
 
     key: { type: String, select: false },
-    thumbnailKey: { type: String, select: false },
 
     user: {
       type: Schema.Types.ObjectId,

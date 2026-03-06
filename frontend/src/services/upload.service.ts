@@ -69,11 +69,11 @@ export const uploadService = {
    * Get presigned URL for avatar upload (small files, < 5MB)
    */
   async getPresignedAvatarUrl(
-    request: PresignAvatarRequest
+    request: PresignAvatarRequest,
   ): Promise<PresignedUrlResponse> {
     const response = await api.post<PresignedUrlResponse, PresignAvatarRequest>(
       `${UPLOAD_API_BASE}/presign-avatar`,
-      request
+      request,
     );
 
     if (!response.success || !response.data) {
@@ -87,11 +87,11 @@ export const uploadService = {
    * Get presigned URL for file upload (< 100MB)
    */
   async getPresignedFileUrl(
-    request: PresignFileRequest
+    request: PresignFileRequest,
   ): Promise<PresignedUrlResponse> {
     const response = await api.post<PresignedUrlResponse, PresignFileRequest>(
       `${UPLOAD_API_BASE}/presign-file`,
-      request
+      request,
     );
 
     if (!response.success || !response.data) {
@@ -108,7 +108,7 @@ export const uploadService = {
     url: string,
     file: File,
     headers: Record<string, string>,
-    onProgress?: (progress: number) => void
+    onProgress?: (progress: number) => void,
   ): Promise<void> {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
@@ -151,7 +151,7 @@ export const uploadService = {
    * Create multipart upload for large files (≥ 100MB)
    */
   async createMultipartUpload(
-    request: CreateMultipartUploadRequest
+    request: CreateMultipartUploadRequest,
   ): Promise<MultipartUploadResponse> {
     const response = await api.post<
       MultipartUploadResponse,
@@ -171,12 +171,12 @@ export const uploadService = {
   async getPartSignedUrl(
     uploadId: string,
     key: string,
-    partNumber: number
+    partNumber: number,
   ): Promise<string> {
     const response = await api.get<PartSignResponse>(
       `${UPLOAD_API_BASE}/multipart/${uploadId}/${partNumber}?key=${encodeURIComponent(
-        key
-      )}`
+        key,
+      )}`,
     );
 
     if (!response.success || !response.data) {
@@ -187,16 +187,40 @@ export const uploadService = {
   },
 
   /**
+   * Batch sign multiple parts in a single request.
+   * Reduces N API calls to 1 for large multipart uploads.
+   */
+  async getPartSignedUrls(
+    uploadId: string,
+    key: string,
+    partNumbers: number[],
+  ): Promise<Record<number, string>> {
+    const response = await api.post<
+      { urls: Record<number, string> },
+      { key: string; partNumbers: number[] }
+    >(`${UPLOAD_API_BASE}/multipart/${uploadId}/sign-parts`, {
+      key,
+      partNumbers,
+    });
+
+    if (!response.success || !response.data) {
+      throw new Error(response.message || "Failed to batch sign part URLs");
+    }
+
+    return response.data.urls;
+  },
+
+  /**
    * List uploaded parts
    */
   async listParts(
     uploadId: string,
-    key: string
+    key: string,
   ): Promise<PartsListResponse["parts"]> {
     const response = await api.get<PartsListResponse>(
       `${UPLOAD_API_BASE}/multipart/${uploadId}/parts?key=${encodeURIComponent(
-        key
-      )}`
+        key,
+      )}`,
     );
 
     if (!response.success || !response.data) {
@@ -211,7 +235,7 @@ export const uploadService = {
    */
   async completeMultipartUpload(
     uploadId: string,
-    request: CompleteMultipartUploadRequest
+    request: CompleteMultipartUploadRequest,
   ): Promise<CompleteMultipartResponse> {
     const response = await api.post<
       CompleteMultipartResponse,
@@ -220,7 +244,7 @@ export const uploadService = {
 
     if (!response.success || !response.data) {
       throw new Error(
-        response.message || "Failed to complete multipart upload"
+        response.message || "Failed to complete multipart upload",
       );
     }
 
@@ -232,7 +256,7 @@ export const uploadService = {
    */
   async abortMultipartUpload(uploadId: string, key: string): Promise<void> {
     const response = await api.delete<void>(
-      `${UPLOAD_API_BASE}/multipart/${uploadId}?key=${encodeURIComponent(key)}`
+      `${UPLOAD_API_BASE}/multipart/${uploadId}?key=${encodeURIComponent(key)}`,
     );
 
     if (!response.success) {
@@ -246,7 +270,7 @@ export const uploadService = {
   async uploadPart(
     url: string,
     chunk: Blob,
-    onProgress?: (progress: number) => void
+    onProgress?: (progress: number) => void,
   ): Promise<string> {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();

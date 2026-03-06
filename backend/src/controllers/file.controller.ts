@@ -6,6 +6,7 @@ import { IUser } from "../models/User.model";
 import { ResponseHelper } from "../utils/response.util";
 import { FileUploadResponse } from "../types/response.types";
 import { StorageService } from "../services/storage.service";
+import { MediaService } from "../services/media.service";
 import { BUCKETS } from "../config/s3";
 import { extractParam } from "../utils/request.util";
 
@@ -480,5 +481,51 @@ export class FileController {
     });
 
     return ResponseHelper.ok(res, result);
+  }
+
+  async streamFile(req: Request, res: Response, next: NextFunction) {
+    if (!req.user) {
+      throw new AppError(StatusCodes.UNAUTHORIZED, "User not authenticated");
+    }
+
+    const user = req.user as IUser;
+    const result = await this.fileService.getPreviewStream({
+      userId: String(user._id),
+      fileId: extractParam(req.params.fileId),
+    });
+
+    const range = req.headers.range;
+    const totalSize = result.size;
+
+    if (range) {
+      const parts = range.replace(/bytes=/, "").split("-");
+      const start = parseInt(parts[0], 10);
+      const end = parts[1] ? parseInt(parts[1], 10) : totalSize - 1;
+      const chunkSize = end - start + 1;
+
+      // Get range stream from the file's key
+      const partialResult = await MediaService.getPartialStream(
+        BUCKETS.FILES,
+        result.key,
+        range,
+      );
+
+      res.writeHead(206, {
+        "Content-Range": `bytes ${start}-${end}/${totalSize}`,
+        "Accept-Ranges": "bytes",
+        "Content-Length": chunkSize,
+        "Content-Type": result.mimeType,
+      });
+
+      partialResult.stream.pipe(res);
+    } else {
+      res.writeHead(200, {
+        "Content-Length": totalSize,
+        "Content-Type": result.mimeType,
+        "Accept-Ranges": "bytes",
+      });
+
+      result.stream.pipe(res);
+    }
   }
 }

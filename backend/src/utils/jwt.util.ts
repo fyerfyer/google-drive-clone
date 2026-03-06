@@ -12,7 +12,14 @@ interface JwtPayload {
 export const generateToken = (payload: JwtPayload): string => {
   const secret: string = config.jwtSecret;
   return jwt.sign(payload, secret, {
-    expiresIn: config.jwtExpire,
+    expiresIn: "15m",
+  } as jwt.SignOptions);
+};
+
+export const generateRefreshToken = (payload: JwtPayload): string => {
+  const secret: string = config.jwtRefreshSecret;
+  return jwt.sign(payload, secret, {
+    expiresIn: "30d",
   } as jwt.SignOptions);
 };
 
@@ -43,5 +50,24 @@ export const verifyToken = (token: string): JwtPayload => {
     const msg = "Failed to verify token";
     logError(error, msg);
     throw new AppError(StatusCodes.INTERNAL_SERVER_ERROR, msg);
+  }
+};
+
+export const verifyRefreshToken = (token: string): JwtPayload => {
+  try {
+    const secret: string = config.jwtRefreshSecret;
+    const decode = jwt.verify(token, secret);
+    return decode as JwtPayload;
+  } catch (error) {
+    if (error instanceof jwt.TokenExpiredError) {
+      throw new AppError(StatusCodes.UNAUTHORIZED, "Refresh token expired");
+    }
+    if (error instanceof jwt.JsonWebTokenError) {
+      throw new AppError(StatusCodes.UNAUTHORIZED, "Invalid refresh token");
+    }
+    throw new AppError(
+      StatusCodes.INTERNAL_SERVER_ERROR,
+      "Failed to verify refresh token",
+    );
   }
 };

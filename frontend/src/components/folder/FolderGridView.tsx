@@ -1,7 +1,9 @@
 import { useFolderUIStore } from "@/stores/useFolderUIStore";
 import { useFolderContent } from "@/hooks/queries/useFolderQueries";
 import { Card, CardContent } from "@/components/ui/card";
-import { FolderIcon, FileIcon, MoreVertical, Users } from "lucide-react";
+import { FolderIcon, MoreVertical, Users } from "lucide-react";
+import { getFileTypeIcon } from "@/lib/file-icons";
+import { getFileCategory } from "@/lib/file-preview";
 import { formatDistanceToNow } from "date-fns";
 import {
   Tooltip,
@@ -19,7 +21,11 @@ import type { IFile } from "@/types/file.types";
 import { ItemContextMenu } from "./ItemContextMenu";
 import { FileActions } from "./FileActions";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
-import { useFileActions, type ItemActions, type FolderItem } from "@/hooks/folder/useFileActions";
+import {
+  useFileActions,
+  type ItemActions,
+  type FolderItem,
+} from "@/hooks/folder/useFileActions";
 import { FilePreviewModal } from "./FilePreviewModal";
 import { RenameDialog } from "./RenameDialog";
 import { DeleteConfirmDialog } from "./DeleteConfirmDialog";
@@ -196,7 +202,10 @@ const FileCard = ({
           <CardContent className="p-4">
             <div className="flex items-start justify-between">
               <div className="flex items-center gap-3 flex-1 min-w-0">
-                <FileIcon className="size-10 shrink-0 text-muted-foreground" />
+                {getFileTypeIcon(
+                  getFileCategory(file.mimeType, file.name),
+                  "size-10 shrink-0 text-muted-foreground",
+                )}
                 <div className="flex-1 min-w-0">
                   <p className="font-medium text-sm line-clamp-2">
                     {file.name}
@@ -276,8 +285,7 @@ const FileCard = ({
 
 export const FolderGridView = () => {
   // UI state from Zustand
-  const { currentFolderId, selectedItems } =
-    useFolderUIStore();
+  const { currentFolderId, selectedItems } = useFolderUIStore();
 
   // Data from React Query
   const { data } = useFolderContent(currentFolderId);

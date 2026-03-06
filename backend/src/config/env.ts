@@ -16,6 +16,7 @@ interface EnvConfig {
   mongodbUri: string;
   jwtSecret: string;
   jwtExpire: string;
+  jwtRefreshSecret: string;
   corsOrigin: string;
   trashRetentionDays: number;
   minioEndpoint: string;
@@ -52,6 +53,8 @@ export const config: EnvConfig = {
   mongodbUri: process.env.MONGODB_URI!,
   jwtSecret: process.env.JWT_SECRET!,
   jwtExpire: process.env.JWT_EXPIRE || "7d",
+  jwtRefreshSecret:
+    process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET! + "_refresh",
   corsOrigin: process.env.CORS_ORIGIN || "http://localhost:5173",
   trashRetentionDays: parseInt(process.env.TRASH_RETENTION_DAYS || "30", 10),
   minioEndpoint: process.env.MINIO_ENDPOINT || "http://localhost:9000",

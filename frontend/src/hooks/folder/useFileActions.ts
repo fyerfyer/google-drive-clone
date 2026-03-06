@@ -69,8 +69,14 @@ export const useFileActions = () => {
             },
           );
         } else {
-          folderService.downloadFolderAsZip(item.id, item.name);
-          toast.success("Folder download started");
+          folderService
+            .downloadFolderAsZip(item.id, item.name)
+            .then(() => {
+              toast.success("Folder download started");
+            })
+            .catch(() => {
+              toast.error("Failed to download folder");
+            });
         }
 
         break;

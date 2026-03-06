@@ -1,8 +1,10 @@
+name: minddrive
+
 services:
   # MongoDB with Replica Set (required for transactions)
   mongo:
     image: mongo:7
-    container_name: gdrive-mongo
+    container_name: mdrive-mongo
     restart: unless-stopped
     ports:
       - "27017:27017"
@@ -19,7 +21,7 @@ services:
     volumes:
       - mongo-data:/data/db
     networks:
-      - gdrive-network
+      - mdrive-network
     healthcheck:
       test: |
         mongosh --quiet -u $${MONGO_INITDB_ROOT_USERNAME:-admin} -p $${MONGO_INITDB_ROOT_PASSWORD:-password123} --authenticationDatabase admin --eval "
@@ -40,7 +42,7 @@ services:
   # MinIO Object Storage
   minio:
     image: minio/minio:latest
-    container_name: gdrive-minio
+    container_name: mdrive-minio
     restart: unless-stopped
     ports:
       - "9000:9000" # API port
@@ -58,12 +60,12 @@ services:
       timeout: 20s
       retries: 3
     networks:
-      - gdrive-network
+      - mdrive-network
 
   # Redis for caching and queues
   redis:
     image: redis:7-alpine
-    container_name: gdrive-redis
+    container_name: mdrive-redis
     restart: unless-stopped
     ports:
       - "6379:6379"
@@ -76,12 +78,12 @@ services:
       timeout: 3s
       retries: 5
     networks:
-      - gdrive-network
+      - mdrive-network
 
   # Qdrant Vector Database (for Knowledge Layer semantic search)
   qdrant:
     image: qdrant/qdrant:latest
-    container_name: gdrive-qdrant
+    container_name: mdrive-qdrant
     restart: unless-stopped
     ports:
       - "6333:6333" # REST API
@@ -96,12 +98,12 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - gdrive-network
+      - mdrive-network
 
   # OnlyOffice Document Server
   onlyoffice:
     image: onlyoffice/documentserver:latest
-    container_name: gdrive-onlyoffice
+    container_name: mdrive-onlyoffice
     restart: unless-stopped
     ports:
       - "8080:80"
@@ -115,7 +117,7 @@ services:
       - onlyoffice-logs:/var/log/onlyoffice
       - onlyoffice-lib:/var/lib/onlyoffice
     networks:
-      - gdrive-network
+      - mdrive-network
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost/healthcheck"]
       interval: 30s
@@ -123,24 +125,20 @@ services:
       retries: 5
       start_period: 120s
 
-  # 应用容器（构建上下文为 backend 目录）
   app:
     build:
-      context: .
+      context: ./backend
       dockerfile: Dockerfile
-    container_name: gdrive-app
+    container_name: mdrive-app
     restart: unless-stopped
     ports:
       - "5000:5000"
     env_file:
-      - .env
+      - ./backend/.env
     environment:
-      - NODE_ENV=${NODE_ENV}
-      - PORT=${PORT}
-      - MONGODB_URI=${MONGODB_URI}
-      - MINIO_ENDPOINT=${MINIO_ENDPOINT}
-      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
-      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
+      # Allow requests from the Docker-hosted frontend (port 3000)
+      - CORS_ORIGIN=${CORS_ORIGIN:-http://localhost:3000}
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
     depends_on:
       mongo:
         condition: service_healthy
@@ -149,7 +147,23 @@ services:
       redis:
         condition: service_healthy
     networks:
-      - gdrive-network
+      - mdrive-network
+
+  # Frontend (React + Vite built, served by nginx)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_ONLYOFFICE_URL: ${VITE_ONLYOFFICE_URL:-http://localhost:8080}
+    container_name: mdrive-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      - app
+    networks:
+      - mdrive-network
 
 volumes:
   mongo-data:
@@ -161,5 +175,5 @@ volumes:
   onlyoffice-lib:
 
 networks:
-  gdrive-network:
+  mdrive-network:
     driver: bridge

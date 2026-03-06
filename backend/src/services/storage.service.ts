@@ -135,6 +135,22 @@ export class StorageService {
     return Body as Readable;
   }
 
+  static async getObjectStreamRange(
+    bucketName: BucketsType,
+    objectKey: string,
+    start: number,
+    end: number,
+  ): Promise<Readable> {
+    const command = new GetObjectCommand({
+      Bucket: bucketName,
+      Key: objectKey,
+      Range: `bytes=${start}-${end}`,
+    });
+
+    const { Body } = await s3Client.send(command);
+    return Body as Readable;
+  }
+
   // 原有 MinIO 功能迁移
   static async getDownloadUrl(
     bucketName: BucketsType,

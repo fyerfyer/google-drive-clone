@@ -1,4 +1,5 @@
 import type { FolderItem, ItemActions } from "@/hooks/folder/useFileActions";
+import type { IFile } from "@/types/file.types";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -6,7 +7,9 @@ import {
 } from "@/components/ui/context-menu";
 import { TableCell, TableRow } from "@/components/ui/table";
 import { Checkbox } from "@radix-ui/react-checkbox";
-import { FileIcon, FolderIcon, MoreVertical, Users } from "lucide-react";
+import { FolderIcon, MoreVertical, Users } from "lucide-react";
+import { getFileTypeIcon } from "@/lib/file-icons";
+import { getFileCategory } from "@/lib/file-preview";
 import { formatDistanceToNow } from "date-fns";
 import { formatFileSize } from "@/lib/format";
 import {
@@ -105,7 +108,9 @@ export const FileTableRow = ({
                   fill="currentColor"
                 />
               ) : (
-                <FileIcon className="size-5 shrink-0 text-muted-foreground" />
+                getFileTypeIcon(
+                  getFileCategory((item as IFile).mimeType, item.name),
+                )
               )}
               <span className="font-medium text-sm truncate">{item.name}</span>
               {item.isShared && item.sharedUsers && (
@@ -161,7 +166,11 @@ export const FileTableRow = ({
             {item.type === "folder" ? "-" : formatFileSize(item.size)}
           </TableCell>
 
-          <TableCell className="w-12" onClick={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()}>
+          <TableCell
+            className="w-12"
+            onClick={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
+          >
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button className="p-2 hover:bg-muted rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary/20">

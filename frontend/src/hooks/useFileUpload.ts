@@ -24,7 +24,7 @@ export interface UseFileUploadReturn {
 }
 
 const SMALL_FILE_THRESHOLD = 100 * 1024 * 1024; // 100MB
-const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB per part
+const CHUNK_SIZE = 25 * 1024 * 1024; // 25MB per part — fewer parts = fewer HTTP roundtrips
 
 export function useFileUpload(): UseFileUploadReturn {
   const queryClient = useQueryClient();
@@ -144,11 +144,16 @@ export function useFileUpload(): UseFileUploadReturn {
 
   /**
    * Upload large file (≥ 100MB) using multipart upload
+   * Parts are signed in batch and uploaded concurrently for speed.
    */
+
+  // TODO：Worker 逻辑优化，引入外部组件；并发之类的逻辑改一下
   const uploadLargeFile = useCallback(
     async (file: File, folderId: string, fileId: string): Promise<IFile> => {
       let uploadId: string | null = null;
       let key: string | null = null;
+
+      const CONCURRENT_PART_UPLOADS = 8;
 
       try {
         updateUploadProgress(fileId, {
@@ -166,36 +171,53 @@ export function useFileUpload(): UseFileUploadReturn {
         uploadId = multipartData.uploadId;
         key = multipartData.key;
 
-        // Step 2: Upload parts
+        // Step 2: Upload parts in parallel
         const totalParts = Math.ceil(file.size / CHUNK_SIZE);
-        const uploadedParts: Array<{ PartNumber: number; ETag: string }> = [];
+        // Pre-allocate indexed array so parts stay ordered for CompleteMultipart
+        const uploadedParts: Array<{ PartNumber: number; ETag: string }> =
+          new Array(totalParts);
+        let completedParts = 0;
 
-        for (let partNumber = 1; partNumber <= totalParts; partNumber++) {
-          const start = (partNumber - 1) * CHUNK_SIZE;
-          const end = Math.min(start + CHUNK_SIZE, file.size);
-          const chunk = file.slice(start, end);
+        // Sign all part URLs in one API call
+        const allPartNumbers = Array.from(
+          { length: totalParts },
+          (_, i) => i + 1,
+        );
+        const signedUrls = await uploadService.getPartSignedUrls(
+          uploadId,
+          key,
+          allPartNumbers,
+        );
 
-          // Get presigned URL for this part
-          const partUrl = await uploadService.getPartSignedUrl(
-            uploadId,
-            key,
-            partNumber,
-          );
+        // Worker-pool: always keep CONCURRENT_PART_UPLOADS requests in-flight.
+        // Avoids the straggler delay of strict batching where one slow part
+        // blocks the whole batch before the next batch can start.
+        let nextIndex = 0;
+        const runWorker = async () => {
+          while (nextIndex < totalParts) {
+            const idx = nextIndex++;
+            const partNumber = allPartNumbers[idx];
+            const start = idx * CHUNK_SIZE;
+            const end = Math.min(start + CHUNK_SIZE, file.size);
+            const chunk = file.slice(start, end);
+            const partUrl = signedUrls[partNumber];
 
-          // Upload part
-          const etag = await uploadService.uploadPart(partUrl, chunk, () => {
-            const partProgress = ((partNumber - 1) / totalParts) * 100;
-            const chunkProgress = ((end - start) / file.size) * 100;
+            const etag = await uploadService.uploadPart(
+              partUrl,
+              chunk,
+              () => {},
+            );
+            uploadedParts[idx] = { PartNumber: partNumber, ETag: etag };
+            completedParts++;
             updateUploadProgress(fileId, {
-              progress: Math.round(partProgress + chunkProgress * 0.95),
+              progress: Math.round((completedParts / totalParts) * 95),
             });
-          });
+          }
+        };
 
-          uploadedParts.push({
-            PartNumber: partNumber,
-            ETag: etag,
-          });
-        }
+        await Promise.all(
+          Array.from({ length: CONCURRENT_PART_UPLOADS }, runWorker),
+        );
 
         updateUploadProgress(fileId, {
           status: "processing",
@@ -211,15 +233,29 @@ export function useFileUpload(): UseFileUploadReturn {
         // Step 4: Calculate hash
         const hash = await fileService.calculateHash(file);
 
-        // Step 5: Create file record
-        const createdFile = await fileService.createFileRecord({
-          folderId,
-          key,
-          size: file.size,
-          mimeType: file.type,
-          originalName: file.name,
+        // Step 5: Try dedup first; if hash matches an existing file the
+        //         backend creates a new record pointing to the same key.
+        const dedupResult = await fileService.checkFileByHash({
           hash,
+          folderId,
+          originalName: file.name,
+          mimeType: file.type || "application/octet-stream",
+          size: file.size,
         });
+
+        let createdFile: IFile;
+        if (dedupResult.exists && dedupResult.file) {
+          createdFile = dedupResult.file;
+        } else {
+          createdFile = await fileService.createFileRecord({
+            folderId,
+            key,
+            size: file.size,
+            mimeType: file.type,
+            originalName: file.name,
+            hash,
+          });
+        }
 
         updateUploadProgress(fileId, {
           status: "success",
@@ -275,39 +311,36 @@ export function useFileUpload(): UseFileUploadReturn {
       });
 
       try {
-        // ── 秒传 (instant upload / dedup check) ──────────────────────────────
-        // Compute SHA-256 hash before any network I/O.  If a matching file
-        // already exists the backend creates a new record pointing to the
-        // same MinIO key and returns it, so we can skip the actual upload.
-        updateUploadProgress(fileId, { status: "uploading", progress: 5 });
-
-        const hash = await fileService.calculateHash(file);
-
-        const dedupResult = await fileService.checkFileByHash({
-          hash,
-          folderId,
-          originalName: file.name,
-          mimeType: file.type || "application/octet-stream",
-          size: file.size,
-        });
-
-        if (dedupResult.exists && dedupResult.file) {
-          // Instant upload — no bytes transferred
-          updateUploadProgress(fileId, { status: "success", progress: 100 });
-          toast.success(
-            `"${file.name}" uploaded instantly (duplicate detected)`,
-          );
-
-          if (!options?.skipInvalidation) {
-            invalidateQueries(folderId);
-          }
-          return dedupResult.file;
-        }
-        // ─────────────────────────────────────────────────────────────────────
-
-        // Choose upload strategy based on file size
+        // Choose upload strategy based on file size.
+        // For small files, attempt dedup check first (hash is fast for small files).
+        // For large files, skip upfront hash to avoid blocking the progress bar
+        // — the hash is computed after upload completes instead.
         let result: IFile;
+
         if (file.size < SMALL_FILE_THRESHOLD) {
+          // ── 秒传 (instant upload / dedup check) for small files ──────────
+          updateUploadProgress(fileId, { status: "uploading", progress: 5 });
+
+          const hash = await fileService.calculateHash(file);
+
+          const dedupResult = await fileService.checkFileByHash({
+            hash,
+            folderId,
+            originalName: file.name,
+            mimeType: file.type || "application/octet-stream",
+            size: file.size,
+          });
+
+          if (dedupResult.exists && dedupResult.file) {
+            updateUploadProgress(fileId, { status: "success", progress: 100 });
+
+            if (!options?.skipInvalidation) {
+              invalidateQueries(folderId);
+            }
+            return dedupResult.file;
+          }
+          // ─────────────────────────────────────────────────────────────────
+
           result = await uploadSmallFile(file, folderId, fileId);
         } else {
           result = await uploadLargeFile(file, folderId, fileId);
@@ -334,25 +367,33 @@ export function useFileUpload(): UseFileUploadReturn {
   );
 
   /**
-   * Upload multiple files with React Query cache invalidation
+   * Upload multiple files in parallel with React Query cache invalidation
    */
   const uploadFiles = useCallback(
     async (files: File[], folderId: string): Promise<IFile[]> => {
+      const MAX_CONCURRENT = 3;
       const results: IFile[] = [];
       const errors: Error[] = [];
 
-      // Upload files sequentially to avoid overwhelming the server
-      // Skip individual invalidations, we'll do it once at the end
-      for (const file of files) {
-        try {
-          const result = await uploadFile(file, folderId, {
-            skipInvalidation: true,
-          });
-          results.push(result);
-        } catch (error) {
-          errors.push(
-            error instanceof Error ? error : new Error("Upload failed"),
-          );
+      // Upload files in parallel batches
+      for (let i = 0; i < files.length; i += MAX_CONCURRENT) {
+        const batch = files.slice(i, i + MAX_CONCURRENT);
+        const settled = await Promise.allSettled(
+          batch.map((file) =>
+            uploadFile(file, folderId, { skipInvalidation: true }),
+          ),
+        );
+
+        for (const result of settled) {
+          if (result.status === "fulfilled") {
+            results.push(result.value);
+          } else {
+            errors.push(
+              result.reason instanceof Error
+                ? result.reason
+                : new Error("Upload failed"),
+            );
+          }
         }
       }
 
