@@ -19,9 +19,11 @@ MindDrive is not a Google Drive clone. It is a rethinking of what a personal dri
 - **Core File Operations**: Upload, download, organize, rename, and manage files and directories.
 - **File Sharing**: Granular permission control — share files or folders with specific users.
 - **Built-in AI Assistance**: A conversational agent that can share, edit, search, and summarize your files and directories on your behalf.
-- **Semantic Search**: Find any document naturally through Qdrant vector database integration.
+- **Automated Embedding Pipeline**: Asynchronous, event-driven background processing for file indexing. Handles automatic creation, updates (on content change), and cleanup (on deletion) of vector embeddings.
+- **Semantic Search**: Find any document naturally through Qdrant vector database integration, powered by the automated pipeline.
 - **Document Editing**: Real-time document editing powered by OnlyOffice.
 - **Scalable Storage**: S3-compatible object storage via MinIO.
+- **Deduplication & Sync**: Hash-based verification ensures efficient embedding without redundant computations across identical files.
 - **MCP Integration**: Expose your drive context to external AI clients (Cursor, Claude Desktop, etc.) via the Model Context Protocol.
 
 ## 🤖 AI Assistance & Multi-Agent Architecture
@@ -52,6 +54,16 @@ User Input
 ```
 
 Tasks are dispatched asynchronously via **BullMQ** message queues backed by **Redis**, ensuring reliable, ordered execution even for complex multi-step operations. **Redis Pub/Sub** is used to stream agent progress and results back to the client in real time.
+
+### Automated Knowledge Pipeline (Embedding Workflow)
+
+MindDrive features a fully automated, event-driven embedding pipeline that maintains your vector knowledge base in sync with your files.
+
+- **Automatic Indexing**: Triggered immediately upon file creation or update via internal event emitters.
+- **State Tracking**: File status is monitored (`pending`, `processing`, `completed`, or `failed`) and visible in the UI.
+- **Intelligent Deduplication**: Uses file hashes to avoid redundant embedding of identical content, saving computational resources.
+- **Consistent Cleanup**: Cascading delete hooks ensure vector records are purged from Qdrant when files are deleted.
+- **Async Execution**: The entire process runs in the background via `EmbeddingWorker`, ensuring zero impact on user interaction responsiveness.
 
 ## 🏗️ Architecture & Tech Stack
 
