@@ -8,6 +8,7 @@ import { initScheduledJobs } from "./lib/cron";
 import { ensureCollection as ensureQdrantCollection } from "./config/qdrant";
 import { initSocket } from "./lib/socket";
 import { initAgentWorker } from "./lib/queue/agent.worker";
+import { initEmbeddingWorker } from "./lib/queue/embedding.worker";
 
 const startServer = async () => {
   try {
@@ -48,6 +49,14 @@ const startServer = async () => {
       logger.info("Agent task worker initialized");
     } catch (e) {
       logger.warn({ err: e }, "Failed to initialize agent task worker");
+    }
+
+    // 初始化 Embedding BullMQ Worker
+    try {
+      initEmbeddingWorker();
+      logger.info("Embedding worker initialized");
+    } catch (e) {
+      logger.warn({ err: e }, "Failed to initialize embedding worker");
     }
 
     httpServer.listen(config.port, () => {

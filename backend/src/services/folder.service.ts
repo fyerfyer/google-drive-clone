@@ -8,6 +8,7 @@ import { SharedAccess } from "../models/SharedAccess.model";
 import { StorageService } from "./storage.service";
 import { BUCKETS } from "../config/s3";
 import { logger } from "../lib/logger";
+import { EMBEDDING_STATUS } from "../types/model.types";
 import {
   revokeSharedAccessAndNotify,
   cascadeTrashShortcuts,
@@ -134,6 +135,11 @@ export class FolderService {
       updatedAt: file.updatedAt,
       ...(override?.isShared !== undefined && { isShared: override.isShared }),
       ...(override?.sharedUsers && { sharedUsers: override.sharedUsers }),
+      // Embedding
+      embeddingStatus: file.embeddingStatus || EMBEDDING_STATUS.NONE,
+      embeddingError: file.embeddingError || undefined,
+      processedChunks: file.processedChunks || 0,
+      totalChunks: file.totalChunks || 0,
     };
   }
 

@@ -1,5 +1,10 @@
 import mongoose, { Schema, Document, HydratedDocument } from "mongoose";
-import { RESOURCE_TYPES, ResourceType } from "../types/model.types";
+import {
+  RESOURCE_TYPES,
+  ResourceType,
+  EMBEDDING_STATUS,
+  EmbeddingStatus,
+} from "../types/model.types";
 
 export interface IFile extends Document {
   name: string;
@@ -21,6 +26,12 @@ export interface IFile extends Document {
   isStarred: boolean;
   isTrashed: boolean;
   trashedAt?: Date;
+
+  // Embedding 状态
+  embeddingStatus?: EmbeddingStatus;
+  embeddingError?: string;
+  processedChunks?: number;
+  totalChunks?: number;
 
   // Share 快捷方式相关字段
   isShortcut?: boolean;
@@ -71,6 +82,16 @@ const fileSchema = new Schema<IFile>(
     isStarred: { type: Boolean, required: true, index: true },
     isTrashed: { type: Boolean, required: true, index: true },
     trashedAt: { type: Date, default: null },
+
+    embeddingStatus: {
+      type: String,
+      enum: Object.values(EMBEDDING_STATUS),
+      default: EMBEDDING_STATUS.NONE,
+      index: true,
+    },
+    embeddingError: { type: String, default: null },
+    processedChunks: { type: Number, default: 0 },
+    totalChunks: { type: Number, default: 0 },
 
     isShortcut: { type: Boolean, required: false, default: false },
     shortcutTarget: {

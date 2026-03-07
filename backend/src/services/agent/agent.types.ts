@@ -15,9 +15,7 @@ export interface AgentContext {
   documentContent?: string;
   documentName?: string;
   relatedContext?: string;
-  /** True when the user explicitly attached file/folder resources via @ mentions */
   hasExplicitResources?: boolean;
-  /** The resource URIs that were attached */
   attachedResourceUris?: string[];
 }
 
@@ -294,9 +292,7 @@ export const SEARCH_AGENT_TOOLS = new Set([
   "semantic_search_files",
   "query_workspace_knowledge",
   "summarize_directory",
-  // Knowledge Layer 管理
-  "index_file",
-  "index_all_files",
+  // Knowledge Layer 查询（索引由后台流水线自动管理）
   "get_indexing_status",
   "get_file_info",
   "extract_file_content",
@@ -344,8 +340,6 @@ export const OPERATION_RISK: Record<string, OperationRisk> = {
   create_share_link: "moderate",
   restore_file: "moderate",
   restore_folder: "moderate",
-  index_file: "moderate",
-  index_all_files: "moderate",
 
   // Dangerous
   trash_file: "dangerous",

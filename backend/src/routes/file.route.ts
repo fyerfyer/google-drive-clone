@@ -119,6 +119,24 @@ export function createFileRouter(
     fileController.deleteFilePermanent.bind(fileController),
   );
 
+  // Embedding 相关
+  router.get(
+    "/:fileId/embedding-status",
+    requireAccess(permissionService, "viewer", { resourceType: "File" }),
+    fileController.getEmbeddingStatus.bind(fileController),
+  );
+
+  router.post(
+    "/:fileId/re-index",
+    requireAccess(permissionService, "owner", { resourceType: "File" }),
+    fileController.reindexFile.bind(fileController),
+  );
+
+  router.get(
+    "/view/embedding-summary",
+    fileController.getEmbeddingSummary.bind(fileController),
+  );
+
   // Special views
   router.get(
     "/view/starred",

@@ -3,6 +3,8 @@ import { z } from "zod";
 import { McpAuthContext, resolveUserId } from "../auth/auth";
 import { logger } from "../../lib/logger";
 import { McpServices } from "../server";
+import File from "../../models/File.model";
+import { EMBEDDING_STATUS } from "../../types/model.types";
 
 export function registerKnowledgeTools(
   server: McpServer,
@@ -10,114 +12,16 @@ export function registerKnowledgeTools(
   authContext: McpAuthContext,
 ): void {
   const { knowledgeService } = services;
-  server.registerTool(
-    "index_file",
-    {
-      description:
-        "Index a single file for semantic search. Extracts text, splits into chunks, generates vector embeddings. " +
-        "WHEN TO USE: When a specific file needs to be indexed before semantic search can find it. " +
-        "WHEN NOT TO USE: When the user just wants to search (use semantic_search_files — it works on already-indexed files). " +
-        "NOTES: Supports text, PDF, and DOCX. After indexing, the file is searchable via semantic_search_files.",
-      inputSchema: z.object({
-        userId: z
-          .string()
-          .optional()
-          .describe(
-            "The user ID. Optional if authenticated via 'authenticate' tool.",
-          ),
-        fileId: z.string().describe("The file ID to index"),
-      }),
-    },
-    async ({ userId, fileId }) => {
-      try {
-        const resolvedUserId = resolveUserId(userId, authContext);
-        const chunkCount = await knowledgeService.indexFile(
-          fileId,
-          resolvedUserId,
-        );
-
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify({
-                success: true,
-                fileId,
-                chunksCreated: chunkCount,
-                message:
-                  chunkCount > 0
-                    ? `File indexed successfully with ${chunkCount} chunks.`
-                    : "No text content could be extracted from this file.",
-              }),
-            },
-          ],
-        };
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Unknown error";
-        logger.error({ err: error, fileId }, "MCP index_file failed");
-        return {
-          content: [{ type: "text" as const, text: `Error: ${message}` }],
-          isError: true,
-        };
-      }
-    },
-  );
-
-  server.registerTool(
-    "index_all_files",
-    {
-      description:
-        "Batch-index ALL text-based files in the user's drive for semantic search. " +
-        "WHEN TO USE: When the user wants their entire drive searchable, or asks to 'index everything'. " +
-        "WHEN NOT TO USE: When only a single file needs indexing (use index_file). " +
-        "NOTES: May take a while for large collections. Supports text, PDF, and DOCX.",
-      inputSchema: z.object({
-        userId: z
-          .string()
-          .optional()
-          .describe(
-            "The user ID. Optional if authenticated via 'authenticate' tool.",
-          ),
-      }),
-    },
-    async ({ userId }) => {
-      try {
-        const resolvedUserId = resolveUserId(userId, authContext);
-        const result = await knowledgeService.indexAllFiles(resolvedUserId);
-
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify({
-                success: true,
-                ...result,
-                message: `Indexing complete: ${result.indexed} files indexed, ${result.skipped} skipped, ${result.errors} errors.`,
-              }),
-            },
-          ],
-        };
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Unknown error";
-        logger.error({ err: error }, "MCP index_all_files failed");
-        return {
-          content: [{ type: "text" as const, text: `Error: ${message}` }],
-          isError: true,
-        };
-      }
-    },
-  );
 
   server.registerTool(
     "semantic_search_files",
     {
       description:
-        "Search indexed files using natural language and vector embeddings. Returns matching text chunks with relevance scores. " +
+        "Search files using natural language and vector embeddings. Returns matching text chunks with relevance scores. " +
+        "Files are automatically indexed in the background when uploaded or modified — no manual indexing needed. " +
         "WHEN TO USE: When the user asks about topics, concepts, or content across files (e.g., 'what files discuss deployment?', 'find anything about budgets'). " +
         "WHEN NOT TO USE: When the user asks for a specific file by name (use search_files). When you already have the file ID and need its full content (use extract_file_content). " +
-        "NOTES: Files must be indexed first (index_file / index_all_files). Falls back to keyword search if semantic search is unavailable.",
+        "NOTES: If some files are still being indexed, the response will include a notice. Falls back to keyword search if semantic search is unavailable.",
       inputSchema: z.object({
         userId: z
           .string()
@@ -139,36 +43,48 @@ export function registerKnowledgeTools(
     async ({ userId, query, limit }) => {
       try {
         const resolvedUserId = resolveUserId(userId, authContext);
+
+        // 检查是否有文件正在索引中
+        const pendingCount = await File.countDocuments({
+          user: resolvedUserId,
+          isTrashed: false,
+          embeddingStatus: {
+            $in: [EMBEDDING_STATUS.PENDING, EMBEDDING_STATUS.PROCESSING],
+          },
+        });
+
         const results = await knowledgeService.semanticSearch(
           resolvedUserId,
           query,
           limit || 10,
         );
 
+        const response: Record<string, unknown> = {
+          query,
+          resultCount: results.length,
+          results: results.map((r) => ({
+            file: r.file,
+            chunk: {
+              id: r.chunk.id,
+              content:
+                r.chunk.content.length > 500
+                  ? r.chunk.content.slice(0, 500) + "..."
+                  : r.chunk.content,
+              chunkIndex: r.chunk.chunkIndex,
+            },
+            relevanceScore: r.score,
+          })),
+        };
+
+        if (pendingCount > 0) {
+          response.notice = `${pendingCount} file(s) are still being indexed. Results may be incomplete — try again shortly for full coverage.`;
+        }
+
         return {
           content: [
             {
               type: "text" as const,
-              text: JSON.stringify(
-                {
-                  query,
-                  resultCount: results.length,
-                  results: results.map((r) => ({
-                    file: r.file,
-                    chunk: {
-                      id: r.chunk.id,
-                      content:
-                        r.chunk.content.length > 500
-                          ? r.chunk.content.slice(0, 500) + "..."
-                          : r.chunk.content,
-                      chunkIndex: r.chunk.chunkIndex,
-                    },
-                    relevanceScore: r.score,
-                  })),
-                },
-                null,
-                2,
-              ),
+              text: JSON.stringify(response, null, 2),
             },
           ],
         };
@@ -188,10 +104,10 @@ export function registerKnowledgeTools(
     "get_indexing_status",
     {
       description:
-        "Get the current indexing status: how many files are indexed, chunk count, and indexing percentage. " +
-        "WHEN TO USE: When the user asks 'are my files indexed?' or when semantic search returns no results and you suspect files aren't indexed. " +
-        "WHEN NOT TO USE: When you just need to perform a search (use semantic_search_files directly). " +
-        "NOTES: If indexingPercentage is low, suggest using index_all_files.",
+        "Get the current indexing status: how many files are indexed, chunk count, indexing percentage, and files in progress. " +
+        "Files are automatically indexed when uploaded — this tool shows the pipeline progress. " +
+        "WHEN TO USE: When the user asks 'are my files indexed?' or wants to know the AI readiness of their files. " +
+        "WHEN NOT TO USE: When you just need to perform a search (use semantic_search_files directly).",
       inputSchema: z.object({
         userId: z
           .string()
@@ -206,6 +122,23 @@ export function registerKnowledgeTools(
         const resolvedUserId = resolveUserId(userId, authContext);
         const status = await knowledgeService.getIndexingStatus(resolvedUserId);
 
+        // 获取按状态的文件计数
+        const statusCounts = await File.aggregate([
+          {
+            $match: {
+              user: resolvedUserId,
+              isTrashed: false,
+              embeddingStatus: { $exists: true, $ne: EMBEDDING_STATUS.NONE },
+            },
+          },
+          { $group: { _id: "$embeddingStatus", count: { $sum: 1 } } },
+        ]);
+
+        const byStatus: Record<string, number> = {};
+        for (const s of statusCounts) {
+          byStatus[s._id as string] = s.count;
+        }
+
         return {
           content: [
             {
@@ -213,12 +146,19 @@ export function registerKnowledgeTools(
               text: JSON.stringify(
                 {
                   ...status,
+                  embeddingPipeline: {
+                    pending: byStatus[EMBEDDING_STATUS.PENDING] || 0,
+                    processing: byStatus[EMBEDDING_STATUS.PROCESSING] || 0,
+                    completed: byStatus[EMBEDDING_STATUS.COMPLETED] || 0,
+                    failed: byStatus[EMBEDDING_STATUS.FAILED] || 0,
+                  },
                   indexingPercentage:
                     status.totalFiles > 0
                       ? Math.round(
                           (status.indexedFiles / status.totalFiles) * 100,
                         )
                       : 0,
+                  note: "Files are automatically indexed when uploaded or modified. No manual indexing needed.",
                 },
                 null,
                 2,

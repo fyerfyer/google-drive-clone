@@ -11,6 +11,16 @@ export const fileProcessingQueue = new Queue(QUEUE_NAMES.FILE_PROCESSING, {
   connection: redisClient,
 });
 
+export const embeddingQueue = new Queue(QUEUE_NAMES.EMBEDDING, {
+  connection: redisClient,
+  defaultJobOptions: {
+    attempts: 2,
+    backoff: { type: "exponential", delay: 5000 },
+    removeOnComplete: { age: 3600, count: 500 },
+    removeOnFail: { age: 86400, count: 200 },
+  },
+});
+
 export const maintainanceQueue = new Queue(QUEUE_NAMES.MAINTAINANCE, {
   connection: redisClient,
 });

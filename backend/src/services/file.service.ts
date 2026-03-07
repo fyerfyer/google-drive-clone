@@ -13,12 +13,14 @@ import { buildShortcutFileOverrides } from "../utils/shortcut.util";
 import jwt from "jsonwebtoken";
 import { config } from "../config/env";
 import { generateOnlyOfficeToken } from "../utils/jwt.util";
+import { EMBEDDING_STATUS } from "../types/model.types";
 import {
   revokeSharedAccessAndNotify,
   cascadeTrashShortcuts,
   cascadeRestoreShortcuts,
   cascadeDeleteShortcuts,
 } from "../utils/cascade.util";
+import { EmbeddingManager } from "./embedding-manager";
 
 interface CreateFileRecordDTO {
   userId: string;
@@ -81,10 +83,19 @@ export interface IFilePublic {
   updatedAt: Date;
   isShared?: boolean;
   sharedUsers?: IUserBasic[];
+  // Embedding
+  embeddingStatus?: string;
+  embeddingError?: string;
+  processedChunks?: number;
+  totalChunks?: number;
 }
 
 export class FileService {
-  constructor(private permissionService: PermissionService) {}
+  private embeddingManager: EmbeddingManager;
+
+  constructor(private permissionService: PermissionService) {
+    this.embeddingManager = new EmbeddingManager();
+  }
 
   // 如果因同名冲突失败，则自动重试并生成唯一名称
   private async createFileWithUniqueName(
@@ -176,6 +187,11 @@ export class FileService {
       updatedAt: file.updatedAt,
       ...(override?.isShared !== undefined && { isShared: override.isShared }),
       ...(override?.sharedUsers && { sharedUsers: override.sharedUsers }),
+      // Embedding
+      embeddingStatus: file.embeddingStatus || EMBEDDING_STATUS.NONE,
+      embeddingError: file.embeddingError || undefined,
+      processedChunks: file.processedChunks || 0,
+      totalChunks: file.totalChunks || 0,
     };
   }
 
@@ -266,6 +282,16 @@ export class FileService {
     }
 
     const userBasic = await this.getUserBasic(userId);
+
+    // 自动触发 Embedding 流水线
+    this.embeddingManager
+      .onFileCreated(file._id.toString(), userId, mimeType)
+      .catch((err) => {
+        logger.warn(
+          { err, fileId: file._id },
+          "Failed to enqueue embedding task",
+        );
+      });
 
     return this.toFilePublic(file, userBasic);
   }
@@ -369,6 +395,16 @@ export class FileService {
       { fileId: file.id, fileName, userId },
       "Blank file created successfully",
     );
+
+    // 自动触发 Embedding 流水线
+    this.embeddingManager
+      .onFileCreated(file._id.toString(), userId, mimeType)
+      .catch((err) => {
+        logger.warn(
+          { err, fileId: file._id },
+          "Failed to enqueue embedding task for blank file",
+        );
+      });
 
     return this.toFilePublic(file, userBasic);
   }
@@ -496,6 +532,11 @@ export class FileService {
       { fileId, userId, oldSize, newSize },
       "File content updated successfully",
     );
+
+    // 文件内容变更后触发重新索引
+    this.embeddingManager.onFileUpdated(fileId, userId).catch((err) => {
+      logger.warn({ err, fileId }, "Failed to enqueue embedding reindex task");
+    });
 
     return this.toFilePublic(file, userBasic);
   }
@@ -638,6 +679,11 @@ export class FileService {
     }
 
     this.runAsyncCascadeDelete([fileObjectId], userId);
+
+    // 清理 Embedding 向量和 chunks
+    this.embeddingManager.onFileDeleted(fileId, userId).catch((err) => {
+      logger.warn({ err, fileId }, "Failed to enqueue embedding cleanup task");
+    });
 
     // 在事务提交后清理MinIO对象
     await this.cleanupMinioObject(fileToDelete.key, fileToDelete.hash);
@@ -1323,6 +1369,16 @@ export class FileService {
         // 更新文件大小
         file.size = newSize;
         await file.save();
+
+        // 文件内容变更后触发重新索引
+        this.embeddingManager
+          .onFileUpdated(fileId, file.user.toString())
+          .catch((err) => {
+            logger.warn(
+              { err, fileId },
+              "Failed to enqueue embedding reindex after OnlyOffice save",
+            );
+          });
 
         logger.info(
           { fileId, userId, oldSize, newSize },

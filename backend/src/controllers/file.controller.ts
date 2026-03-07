@@ -9,9 +9,14 @@ import { StorageService } from "../services/storage.service";
 import { MediaService } from "../services/media.service";
 import { BUCKETS } from "../config/s3";
 import { extractParam } from "../utils/request.util";
+import { EmbeddingManager } from "../services/embedding-manager";
 
 export class FileController {
-  constructor(private fileService: FileService) {}
+  private embeddingManager: EmbeddingManager;
+
+  constructor(private fileService: FileService) {
+    this.embeddingManager = new EmbeddingManager();
+  }
 
   async createFile(req: Request, res: Response, next: NextFunction) {
     if (!req.user) {
@@ -527,5 +532,37 @@ export class FileController {
 
       result.stream.pipe(res);
     }
+  }
+
+  async getEmbeddingStatus(req: Request, res: Response, next: NextFunction) {
+    if (!req.user) {
+      throw new AppError(StatusCodes.UNAUTHORIZED, "User not authenticated");
+    }
+    const fileId = extractParam(req.params.fileId);
+    const userId = req.user.id;
+    const status = await this.embeddingManager.getFileEmbeddingStatus(
+      fileId,
+      userId,
+    );
+    return ResponseHelper.ok(res, status);
+  }
+
+  async reindexFile(req: Request, res: Response, next: NextFunction) {
+    if (!req.user) {
+      throw new AppError(StatusCodes.UNAUTHORIZED, "User not authenticated");
+    }
+    const fileId = extractParam(req.params.fileId);
+    const userId = req.user.id;
+    await this.embeddingManager.retryIndex(fileId, userId);
+    return ResponseHelper.ok(res, { message: "Re-index task enqueued" });
+  }
+
+  async getEmbeddingSummary(req: Request, res: Response, next: NextFunction) {
+    if (!req.user) {
+      throw new AppError(StatusCodes.UNAUTHORIZED, "User not authenticated");
+    }
+    const userId = req.user.id;
+    const summary = await this.embeddingManager.getEmbeddingSummary(userId);
+    return ResponseHelper.ok(res, summary);
   }
 }

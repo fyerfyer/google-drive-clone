@@ -11,7 +11,7 @@ interface SocketData {
 
 export const socketAuth = async (
   socket: Socket,
-  next: (err?: Error) => void
+  next: (err?: Error) => void,
 ) => {
   try {
     // 客户端连接时如下传入: io({ auth: { token: "Bearer eyJ..." } })
@@ -20,8 +20,8 @@ export const socketAuth = async (
       return next(
         new AppError(
           StatusCodes.UNAUTHORIZED,
-          "Socket authentication failed: No token provided"
-        )
+          "Socket authentication failed: No token provided",
+        ),
       );
     }
 
@@ -35,8 +35,8 @@ export const socketAuth = async (
       return next(
         new AppError(
           StatusCodes.UNAUTHORIZED,
-          "Socket authentication failed: Invalid token"
-        )
+          "Socket authentication failed: Invalid token",
+        ),
       );
     }
     const user = await User.findById({
@@ -48,8 +48,8 @@ export const socketAuth = async (
       return next(
         new AppError(
           StatusCodes.UNAUTHORIZED,
-          "Socket authentication failed: User not found"
-        )
+          "Socket authentication failed: User not found",
+        ),
       );
     }
 
@@ -58,12 +58,12 @@ export const socketAuth = async (
     next();
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    logger.error(`Socket authentication error: ${message}`);
+    logger.warn(`Socket authentication error: ${message}`);
     next(
       new AppError(
         StatusCodes.UNAUTHORIZED,
-        "Socket authentication failed: Internal server error"
-      )
+        "Socket authentication failed: Internal server error",
+      ),
     );
   }
 };

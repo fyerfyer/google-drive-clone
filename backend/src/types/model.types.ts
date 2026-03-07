@@ -20,6 +20,17 @@ export const RESOURCE_TYPES = {
 
 export type ResourceType = (typeof RESOURCE_TYPES)[keyof typeof RESOURCE_TYPES];
 
+export const EMBEDDING_STATUS = {
+  NONE: "none",
+  PENDING: "pending",
+  PROCESSING: "processing",
+  COMPLETED: "completed",
+  FAILED: "failed",
+} as const;
+
+export type EmbeddingStatus =
+  (typeof EMBEDDING_STATUS)[keyof typeof EMBEDDING_STATUS];
+
 export type ResourceItem = IFolder | IFile;
 
 export const NOTIFICATION_TYPES = {
@@ -39,6 +50,7 @@ export type NotificationType =
 export const QUEUE_NAMES = {
   NOTIFICATIONS: "notifications",
   FILE_PROCESSING: "file-processing",
+  EMBEDDING: "embedding",
   MAINTAINANCE: "maintenance",
   AGENT_TASKS: "agent-tasks",
 } as const;
@@ -52,6 +64,9 @@ export const QUEUE_TASKS = {
   CLEANUP_STALE_MULTIPARTS: "cleanup-stale-multiparts",
   RECONCILE_STORAGE: "reconcile-storage",
   AGENT_CHAT: "agent-chat",
+  EMBEDDING_INDEX: "embedding-index",
+  EMBEDDING_REINDEX: "embedding-reindex",
+  EMBEDDING_CLEANUP: "embedding-cleanup",
 } as const;
 
 export type QueueTaskType = (typeof QUEUE_TASKS)[keyof typeof QUEUE_TASKS];

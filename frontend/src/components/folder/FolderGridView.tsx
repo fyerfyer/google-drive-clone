@@ -1,7 +1,14 @@
 import { useFolderUIStore } from "@/stores/useFolderUIStore";
 import { useFolderContent } from "@/hooks/queries/useFolderQueries";
 import { Card, CardContent } from "@/components/ui/card";
-import { FolderIcon, MoreVertical, Users } from "lucide-react";
+import {
+  FolderIcon,
+  MoreVertical,
+  Users,
+  Brain,
+  AlertCircle,
+  Loader2,
+} from "lucide-react";
 import { getFileTypeIcon } from "@/lib/file-icons";
 import { getFileCategory } from "@/lib/file-preview";
 import { formatDistanceToNow } from "date-fns";
@@ -17,7 +24,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import type { Folder } from "@/types/folder.types";
-import type { IFile } from "@/types/file.types";
+import type { IFile, EmbeddingStatus } from "@/types/file.types";
 import { ItemContextMenu } from "./ItemContextMenu";
 import { FileActions } from "./FileActions";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
@@ -32,6 +39,65 @@ import { DeleteConfirmDialog } from "./DeleteConfirmDialog";
 import { MoveDialog } from "./MoveDialog";
 import { useFolderOperations } from "@/hooks/folder/useFolderOperations";
 import { useFileOperations } from "@/hooks/folder/useFileOperations";
+
+function GridEmbeddingIndicator({
+  status,
+  error,
+}: {
+  status?: EmbeddingStatus;
+  error?: string;
+}) {
+  if (!status || status === "none") return null;
+
+  if (status === "pending" || status === "processing") {
+    return (
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Loader2 className="size-3 shrink-0 text-amber-500 animate-spin" />
+          </TooltipTrigger>
+          <TooltipContent side="top">
+            <p className="text-xs">
+              Indexing{status === "processing" ? "…" : " queued"}
+            </p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    );
+  }
+
+  if (status === "completed") {
+    return (
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Brain className="size-3 shrink-0 text-emerald-500" />
+          </TooltipTrigger>
+          <TooltipContent side="top">
+            <p className="text-xs">Indexed for AI search</p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    );
+  }
+
+  if (status === "failed") {
+    return (
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <AlertCircle className="size-3 shrink-0 text-red-500" />
+          </TooltipTrigger>
+          <TooltipContent side="top">
+            <p className="text-xs">{error || "Indexing failed"}</p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    );
+  }
+
+  return null;
+}
 
 // Separate component for folder card to properly use hooks
 interface FolderCardProps {
@@ -207,9 +273,15 @@ const FileCard = ({
                   "size-10 shrink-0 text-muted-foreground",
                 )}
                 <div className="flex-1 min-w-0">
-                  <p className="font-medium text-sm line-clamp-2">
-                    {file.name}
-                  </p>
+                  <div className="flex items-center gap-1">
+                    <p className="font-medium text-sm line-clamp-2">
+                      {file.name}
+                    </p>
+                    <GridEmbeddingIndicator
+                      status={file.embeddingStatus}
+                      error={file.embeddingError}
+                    />
+                  </div>
                   <p className="text-xs text-muted-foreground mt-1">
                     {(file.size / 1024).toFixed(2)} KB
                   </p>

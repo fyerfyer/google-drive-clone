@@ -3,11 +3,12 @@ import { AppError } from "./errorHandler";
 import { getReasonPhrase, StatusCodes } from "http-status-codes";
 import { verifyToken } from "../utils/jwt.util";
 import User from "../models/User.model";
+import { logger } from "../lib/logger";
 
 export const jwtAuth = async (
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ) => {
   let token;
   if (
@@ -18,21 +19,41 @@ export const jwtAuth = async (
   }
 
   if (!token) {
+    logger.warn(
+      { method: req.method, url: req.originalUrl },
+      "JWT auth failed: no token provided",
+    );
     throw new AppError(
       StatusCodes.UNAUTHORIZED,
-      getReasonPhrase(StatusCodes.UNAUTHORIZED)
+      getReasonPhrase(StatusCodes.UNAUTHORIZED),
     );
   }
 
-  const { id, email } = verifyToken(token);
-  const currentUser = await User.findOne({ _id: id, email: email });
-  if (!currentUser) {
+  try {
+    const { id, email } = verifyToken(token);
+    const currentUser = await User.findOne({ _id: id, email: email });
+    if (!currentUser) {
+      logger.warn(
+        { method: req.method, url: req.originalUrl, userId: id },
+        "JWT auth failed: user not found in DB",
+      );
+      throw new AppError(
+        StatusCodes.UNAUTHORIZED,
+        getReasonPhrase(StatusCodes.UNAUTHORIZED),
+      );
+    }
+
+    req.user = currentUser;
+    next();
+  } catch (err) {
+    if (err instanceof AppError) throw err;
+    logger.warn(
+      { method: req.method, url: req.originalUrl, err },
+      "JWT auth failed: token verification error",
+    );
     throw new AppError(
       StatusCodes.UNAUTHORIZED,
-      getReasonPhrase(StatusCodes.UNAUTHORIZED)
+      getReasonPhrase(StatusCodes.UNAUTHORIZED),
     );
   }
-
-  req.user = currentUser;
-  next();
 };

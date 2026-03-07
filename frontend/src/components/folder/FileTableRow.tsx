@@ -1,5 +1,5 @@
 import type { FolderItem, ItemActions } from "@/hooks/folder/useFileActions";
-import type { IFile } from "@/types/file.types";
+import type { IFile, EmbeddingStatus } from "@/types/file.types";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -7,7 +7,14 @@ import {
 } from "@/components/ui/context-menu";
 import { TableCell, TableRow } from "@/components/ui/table";
 import { Checkbox } from "@radix-ui/react-checkbox";
-import { FolderIcon, MoreVertical, Users } from "lucide-react";
+import {
+  FolderIcon,
+  MoreVertical,
+  Users,
+  Brain,
+  AlertCircle,
+  Loader2,
+} from "lucide-react";
 import { getFileTypeIcon } from "@/lib/file-icons";
 import { getFileCategory } from "@/lib/file-preview";
 import { formatDistanceToNow } from "date-fns";
@@ -25,6 +32,65 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+
+function EmbeddingIndicator({
+  status,
+  error,
+}: {
+  status?: EmbeddingStatus;
+  error?: string;
+}) {
+  if (!status || status === "none") return null;
+
+  if (status === "pending" || status === "processing") {
+    return (
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Loader2 className="size-3.5 shrink-0 text-amber-500 animate-spin" />
+          </TooltipTrigger>
+          <TooltipContent side="top">
+            <p className="text-xs">
+              Indexing{status === "processing" ? "…" : " queued"}
+            </p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    );
+  }
+
+  if (status === "completed") {
+    return (
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Brain className="size-3.5 shrink-0 text-emerald-500" />
+          </TooltipTrigger>
+          <TooltipContent side="top">
+            <p className="text-xs">Indexed for AI search</p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    );
+  }
+
+  if (status === "failed") {
+    return (
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <AlertCircle className="size-3.5 shrink-0 text-red-500" />
+          </TooltipTrigger>
+          <TooltipContent side="top">
+            <p className="text-xs">{error || "Indexing failed"}</p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    );
+  }
+
+  return null;
+}
 
 interface FileTableRowProps {
   item: FolderItem;
@@ -113,6 +179,12 @@ export const FileTableRow = ({
                 )
               )}
               <span className="font-medium text-sm truncate">{item.name}</span>
+              {item.type === "file" && (
+                <EmbeddingIndicator
+                  status={(item as IFile).embeddingStatus}
+                  error={(item as IFile).embeddingError}
+                />
+              )}
               {item.isShared && item.sharedUsers && (
                 <TooltipProvider>
                   <Tooltip>

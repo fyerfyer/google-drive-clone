@@ -372,4 +372,32 @@ export const fileService = {
 
     return response.data;
   },
+
+  async getEmbeddingSummary(): Promise<{
+    activeCount: number;
+    files: Array<{
+      fileId: string;
+      fileName: string;
+      status: string;
+      processedChunks: number;
+      totalChunks: number;
+    }>;
+  }> {
+    const response = await api.get<{
+      activeCount: number;
+      files: Array<{
+        fileId: string;
+        fileName: string;
+        status: string;
+        processedChunks: number;
+        totalChunks: number;
+      }>;
+    }>(`${FILE_API_BASE}/view/embedding-summary`);
+
+    if (!response.success || !response.data) {
+      throw new Error(response.message || "Failed to get embedding summary");
+    }
+
+    return response.data;
+  },
 };

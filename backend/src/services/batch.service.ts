@@ -13,6 +13,7 @@ import {
   cascadeRestoreShortcuts,
   cascadeDeleteShortcuts,
 } from "../utils/cascade.util";
+import { EmbeddingManager } from "./embedding-manager";
 
 export interface BatchItemRequest {
   id: string;
@@ -33,6 +34,8 @@ export interface BatchOperationResponse {
 }
 
 export class BatchService {
+  private embeddingManager = new EmbeddingManager();
+
   async batchTrash(
     userId: string,
     items: BatchItemRequest[],
@@ -598,6 +601,20 @@ export class BatchService {
         ).catch((err) => {
           logger.error({ err, userId }, "Async cascade delete failed");
         });
+      }
+
+      // 清理 Embedding 向量和 chunks
+      if (uniqueFileIds.length > 0) {
+        for (const fid of uniqueFileIds) {
+          this.embeddingManager
+            .onFileDeleted(fid.toString(), userId)
+            .catch((err) => {
+              logger.warn(
+                { err, fileId: fid.toString() },
+                "Failed to enqueue embedding cleanup task in batch delete",
+              );
+            });
+        }
       }
 
       logger.info(

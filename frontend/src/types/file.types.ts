@@ -5,6 +5,13 @@ import {
 } from "@/types/common.types";
 import z from "zod";
 
+export type EmbeddingStatus =
+  | "none"
+  | "pending"
+  | "processing"
+  | "completed"
+  | "failed";
+
 export interface IFile extends BaseItem {
   type: "file";
   id: string;
@@ -19,6 +26,10 @@ export interface IFile extends BaseItem {
   trashedAt?: string;
   isShared?: boolean;
   sharedUsers?: UserBasic[];
+  embeddingStatus?: EmbeddingStatus;
+  embeddingError?: string;
+  processedChunks?: number;
+  totalChunks?: number;
 }
 
 export interface UploadFileProgress {
