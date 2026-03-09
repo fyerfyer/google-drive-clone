@@ -30,9 +30,9 @@ const startServer = async () => {
     // 初始化定时任务
     await initScheduledJobs();
 
-    // 创建 HTTP Server 并初始化 WebSocket
+    // 创建 HTTP Server 并初始化 WebSocket（含 Redis 适配器以支持多副本部署）
     const httpServer = createServer(app);
-    initSocket(httpServer);
+    await initSocket(httpServer);
     logger.info("WebSocket initialized for document editing & agent approvals");
 
     // 初始化通知 BullMQ Worker

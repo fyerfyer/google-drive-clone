@@ -4,10 +4,11 @@ import { config } from "../config/env";
 import { socketAuth } from "../middlewares/socket.middleware";
 import logger from "./logger";
 import { user_room } from "../utils/socket.util";
+import { setupRedisAdapter } from "./redis-io.adapter";
 
 let io: SocketIOServer;
 
-export const initSocket = (httpServer: HTTPServer) => {
+export const initSocket = async (httpServer: HTTPServer) => {
   io = new SocketIOServer(httpServer, {
     cors: {
       origin: config.frontendUrl,
@@ -15,6 +16,16 @@ export const initSocket = (httpServer: HTTPServer) => {
       credentials: true,
     },
   });
+
+  // 使用 Redis 适配器实现多节点间 Socket 消息广播
+  try {
+    await setupRedisAdapter(io);
+  } catch (e) {
+    logger.warn(
+      { err: e },
+      "Failed to initialize Redis adapter for Socket.IO — falling back to in-memory adapter",
+    );
+  }
 
   io.use(socketAuth); // 使用认证中间件
 

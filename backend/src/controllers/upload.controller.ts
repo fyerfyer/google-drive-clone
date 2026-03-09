@@ -149,10 +149,6 @@ export class UploadController {
     return ResponseHelper.success(res, { url });
   }
 
-  /**
-   * Batch sign multiple parts in a single request.
-   * Reduces N presign API calls to 1 for large multipart uploads.
-   */
   async signParts(req: Request, res: Response, next: NextFunction) {
     const uploadId = extractParam(req.params.uploadId);
     const { key, partNumbers } = req.body;
