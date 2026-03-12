@@ -23,7 +23,7 @@ export interface ApiError {
 export interface AuthResponse {
   user: IUserPublic;
   token: string;
-  refreshToken: string;
+  deviceId: string;
 }
 
 // ==================== User Responses ====================

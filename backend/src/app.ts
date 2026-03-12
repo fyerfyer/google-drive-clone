@@ -1,6 +1,7 @@
 import express, { type Application } from "express";
 import cors from "cors";
 import helmet from "helmet";
+import cookieParser from "cookie-parser";
 import { config } from "./config/env";
 import { notFound } from "./middlewares/notFound";
 import { errorHandler } from "./middlewares/errorHandler";
@@ -39,7 +40,7 @@ import { KnowledgeService } from "./services/knowledge.service";
 import { NotificationService } from "./services/notification.service";
 import { NotificationController } from "./controllers/notification.controller";
 import { createNotificationRouter } from "./routes/notification.route";
-import { authLimiter, generalLimiter } from "./middlewares/rateLimiter";
+import { generalLimiter } from "./middlewares/rateLimiter";
 
 const userService = new UserService();
 const authService = new AuthService(userService);
@@ -96,6 +97,7 @@ app.use(requestLogger);
 
 app.use(express.json({ limit: bodyLimit }));
 app.use(express.urlencoded({ extended: true, limit: bodyLimit }));
+app.use(cookieParser());
 
 app.get("/health", (req, res) => {
   res.json({
@@ -114,7 +116,7 @@ app.get("/api", (req, res) => {
   });
 });
 
-app.use("/api/auth", authLimiter, createAuthRouter(authController));
+app.use("/api/auth", createAuthRouter(authController));
 app.use("/api/users", generalLimiter, createUserRouter(userController));
 app.use(
   "/api/files",
@@ -126,11 +128,11 @@ app.use(
   generalLimiter,
   createFolderRouter(folderController, permissionService),
 );
-// NOTE: Do NOT apply uploadLimiter at app level here.
-// The route-level limiters inside createUploadRouter run AFTER jwtAuth,
-// so they can correctly key by req.user.id instead of falling back to req.ip.
-// Applying uploadLimiter here (before auth) caused 429s on large multipart
-// uploads because all requests from the same IP shared a 30/min quota.
+
+// createUploadRouter 中的路由级别限制器在 jwtAuth 之后运行，
+// 这样他们就可以通过 req.user.id 正确键入，而不是退回到 req.ip。
+// 在此处应用 uploadLimiter（在身份验证之前）会导致大型多部分出现 429 错误
+// 上传，因为来自同一 IP 的所有请求共享 30 分钟的配额。
 app.use("/api/upload", createUploadRouter(uploadController));
 app.use("/api/batch", generalLimiter, createBatchRouter(batchController));
 app.use("/api/share", generalLimiter, createShareRouter(shareController));

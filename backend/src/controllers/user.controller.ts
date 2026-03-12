@@ -1,10 +1,5 @@
 import { Request, Response, NextFunction } from "express";
-import {
-  UserService,
-  IUserPublic,
-  toPublicUser,
-} from "../services/user.service";
-import { IUser } from "../models/User.model";
+import { UserService, toPublicUser } from "../services/user.service";
 import { ResponseHelper } from "../utils/response.util";
 import { UserResponse, UsersSearchResponse } from "../types/response.types";
 import { AppError } from "../middlewares/errorHandler";
@@ -13,8 +8,9 @@ import { StatusCodes } from "http-status-codes";
 export class UserController {
   constructor(private userService: UserService) {}
 
-  getCurrentUser(req: Request, res: Response) {
-    const user = toPublicUser(req.user! as IUser);
+  async getCurrentUser(req: Request, res: Response) {
+    const fullUser = await this.userService.getUserById(req.user!.id);
+    const user = toPublicUser(fullUser);
     return ResponseHelper.ok<UserResponse>(res, { user: user });
   }
 

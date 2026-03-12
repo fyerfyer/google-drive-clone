@@ -7,6 +7,8 @@ import { logError } from "../lib/logger";
 interface JwtPayload {
   id: string;
   email: string;
+  name: string;
+  deviceId: string;
 }
 
 export const generateToken = (payload: JwtPayload): string => {
@@ -70,4 +72,12 @@ export const verifyRefreshToken = (token: string): JwtPayload => {
       "Failed to verify refresh token",
     );
   }
+};
+
+/**
+ * Decode token expiration time without verification (for socket TTL timers).
+ */
+export const decodeTokenExp = (token: string): number | undefined => {
+  const decoded = jwt.decode(token) as { exp?: number } | null;
+  return decoded?.exp;
 };

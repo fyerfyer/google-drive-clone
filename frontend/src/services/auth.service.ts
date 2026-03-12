@@ -4,6 +4,7 @@ import type {
   RegisterRequest,
 } from "@/types/auth.types";
 import { api } from "./api";
+import type { SessionInfo } from "@/types/session.types";
 
 const AUTH_API_BASE = "/api/auth";
 
@@ -20,7 +21,7 @@ export const authService = {
       );
       if (response.success && response.data) {
         localStorage.setItem("token", response.data.token);
-        localStorage.setItem("refreshToken", response.data.refreshToken);
+        localStorage.setItem("deviceId", response.data.deviceId);
         return response.data;
       }
       throw new Error(response.message || "Login failed");
@@ -42,7 +43,7 @@ export const authService = {
       );
       if (response.success && response.data) {
         localStorage.setItem("token", response.data.token);
-        localStorage.setItem("refreshToken", response.data.refreshToken);
+        localStorage.setItem("deviceId", response.data.deviceId);
         return response.data;
       }
 
@@ -54,20 +55,14 @@ export const authService = {
     }
   },
 
-  refreshToken: async (): Promise<{ token: string; refreshToken: string }> => {
-    const refreshToken = localStorage.getItem("refreshToken");
-    if (!refreshToken) {
-      throw new Error("No refresh token available");
-    }
-
-    const response = await api.post<
-      { token: string; refreshToken: string },
-      { refreshToken: string }
-    >(`${AUTH_API_BASE}/refresh`, { refreshToken });
+  refreshToken: async (): Promise<{ token: string }> => {
+    // Refresh token is sent automatically via HttpOnly cookie
+    const response = await api.post<{ token: string }, undefined>(
+      `${AUTH_API_BASE}/refresh`,
+    );
 
     if (response.success && response.data) {
       localStorage.setItem("token", response.data.token);
-      localStorage.setItem("refreshToken", response.data.refreshToken);
       return response.data;
     }
 
@@ -78,11 +73,10 @@ export const authService = {
     try {
       await api.post(`${AUTH_API_BASE}/logout`);
     } catch (error) {
-      // Ignore error, always clear local tokens
       console.error("Logout error:", error);
     } finally {
       localStorage.removeItem("token");
-      localStorage.removeItem("refreshToken");
+      localStorage.removeItem("deviceId");
     }
   },
 
@@ -93,5 +87,23 @@ export const authService = {
 
   getToken: (): string | null => {
     return localStorage.getItem("token");
+  },
+
+  getDeviceId: (): string | null => {
+    return localStorage.getItem("deviceId");
+  },
+
+  getSessions: async (): Promise<SessionInfo[]> => {
+    const response = await api.get<{ sessions: SessionInfo[] }>(
+      `${AUTH_API_BASE}/sessions`,
+    );
+    if (response.success && response.data) {
+      return response.data.sessions;
+    }
+    throw new Error("Failed to fetch sessions");
+  },
+
+  revokeSession: async (deviceId: string): Promise<void> => {
+    await api.delete(`${AUTH_API_BASE}/sessions/${deviceId}`);
   },
 };

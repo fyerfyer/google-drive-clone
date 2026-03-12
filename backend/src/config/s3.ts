@@ -52,7 +52,6 @@ const PUBLIC_READ_POLICY = (bucketName: string) => ({
 // 注意：CORS 配置已在 MinIO 服务级别通过环境变量配置
 // (MINIO_API_CORS_ALLOW_ORIGIN="*")
 // MinIO 不完全支持 S3 的 PutBucketCors API，因此我们不在代码中设置
-
 export async function initializeBuckets() {
   for (const bucketName of Object.values(BUCKETS)) {
     try {

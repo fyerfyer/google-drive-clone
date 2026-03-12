@@ -17,7 +17,7 @@ export class AgentController {
   constructor(private agentService: AgentService) {}
 
   async getActiveChats(req: Request, res: Response, next: NextFunction) {
-    const userId = req.user!._id.toString();
+    const userId = req.user!.id;
     const chats = await this.agentService.getActiveChats(userId);
     return ResponseHelper.ok(res, { chats });
   }
@@ -29,7 +29,7 @@ export class AgentController {
   }
 
   async getTokenUsage(req: Request, res: Response, next: NextFunction) {
-    const userId = req.user!._id.toString();
+    const userId = req.user!.id;
     const taskId = req.query.taskId as string | undefined;
 
     const daily = await this.agentService.getDailyTokenUsage(userId);
@@ -41,13 +41,13 @@ export class AgentController {
   }
 
   async getTokenBudget(req: Request, res: Response, next: NextFunction) {
-    const userId = req.user!._id.toString();
+    const userId = req.user!.id;
     const budget = await this.agentService.getUserTokenBudget(userId);
     return ResponseHelper.ok(res, { budget });
   }
 
   async updateTokenBudget(req: Request, res: Response, next: NextFunction) {
-    const userId = req.user!._id.toString();
+    const userId = req.user!.id;
     const {
       maxTokensPerTask,
       maxTokensPerDay,
@@ -65,7 +65,7 @@ export class AgentController {
   }
 
   async resolveApproval(req: Request, res: Response, next: NextFunction) {
-    const userId = req.user!._id.toString();
+    const userId = req.user!.id;
     const approvalId = extractParam(req.params.approvalId);
     const { approved, modifiedArgs } = req.body;
 
@@ -97,7 +97,7 @@ export class AgentController {
   }
 
   async getPendingApprovals(req: Request, res: Response, next: NextFunction) {
-    const userId = req.user!._id.toString();
+    const userId = req.user!.id;
     const approvals = await this.agentService.getPendingApprovals(userId);
 
     return ResponseHelper.ok(res, {
@@ -113,13 +113,13 @@ export class AgentController {
   }
 
   async listConversations(req: Request, res: Response, next: NextFunction) {
-    const userId = req.user!._id.toString();
+    const userId = req.user!.id;
     const conversations = await this.agentService.listConversations(userId);
     return ResponseHelper.ok(res, { conversations });
   }
 
   async getConversation(req: Request, res: Response, next: NextFunction) {
-    const userId = req.user!._id.toString();
+    const userId = req.user!.id;
     const conversationId = extractParam(req.params.conversationId);
     const conversation = await this.agentService.getConversation(
       conversationId,
@@ -141,7 +141,7 @@ export class AgentController {
   }
 
   async deleteConversation(req: Request, res: Response, next: NextFunction) {
-    const userId = req.user!._id.toString();
+    const userId = req.user!.id;
     const conversationId = extractParam(req.params.conversationId);
     await this.agentService.deleteConversation(conversationId, userId);
     return ResponseHelper.message(res, "Conversation deleted");
@@ -170,7 +170,7 @@ export class AgentController {
 
   // 主聊天接口：将任务入队 BullMQ，前端通过 /tasks/:taskId/stream 接收 SSE 事件
   async chatAsync(req: Request, res: Response, next: NextFunction) {
-    const userId = req.user!._id.toString();
+    const userId = req.user!.id;
     const { message, conversationId, context, resourceUris } = req.body;
 
     if (

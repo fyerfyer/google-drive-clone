@@ -2,7 +2,6 @@ import { Request, Response, NextFunction } from "express";
 import { AppError } from "../middlewares/errorHandler";
 import { FileService } from "../services/file.service";
 import { StatusCodes } from "http-status-codes";
-import { IUser } from "../models/User.model";
 import { ResponseHelper } from "../utils/response.util";
 import { FileUploadResponse } from "../types/response.types";
 import { StorageService } from "../services/storage.service";
@@ -55,9 +54,8 @@ export class FileController {
       throw new AppError(StatusCodes.UNAUTHORIZED, "User not authenticated");
     }
 
-    const user = req.user as IUser;
     const result = await this.fileService.getPresignedDownloadUrl({
-      userId: String(user._id),
+      userId: req.user.id,
       fileId: extractParam(req.params.fileId),
       expirySeconds: 3600,
     });
@@ -82,9 +80,8 @@ export class FileController {
       throw new AppError(StatusCodes.UNAUTHORIZED, "User not authenticated");
     }
 
-    const user = req.user as IUser;
     const result = await this.fileService.getPreviewStream({
-      userId: String(user._id),
+      userId: req.user.id,
       fileId: extractParam(req.params.fileId),
     });
 
@@ -118,7 +115,7 @@ export class FileController {
 
     const user = req.user;
     const result = await this.fileService.getPreviewUrl({
-      userId: String(user._id),
+      userId: user.id,
       fileId: extractParam(req.params.fileId),
       expirySeconds: 3600,
     });
@@ -244,7 +241,7 @@ export class FileController {
 
     const response = await this.fileService.getOnlyOfficeConfig({
       userId: req.user.id,
-      userEmail: (req.user as IUser).email,
+      userEmail: req.user.email,
       fileId,
     });
 
@@ -493,9 +490,8 @@ export class FileController {
       throw new AppError(StatusCodes.UNAUTHORIZED, "User not authenticated");
     }
 
-    const user = req.user as IUser;
     const result = await this.fileService.getPreviewStream({
-      userId: String(user._id),
+      userId: req.user.id,
       fileId: extractParam(req.params.fileId),
     });
 

@@ -12,7 +12,7 @@ const getBase64Size = (dataUrl: string): number => {
 export interface AuthResponse {
   user: User;
   token: string;
-  refreshToken: string;
+  deviceId: string;
 }
 
 export const loginSchema = z.object({

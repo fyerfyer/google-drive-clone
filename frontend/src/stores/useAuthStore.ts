@@ -150,7 +150,6 @@ export const useAuthStore = create<AuthStore>()(
       // Logout
       logout: () => {
         authService.logout();
-        localStorage.removeItem("refreshToken");
         // Clear React Query cache to prevent showing previous user's data
         import("@/lib/queryClient").then(({ queryClient }) => {
           queryClient.clear();

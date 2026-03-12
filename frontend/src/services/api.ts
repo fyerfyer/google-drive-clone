@@ -10,6 +10,7 @@ import type { ApiError, ApiResponse } from "../types/api.types";
 export const apiClient = axios.create({
   baseURL: "/",
   timeout: 30000, // TODO：有时候 LLM 调用返回时间过旧，可以采用监督是否有返回内容？
+  withCredentials: true, // Ensure cookies (e.g. refreshToken) are sent with cross-origin requests
   headers: {
     "Content-Type": "application/json",
   },
@@ -63,54 +64,45 @@ apiClient.interceptors.response.use(
       !isAuthRequest &&
       !originalRequest?._retry
     ) {
-      const refreshToken = localStorage.getItem("refreshToken");
-
-      if (refreshToken) {
-        if (isRefreshing) {
-          // Queue requests while refresh is in progress
-          return new Promise((resolve) => {
-            subscribeTokenRefresh((newToken: string) => {
-              originalRequest.headers.Authorization = `Bearer ${newToken}`;
-              resolve(apiClient(originalRequest));
-            });
-          });
-        }
-
-        originalRequest._retry = true;
-        isRefreshing = true;
-
-        try {
-          const { data } = await axios.post("/api/auth/refresh", {
-            refreshToken,
-          });
-
-          if (data.success && data.data) {
-            const newToken = data.data.token;
-            localStorage.setItem("token", newToken);
-            localStorage.setItem("refreshToken", data.data.refreshToken);
-            onTokenRefreshed(newToken);
+      if (isRefreshing) {
+        // Queue requests while refresh is in progress
+        return new Promise((resolve) => {
+          subscribeTokenRefresh((newToken: string) => {
             originalRequest.headers.Authorization = `Bearer ${newToken}`;
-            return apiClient(originalRequest);
-          }
-        } catch {
-          // Refresh failed, clear tokens and redirect
-          localStorage.removeItem("token");
-          localStorage.removeItem("refreshToken");
-          const isLoginPage = window.location.pathname === "/login";
-          if (!isLoginPage) {
-            window.location.href = "/login";
-          }
-          return Promise.reject(error);
-        } finally {
-          isRefreshing = false;
+            resolve(apiClient(originalRequest));
+          });
+        });
+      }
+
+      originalRequest._retry = true;
+      isRefreshing = true;
+
+      try {
+        // Refresh token is sent automatically via HttpOnly cookie
+        const { data } = await axios.post(
+          "/api/auth/refresh",
+          {},
+          { withCredentials: true },
+        );
+
+        if (data.success && data.data) {
+          const newToken = data.data.token;
+          localStorage.setItem("token", newToken);
+          onTokenRefreshed(newToken);
+          originalRequest.headers.Authorization = `Bearer ${newToken}`;
+          return apiClient(originalRequest);
         }
-      } else {
-        // No refresh token, redirect to login
+      } catch {
+        // Refresh failed, clear tokens and redirect
         localStorage.removeItem("token");
+        localStorage.removeItem("deviceId");
         const isLoginPage = window.location.pathname === "/login";
         if (!isLoginPage) {
           window.location.href = "/login";
         }
+        return Promise.reject(error);
+      } finally {
+        isRefreshing = false;
       }
     }
 

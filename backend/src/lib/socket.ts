@@ -1,5 +1,6 @@
 import { Server as SocketIOServer } from "socket.io";
 import { Server as HTTPServer } from "http";
+import { Redis } from "ioredis";
 import { config } from "../config/env";
 import { socketAuth } from "../middlewares/socket.middleware";
 import logger from "./logger";
@@ -27,6 +28,47 @@ export const initSocket = async (httpServer: HTTPServer) => {
     );
   }
 
+  // 监听设备会话撤销事件，强制断开相关 Socket 连接
+  try {
+    const revokeSubscriber = new Redis(config.redisUrl, {
+      enableReadyCheck: true,
+      lazyConnect: true,
+    });
+    await revokeSubscriber.connect();
+    await revokeSubscriber.subscribe("device:revoked");
+    revokeSubscriber.on("message", (_channel, message) => {
+      try {
+        const { userId, deviceId } = JSON.parse(message);
+        const room = user_room(userId);
+        const socketIds = io.sockets.adapter.rooms.get(room);
+        if (socketIds) {
+          for (const sid of socketIds) {
+            const s = io.sockets.sockets.get(sid);
+            if (s && s.data.user?.deviceId === deviceId) {
+              s.emit("session:revoked", {
+                deviceId,
+                reason: "Session revoked",
+              });
+              s.disconnect(true);
+              logger.info(
+                { userId, deviceId, socketId: sid },
+                "Socket forcefully disconnected — device revoked",
+              );
+            }
+          }
+        }
+      } catch (err) {
+        logger.error({ err }, "Error handling device:revoked event");
+      }
+    });
+    logger.info("Device-revocation Pub/Sub listener initialized");
+  } catch (e) {
+    logger.warn(
+      { err: e },
+      "Failed to initialize device-revocation Pub/Sub listener",
+    );
+  }
+
   io.use(socketAuth); // 使用认证中间件
 
   io.on("connection", (socket) => {
@@ -36,20 +78,35 @@ export const initSocket = async (httpServer: HTTPServer) => {
         socket.id
       })`,
     );
-    socket.join(user_room(user._id.toString())); // 加入以用户ID命名的房间
+    socket.join(user_room(user.id)); // 加入以用户ID命名的房间
 
-    // ─── Document Editing — join/leave document rooms ──────────────────
+    if (socket.data.tokenExp) {
+      const now = Math.floor(Date.now() / 1000);
+      const ttlMs = Math.max((socket.data.tokenExp - now) * 1000, 0);
+      const expiryTimer = setTimeout(() => {
+        socket.emit("session:token_expired", {
+          reason: "Access token expired — please refresh and reconnect",
+        });
+        socket.disconnect(true);
+        logger.info(
+          { userId: user.id, deviceId: user.deviceId, socketId: socket.id },
+          "Socket disconnected — access token expired",
+        );
+      }, ttlMs);
+      socket.on("disconnect", () => clearTimeout(expiryTimer));
+    }
+
+    // TODO：文档协作功能开发
     socket.on("document:join", (data: { fileId: string }) => {
       if (data.fileId) {
         const room = `document:${data.fileId}`;
         socket.join(room);
         logger.info(
-          { userId: user._id, fileId: data.fileId },
+          { userId: user.id, fileId: data.fileId },
           "User joined document room",
         );
-        // Notify others in the room
         socket.to(room).emit("document:user_joined", {
-          userId: user._id.toString(),
+          userId: user.id,
           userName: user.name || user.email,
           timestamp: new Date().toISOString(),
         });
@@ -61,32 +118,28 @@ export const initSocket = async (httpServer: HTTPServer) => {
         const room = `document:${data.fileId}`;
         socket.leave(room);
         logger.info(
-          { userId: user._id, fileId: data.fileId },
+          { userId: user.id, fileId: data.fileId },
           "User left document room",
         );
         socket.to(room).emit("document:user_left", {
-          userId: user._id.toString(),
+          userId: user.id,
           userName: user.name || user.email,
           timestamp: new Date().toISOString(),
         });
       }
     });
 
-    // ─── Agent Approval — respond to approval requests ────────────────
     socket.on(
       "agent:approval_response",
       (data: { approvalId: string; approved: boolean }) => {
-        // This is handled via REST API (POST /api/agent/approve/:approvalId)
-        // But we also accept it via WebSocket for convenience
         logger.info(
           {
-            userId: user._id,
+            userId: user.id,
             approvalId: data.approvalId,
             approved: data.approved,
           },
           "Agent approval response received via WebSocket",
         );
-        // Emit back acknowledgment
         socket.emit("agent:approval_ack", {
           approvalId: data.approvalId,
           received: true,

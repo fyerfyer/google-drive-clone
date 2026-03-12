@@ -2,8 +2,10 @@ import { Request, Response, NextFunction } from "express";
 import { AppError } from "./errorHandler";
 import { getReasonPhrase, StatusCodes } from "http-status-codes";
 import { verifyToken } from "../utils/jwt.util";
-import User from "../models/User.model";
+import { redisClient } from "../config/redis";
 import { logger } from "../lib/logger";
+
+const REVOKED_PREFIX = "revoked:";
 
 export const jwtAuth = async (
   req: Request,
@@ -30,12 +32,16 @@ export const jwtAuth = async (
   }
 
   try {
-    const { id, email } = verifyToken(token);
-    const currentUser = await User.findOne({ _id: id, email: email });
-    if (!currentUser) {
+    const { id, email, name, deviceId } = verifyToken(token);
+
+    // 使用 Redis O(1) 查询代替 MongoDB 操作
+    const isRevoked = await redisClient.exists(
+      `${REVOKED_PREFIX}${id}:${deviceId}`,
+    );
+    if (isRevoked) {
       logger.warn(
-        { method: req.method, url: req.originalUrl, userId: id },
-        "JWT auth failed: user not found in DB",
+        { method: req.method, url: req.originalUrl, userId: id, deviceId },
+        "JWT auth failed: device session revoked",
       );
       throw new AppError(
         StatusCodes.UNAUTHORIZED,
@@ -43,7 +49,7 @@ export const jwtAuth = async (
       );
     }
 
-    req.user = currentUser;
+    req.user = { id, email, name, deviceId };
     next();
   } catch (err) {
     if (err instanceof AppError) throw err;
