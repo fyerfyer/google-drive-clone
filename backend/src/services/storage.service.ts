@@ -67,11 +67,10 @@ export class StorageService {
       ContentType: mimeType,
     });
 
-    // Use s3ClientForPresign to generate URLs with correct public endpoint
     const url = await getSignedUrl(s3ClientForPresign, command, {
       expiresIn: expireTime,
     });
-    return url; // No need for replaceHostUrl anymore
+    return url;
   }
 
   static async completeMultipartUpload(
@@ -168,7 +167,6 @@ export class StorageService {
       ResponseContentDisposition: `${disposition}; filename="${safeFileName}"`,
     });
 
-    // Use s3ClientForPresign for download URLs as well
     const url = await getSignedUrl(s3ClientForPresign, command, {
       expiresIn: expireTime,
     });

@@ -31,7 +31,10 @@ export const FileUploadDialog = ({
 
   const isUploading = useMemo(() => {
     return Array.from(uploads.values()).some(
-      (upload) => upload.status === "uploading" || upload.status === "pending",
+      (upload) =>
+        upload.status === "uploading" ||
+        upload.status === "pending" ||
+        upload.status === "hashing",
     );
   }, [uploads]);
 
@@ -200,6 +203,8 @@ export const FileUploadDialog = ({
                             )}
                             <span className="text-xs text-muted-foreground">
                               {progress.status === "pending" && "Pending..."}
+                              {progress.status === "hashing" &&
+                                `Hashing... ${progress.progress}%`}
                               {progress.status === "uploading" &&
                                 `Uploading... ${progress.progress}%`}
                               {progress.status === "processing" &&

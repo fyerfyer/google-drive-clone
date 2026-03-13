@@ -33,6 +33,9 @@ interface EnvConfig {
   onlyofficeJwtSecret: string;
   onlyofficeJwtEnabled: boolean;
 
+  // Webhook shared secret (MinIO → backend)
+  webhookSecret: string;
+
   // LLM AI Agent
   llmApiKey: string;
   llmBaseUrl: string;
@@ -71,6 +74,8 @@ export const config: EnvConfig = {
   onlyofficeUrl: process.env.ONLYOFFICE_URL || "http://localhost:8080",
   onlyofficeJwtSecret: process.env.ONLYOFFICE_JWT_SECRET || "my_secret_jwt_key",
   onlyofficeJwtEnabled: process.env.ONLYOFFICE_JWT_ENABLED === "true",
+
+  webhookSecret: process.env.MINIO_WEBHOOK_SECRET || "",
 
   // AI Agent (LLM) configuration
   llmApiKey: process.env.LLM_API_KEY || "",

@@ -1,11 +1,13 @@
 import { Router } from "express";
 import { BatchController } from "../controllers/batch.controller";
 import { jwtAuth } from "../middlewares/auth.middleware";
+import { generalLimiter } from "../middlewares/rateLimiter";
 
 export function createBatchRouter(batchController: BatchController) {
   const router = Router();
 
   router.use(jwtAuth);
+  router.use(generalLimiter);
 
   router.post("/trash", batchController.batchTrash.bind(batchController));
 

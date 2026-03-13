@@ -1,8 +1,8 @@
 import { api } from "./api";
+import { normalizeFile } from "@/lib/type-guards";
+import type { IFile } from "@/types/file.types";
 
 const UPLOAD_API_BASE = "/api/upload";
-
-// ==================== Types ====================
 
 export interface PresignedUrlResponse {
   method: "PUT";
@@ -32,6 +32,7 @@ export interface PartsListResponse {
 export interface CompleteMultipartResponse {
   location: string;
   key: string;
+  file?: IFile;
 }
 
 export interface PresignAvatarRequest {
@@ -60,6 +61,12 @@ export interface CompleteMultipartUploadRequest {
     PartNumber: number;
     ETag: string;
   }>;
+  // File metadata for atomic DB record creation
+  folderId?: string;
+  size?: number;
+  mimeType?: string;
+  originalName?: string;
+  hash?: string;
 }
 
 // ==================== Upload Service ====================
@@ -109,6 +116,7 @@ export const uploadService = {
     file: File,
     headers: Record<string, string>,
     onProgress?: (progress: number) => void,
+    signal?: AbortSignal,
   ): Promise<void> {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
@@ -133,8 +141,11 @@ export const uploadService = {
       });
 
       xhr.addEventListener("abort", () => {
-        reject(new Error("Upload aborted"));
+        reject(new DOMException("Upload aborted", "AbortError"));
       });
+
+      // Wire the AbortSignal to XHR abort
+      signal?.addEventListener("abort", () => xhr.abort(), { once: true });
 
       xhr.open("PUT", url);
 
@@ -248,6 +259,11 @@ export const uploadService = {
       );
     }
 
+    // Normalize the file record if the backend returned one
+    if (response.data.file) {
+      response.data.file = normalizeFile(response.data.file);
+    }
+
     return response.data;
   },
 
@@ -271,6 +287,7 @@ export const uploadService = {
     url: string,
     chunk: Blob,
     onProgress?: (progress: number) => void,
+    signal?: AbortSignal,
   ): Promise<string> {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
@@ -300,12 +317,39 @@ export const uploadService = {
       });
 
       xhr.addEventListener("abort", () => {
-        reject(new Error("Part upload aborted"));
+        reject(new DOMException("Part upload aborted", "AbortError"));
       });
+
+      // Wire the AbortSignal to XHR abort
+      signal?.addEventListener("abort", () => xhr.abort(), { once: true });
 
       xhr.open("PUT", url);
       xhr.setRequestHeader("Content-Type", "application/octet-stream");
       xhr.send(chunk);
     });
+  },
+
+  /**
+   * Confirm a simple (presigned PUT) upload and create the DB record atomically.
+   * Replaces the old flow of calling POST /api/files separately.
+   */
+  async confirmSimpleUpload(data: {
+    folderId: string;
+    key: string;
+    size: number;
+    mimeType: string;
+    originalName: string;
+    hash?: string;
+  }): Promise<IFile> {
+    const response = await api.post<{ file: IFile }, typeof data>(
+      `${UPLOAD_API_BASE}/confirm`,
+      data,
+    );
+
+    if (!response.success || !response.data?.file) {
+      throw new Error(response.message || "Failed to confirm upload");
+    }
+
+    return normalizeFile(response.data.file);
   },
 };

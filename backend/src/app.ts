@@ -40,17 +40,18 @@ import { KnowledgeService } from "./services/knowledge.service";
 import { NotificationService } from "./services/notification.service";
 import { NotificationController } from "./controllers/notification.controller";
 import { createNotificationRouter } from "./routes/notification.route";
-import { generalLimiter } from "./middlewares/rateLimiter";
+import { WebhookController } from "./controllers/webhook.controller";
+import { createWebhookRouter } from "./routes/webhook.route";
 
 const userService = new UserService();
 const authService = new AuthService(userService);
 const authController = new AuthController(authService);
 const userController = new UserController(userService);
-const uploadController = new UploadController();
 const permissionService = new PermissionService();
 
 const fileService = new FileService(permissionService);
 const fileController = new FileController(fileService);
+const uploadController = new UploadController(fileService);
 const folderService = new FolderService();
 const folderController = new FolderController(folderService);
 const batchService = new BatchService();
@@ -117,15 +118,10 @@ app.get("/api", (req, res) => {
 });
 
 app.use("/api/auth", createAuthRouter(authController));
-app.use("/api/users", generalLimiter, createUserRouter(userController));
-app.use(
-  "/api/files",
-  generalLimiter,
-  createFileRouter(fileController, permissionService),
-);
+app.use("/api/users", createUserRouter(userController));
+app.use("/api/files", createFileRouter(fileController, permissionService));
 app.use(
   "/api/folders",
-  generalLimiter,
   createFolderRouter(folderController, permissionService),
 );
 
@@ -134,8 +130,8 @@ app.use(
 // 在此处应用 uploadLimiter（在身份验证之前）会导致大型多部分出现 429 错误
 // 上传，因为来自同一 IP 的所有请求共享 30 分钟的配额。
 app.use("/api/upload", createUploadRouter(uploadController));
-app.use("/api/batch", generalLimiter, createBatchRouter(batchController));
-app.use("/api/share", generalLimiter, createShareRouter(shareController));
+app.use("/api/batch", createBatchRouter(batchController));
+app.use("/api/share", createShareRouter(shareController));
 
 const apiKeyService = new ApiKeyService();
 const apiKeyController = new ApiKeyController(apiKeyService);
@@ -161,6 +157,9 @@ const mcpClientService = new McpClientService(mcpServices);
 const agentService = new AgentService(mcpClientService);
 const agentController = new AgentController(agentService);
 app.use("/api/agent", createAgentRouter(agentController));
+
+const webhookController = new WebhookController();
+app.use("/api/webhooks", createWebhookRouter(webhookController));
 
 app.use(notFound);
 app.use(errorHandler);

@@ -3,6 +3,7 @@ import { FolderController } from "../controllers/folder.controller";
 import { jwtAuth } from "../middlewares/auth.middleware";
 import { requireAccess } from "../middlewares/permission.middleware";
 import { PermissionService } from "../services/permission.service";
+import { generalLimiter } from "../middlewares/rateLimiter";
 
 export function createFolderRouter(
   folderController: FolderController,
@@ -10,6 +11,7 @@ export function createFolderRouter(
 ) {
   const router = Router();
   router.use(jwtAuth);
+  router.use(generalLimiter);
 
   router.post("/create", folderController.createFolder.bind(folderController));
 

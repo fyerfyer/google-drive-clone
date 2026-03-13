@@ -7,8 +7,12 @@ import User from "../models/User.model";
 import { StorageService } from "../services/storage.service";
 import { ResponseHelper } from "../utils/response.util";
 import { extractParam } from "../utils/request.util";
+import { FileService } from "../services/file.service";
+import { FileUploadResponse } from "../types/response.types";
 
 export class UploadController {
+  constructor(private fileService: FileService) {}
+
   async presignAvatar(req: Request, res: Response, next: NextFunction) {
     if (!req.user) {
       throw new AppError(StatusCodes.UNAUTHORIZED, "User not authenticated");
@@ -205,8 +209,13 @@ export class UploadController {
     res: Response,
     next: NextFunction,
   ) {
+    if (!req.user) {
+      throw new AppError(StatusCodes.UNAUTHORIZED, "User not authenticated");
+    }
+
     const uploadId = extractParam(req.params.uploadId);
-    const { key, parts } = req.body;
+    const { key, parts, folderId, size, mimeType, originalName, hash } =
+      req.body;
 
     if (!uploadId || !key || !parts) {
       throw new AppError(
@@ -222,7 +231,60 @@ export class UploadController {
       parts,
     );
 
+    // 这部分原本是 frontend 的逻辑，但是由于 S3 webhook 的异步特性
+    // 前端无法及时创建 DB 记录，为了防止竞态在后端来做
+    if (folderId && size && mimeType && originalName) {
+      const file = await this.fileService.createFileRecord({
+        userId: req.user.id,
+        folderId,
+        key,
+        fileSize: size,
+        mimeType,
+        originalName,
+        hash,
+      });
+
+      return ResponseHelper.success(res, {
+        location: result.Location,
+        key,
+        file,
+      });
+    }
+
     return ResponseHelper.success(res, { location: result.Location, key });
+  }
+
+  // 小文件上传校验也统一在这里做
+  async confirmSimpleUpload(req: Request, res: Response, next: NextFunction) {
+    if (!req.user) {
+      throw new AppError(StatusCodes.UNAUTHORIZED, "User not authenticated");
+    }
+
+    const { folderId, key, size, mimeType, originalName, hash } = req.body;
+    if (!key || !size || !mimeType || !originalName || !folderId) {
+      throw new AppError(StatusCodes.BAD_REQUEST, "Missing required fields");
+    }
+
+    const exists = await StorageService.checkObjectExists(BUCKETS.FILES, key);
+    if (!exists) {
+      throw new AppError(StatusCodes.BAD_REQUEST, "File not found in storage");
+    }
+
+    const file = await this.fileService.createFileRecord({
+      userId: req.user.id,
+      folderId,
+      key,
+      fileSize: size,
+      mimeType,
+      originalName,
+      hash,
+    });
+
+    return ResponseHelper.created<FileUploadResponse>(
+      res,
+      { file },
+      "File created successfully",
+    );
   }
 
   async abortMultipartUpload(req: Request, res: Response, next: NextFunction) {

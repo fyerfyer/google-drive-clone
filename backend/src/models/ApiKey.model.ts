@@ -71,8 +71,6 @@ const apiKeySchema = new Schema<IApiKey>(
   },
 );
 
-// keyHash 查找
-apiKeySchema.index({ keyHash: 1 });
 // 快速查询用户的活跃 key
 apiKeySchema.index({ user: 1, isActive: 1 });
 

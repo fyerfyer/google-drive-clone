@@ -3,6 +3,7 @@ import { jwtAuth } from "../middlewares/auth.middleware";
 import { FileController } from "../controllers/file.controller";
 import { requireAccess } from "../middlewares/permission.middleware";
 import { PermissionService } from "../services/permission.service";
+import { generalLimiter } from "../middlewares/rateLimiter";
 
 export function createFileRouter(
   fileController: FileController,
@@ -25,6 +26,7 @@ export function createFileRouter(
   );
 
   router.use(jwtAuth);
+  router.use(generalLimiter);
 
   // 在上传文件成功后保存 record
   router.post("/", fileController.createFile.bind(fileController));

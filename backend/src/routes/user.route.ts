@@ -2,12 +2,14 @@ import { Router } from "express";
 import { jwtAuth } from "../middlewares/auth.middleware";
 import { updateValidator } from "../middlewares/validator";
 import { UserController } from "../controllers/user.controller";
+import { generalLimiter } from "../middlewares/rateLimiter";
 
 export function createUserRouter(userController: UserController) {
   const userRouter = Router();
 
   // 所有用户路由都需要认证
   userRouter.use(jwtAuth);
+  userRouter.use(generalLimiter);
 
   userRouter.get(
     "/profile",

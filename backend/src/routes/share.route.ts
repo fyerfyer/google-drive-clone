@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { ShareController } from "../controllers/share.controller";
 import { jwtAuth } from "../middlewares/auth.middleware";
+import { generalLimiter } from "../middlewares/rateLimiter";
 
 export function createShareRouter(shareController: ShareController) {
   const router = Router();
@@ -43,6 +44,7 @@ export function createShareRouter(shareController: ShareController) {
 
   // 以下路由需要认证
   router.use(jwtAuth);
+  router.use(generalLimiter);
 
   router.post("/resource", shareController.shareResource.bind(shareController));
 

@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from "react";
+import { useEffect, useCallback, useRef } from "react";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { getSocket } from "@/lib/socket";
 import { queryKeys } from "@/lib/queryClient";
@@ -17,10 +17,12 @@ interface EmbeddingStatusEvent {
 /**
  * Listen for real-time embedding status changes via WebSocket.
  * Automatically invalidates folder content queries so the UI stays up-to-date.
+ * Uses debounce (1s) to prevent "event storms" when many files are processed.
  */
 export function useEmbeddingSocket() {
   const queryClient = useQueryClient();
   const currentFolderId = useFolderUIStore((s) => s.currentFolderId);
+  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const invalidate = useCallback(() => {
     // Invalidate the current folder content to refresh embedding icons
@@ -42,11 +44,29 @@ export function useEmbeddingSocket() {
     });
   }, [queryClient, currentFolderId]);
 
+  const debouncedInvalidate = useCallback(() => {
+    if (debounceTimer.current) {
+      clearTimeout(debounceTimer.current);
+    }
+    debounceTimer.current = setTimeout(() => {
+      invalidate();
+      debounceTimer.current = null;
+    }, 1000);
+  }, [invalidate]);
+
+  useEffect(() => {
+    return () => {
+      if (debounceTimer.current) {
+        clearTimeout(debounceTimer.current);
+      }
+    };
+  }, []);
+
   useEffect(() => {
     const socket = getSocket();
 
     const handleStatusChanged = (_event: EmbeddingStatusEvent) => {
-      invalidate();
+      debouncedInvalidate();
     };
 
     socket.on("embedding:status_changed", handleStatusChanged);
@@ -54,7 +74,7 @@ export function useEmbeddingSocket() {
     return () => {
       socket.off("embedding:status_changed", handleStatusChanged);
     };
-  }, [invalidate]);
+  }, [debouncedInvalidate]);
 }
 
 /**

@@ -7,18 +7,41 @@ import type {
 import { api, apiClient } from "@/services/api";
 import type { AxiosProgressEvent } from "axios";
 import { normalizeFile, normalizeFiles } from "@/lib/type-guards";
+import HashWorker from "@/workers/hash.worker?worker";
 
 const FILE_API_BASE = "/api/files";
 
 export const fileService = {
-  async calculateHash(file: File): Promise<string> {
-    const buffer = await file.arrayBuffer();
-    const hashBuffer = await crypto.subtle.digest("SHA-256", buffer);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    const hashHex = hashArray
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join("");
-    return hashHex;
+  calculateHash(
+    file: File,
+    onProgress?: (progress: number) => void,
+  ): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const worker = new HashWorker();
+
+      worker.onmessage = (
+        e: MessageEvent<
+          { hash: string } | { error: string } | { progress: number }
+        >,
+      ) => {
+        if ("hash" in e.data) {
+          worker.terminate();
+          resolve(e.data.hash);
+        } else if ("error" in e.data) {
+          worker.terminate();
+          reject(new Error(e.data.error));
+        } else if ("progress" in e.data) {
+          onProgress?.(e.data.progress);
+        }
+      };
+
+      worker.onerror = (err) => {
+        worker.terminate();
+        reject(new Error(err.message || "Hash worker error"));
+      };
+
+      worker.postMessage({ file });
+    });
   },
 
   async uploadFile(
@@ -234,30 +257,6 @@ export const fileService = {
     }
 
     return normalizeFiles(response.data);
-  },
-
-  /**
-   * Create file record after successful upload to MinIO
-   * @param data - File metadata including key, size, mimeType, etc.
-   */
-  async createFileRecord(data: {
-    folderId: string;
-    key: string;
-    size: number;
-    mimeType: string;
-    originalName: string;
-    hash?: string;
-  }): Promise<IFile> {
-    const response = await api.post<FileUploadResponse, typeof data>(
-      FILE_API_BASE,
-      data,
-    );
-
-    if (!response.success || !response.data?.file) {
-      throw new Error(response.message || "Failed to create file record");
-    }
-
-    return normalizeFile(response.data.file);
   },
 
   /**

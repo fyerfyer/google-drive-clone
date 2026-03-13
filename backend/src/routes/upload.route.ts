@@ -54,6 +54,12 @@ export function createUploadRouter(uploadController: UploadController) {
     uploadController.completeMultipartUpload.bind(uploadController),
   );
 
+  router.post(
+    "/confirm",
+    uploadLimiter,
+    uploadController.confirmSimpleUpload.bind(uploadController),
+  );
+
   router.delete(
     "/multipart/:uploadId",
     uploadLimiter,

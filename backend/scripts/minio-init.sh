@@ -12,11 +12,19 @@ sleep 5
 # Configure MinIO client
 mc alias set myminio http://localhost:9000 ${MINIO_ROOT_USER:-minioadmin} ${MINIO_ROOT_PASSWORD:-minioadmin123}
 
-# Enable anonymous (public) policy for both buckets to allow CORS
-mc anonymous set download myminio/avatars 2>/dev/null || true
-mc anonymous set download myminio/files 2>/dev/null || true
+# Create buckets
+mc mb --ignore-existing myminio/avatars
+mc mb --ignore-existing myminio/files
 
-echo "MinIO CORS configuration completed"
+# Enable anonymous (public) policy for avatars
+mc anonymous set download myminio/avatars 2>/dev/null || true
+
+# Configure webhook notification for the files bucket
+# Webhook target is pre-configured via MINIO_NOTIFY_WEBHOOK_* env vars on MinIO startup.
+# This just binds the event to the pre-configured target.
+mc event add myminio/files arn:minio:sqs::1:webhook --event put 2>/dev/null || true
+
+echo "MinIO initialization completed (buckets + webhook)"
 
 # Wait for the MinIO server process
 wait $MINIO_PID
