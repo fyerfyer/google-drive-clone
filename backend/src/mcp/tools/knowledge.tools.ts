@@ -20,6 +20,8 @@ export function registerKnowledgeTools(
         "Search files using natural language and vector embeddings. Returns matching text chunks with relevance scores. " +
         "Files are automatically indexed in the background when uploaded or modified — no manual indexing needed. " +
         "WHEN TO USE: When the user asks about topics, concepts, or content across files (e.g., 'what files discuss deployment?', 'find anything about budgets'). " +
+        "Supports optional filters: search within a specific folder (folderId), restrict to certain file types (mimeTypes), " +
+        "find recently modified files (updatedAfter), or include trashed files (isTrashed). " +
         "WHEN NOT TO USE: When the user asks for a specific file by name (use search_files). When you already have the file ID and need its full content (use extract_file_content). " +
         "NOTES: If some files are still being indexed, the response will include a notice. Falls back to keyword search if semantic search is unavailable.",
       inputSchema: z.object({
@@ -38,9 +40,41 @@ export function registerKnowledgeTools(
           .number()
           .optional()
           .describe("Maximum number of results to return (default: 10)"),
+        folderId: z
+          .string()
+          .optional()
+          .describe(
+            "Restrict search to files within this folder (and its subfolders). Use when the user says 'in this folder' or 'in the current directory'.",
+          ),
+        mimeTypes: z
+          .array(z.string())
+          .optional()
+          .describe(
+            "Restrict to specific MIME types (e.g., ['application/pdf', 'text/plain']). Use when the user says 'only PDFs' or 'just text files'.",
+          ),
+        updatedAfter: z
+          .string()
+          .optional()
+          .describe(
+            "Only include files updated after this ISO date string (e.g., '2025-01-01T00:00:00Z'). Use when the user says 'recent' or 'modified this week'.",
+          ),
+        isTrashed: z
+          .boolean()
+          .optional()
+          .describe(
+            "Whether to include trashed files (default: false, i.e., only non-trashed files).",
+          ),
       }),
     },
-    async ({ userId, query, limit }) => {
+    async ({
+      userId,
+      query,
+      limit,
+      folderId,
+      mimeTypes,
+      updatedAfter,
+      isTrashed,
+    }) => {
       try {
         const resolvedUserId = resolveUserId(userId, authContext);
 
@@ -53,10 +87,18 @@ export function registerKnowledgeTools(
           },
         });
 
+        // 过滤参数
+        const filters: Record<string, unknown> = {};
+        if (folderId) filters.folderId = folderId;
+        if (mimeTypes && mimeTypes.length > 0) filters.mimeTypes = mimeTypes;
+        if (updatedAfter) filters.updatedAfter = new Date(updatedAfter);
+        if (isTrashed !== undefined) filters.isTrashed = isTrashed;
+
         const results = await knowledgeService.semanticSearch(
           resolvedUserId,
           query,
           limit || 10,
+          Object.keys(filters).length > 0 ? (filters as any) : undefined,
         );
 
         const response: Record<string, unknown> = {
@@ -75,6 +117,15 @@ export function registerKnowledgeTools(
             relevanceScore: r.score,
           })),
         };
+
+        if (folderId || mimeTypes || updatedAfter || isTrashed !== undefined) {
+          response.appliedFilters = {
+            folderId,
+            mimeTypes,
+            updatedAfter,
+            isTrashed,
+          };
+        }
 
         if (pendingCount > 0) {
           response.notice = `${pendingCount} file(s) are still being indexed. Results may be incomplete — try again shortly for full coverage.`;

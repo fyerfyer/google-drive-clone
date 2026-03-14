@@ -165,7 +165,15 @@ export async function searchPoints(
   userId: string,
   limit: number = 10,
   scoreThreshold: number = 0.1,
+  additionalFilters?: Array<Record<string, unknown>>,
 ): Promise<SearchResult[]> {
+  const mustConditions: Record<string, unknown>[] = [
+    { key: "userId", match: { value: userId } },
+  ];
+  if (additionalFilters) {
+    mustConditions.push(...additionalFilters);
+  }
+
   const res = await qdrantFetch(
     `/collections/${COLLECTION_NAME}/points/search`,
     {
@@ -175,7 +183,7 @@ export async function searchPoints(
         limit,
         score_threshold: scoreThreshold,
         filter: {
-          must: [{ key: "userId", match: { value: userId } }],
+          must: mustConditions,
         },
         with_payload: true,
       }),

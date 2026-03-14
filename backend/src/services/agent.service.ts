@@ -197,9 +197,11 @@ export class AgentService {
       conversation.activePlan
         ? this.toPlainPlan(conversation.activePlan)
         : undefined,
+      conversation.lastCompletedPlanSummary,
     );
 
     const routerContext = this.memoryManager.getRouterContext(memoryState);
+    const planningContext = this.memoryManager.getPlanningContext(memoryState);
 
     // 当前面的 plan 已结束或首次对话时，不锁定会话类型
     const previousPlanDone =
@@ -238,6 +240,11 @@ export class AgentService {
 
     // 只在新会话或无活跃计划时触发任务分解
     if (!activePlan || activePlan.isComplete) {
+      // A2: 在创建新计划前，如果上一个计划已完成，生成并保存其产物摘要
+      if (activePlan?.isComplete) {
+        conversation.lastCompletedPlanSummary =
+          this.generateCompletedPlanSummary(activePlan);
+      }
       // 第一阶段：将空间上下文与资源注入解耦。
       // 当存在显式资源附件时，抑制“根目录”上下文的干扰。
       // 重要提示：必须在检查 folderId 之前检查 hasExplicitResources，
@@ -252,17 +259,21 @@ export class AgentService {
       if (context?.fileId) {
         contextInfo = `Environment: Document Editor. The user is currently viewing/editing a specific file.\ncurrentFileId: ${context.fileId}\nThe "document" agent should edit THIS file only. Do NOT plan steps to create new files for writing tasks.`;
       } else if (hasExplicitResourcesForPlan) {
-        contextInfo = `Environment: Resource-Focused Context. The user has explicitly attached specific files/folders as reference materials.\nThe full content/structure of these resources is already injected into the conversation as system messages.\nDo NOT call any list/browse/search tools to re-fetch this data. Operate directly on the provided materials.\nDo NOT be curious about the root folder or surrounding directory structure unless the user explicitly asks.\nIf the task result needs to be saved as a file, create it in the current folder (folderId: ${context?.folderId || "root"}).`;
+        contextInfo = `Environment: Resource-Focused Context. The user has explicitly attached specific files/folders as reference materials.\nThe full content/structure of these resources is already injected into the conversation as system messages.\nDo NOT call any list/browse/search tools to re-fetch this data. Operate directly on the provided materials.\nDo NOT be curious about the root folder or surrounding directory structure unless the user explicitly asks.\nPronouns like "this", "that", "these things", "上面的内容", or "刚才那个" should resolve to the recent conversation result first, not automatically to the attached folder/resources.\nIf the task result needs to be saved as a file, create it in the current folder (folderId: ${context?.folderId || "root"}).`;
       } else if (context?.folderId) {
         contextInfo = `Environment: Drive Browser. The user is currently browsing a specific folder in their drive.\ncurrentFolderId: ${context.folderId}\nThe "drive" agent should operate within this folder context. When the task requires gathering information from the drive and then editing a document, plan steps to first collect drive information, then navigate to and edit the target document. File operations like create, move, rename should default to this folder unless specified otherwise.`;
       } else {
         contextInfo = `Environment: Drive Browser. No specific file or folder selected. The user is at the root of their drive.`;
       }
 
-      const planNeeded = await shouldPlanTask(message, contextInfo);
+      const plannerContext = planningContext
+        ? `${contextInfo}\n\nConversation continuity hints:\n${planningContext}`
+        : contextInfo;
+
+      const planNeeded = await shouldPlanTask(message, plannerContext);
 
       if (planNeeded) {
-        const plan = await generateTaskPlan(message, contextInfo);
+        const plan = await generateTaskPlan(message, plannerContext);
         if (plan) {
           activePlan = plan;
           logger.info(
@@ -391,6 +402,7 @@ export class AgentService {
         {
           existingSummaries,
           activePlan,
+          lastCompletedPlanSummary: conversation.lastCompletedPlanSummary,
           onEvent,
           signal,
           taskId,
@@ -451,6 +463,12 @@ export class AgentService {
         }
       : undefined;
 
+    // 当计划在这一轮刚完成时，生成产物摘要
+    if (activePlan?.isComplete && !conversation.lastCompletedPlanSummary) {
+      conversation.lastCompletedPlanSummary =
+        this.generateCompletedPlanSummary(activePlan);
+    }
+
     await conversation.save();
 
     const response: AgentChatResponse = {
@@ -469,6 +487,35 @@ export class AgentService {
     }
 
     return response;
+  }
+
+  // 从已完成的 TaskPlan 生成摘要，用于后续轮次的指代解析
+  private generateCompletedPlanSummary(plan: TaskPlan): string {
+    const parts: string[] = [`Goal: ${plan.goal}`];
+
+    const completedSteps = plan.steps.filter(
+      (s) => s.status === "completed" && s.result,
+    );
+    if (completedSteps.length > 0) {
+      parts.push("Results:");
+      for (const step of completedSteps) {
+        parts.push(`- Step ${step.id} (${step.title}): ${step.result}`);
+      }
+    }
+
+    const failedSteps = plan.steps.filter((s) => s.status === "failed");
+    if (failedSteps.length > 0) {
+      parts.push("Failed:");
+      for (const step of failedSteps) {
+        parts.push(
+          `- Step ${step.id} (${step.title}): ${step.error || "unknown"}`,
+        );
+      }
+    }
+
+    // 限制总长度
+    const summary = parts.join("\n");
+    return summary.length > 800 ? summary.slice(0, 800) + "..." : summary;
   }
 
   // 不再直接执行工具 — 工具执行由 Agent 循环中的 waitForApproval 负责。

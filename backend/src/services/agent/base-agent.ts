@@ -40,6 +40,7 @@ import { needsLock, getResourceKeys, withLock } from "./resource-lock";
 export interface AgentRunOptions {
   existingSummaries?: ConversationSummary[];
   activePlan?: TaskPlan;
+  lastCompletedPlanSummary?: string;
   onEvent?: AgentEventCallback;
   // 用于 disconnect 后终止未完成的 Tool Call 等操作
   signal?: AbortSignal;
@@ -104,6 +105,7 @@ export abstract class BaseAgent {
       messages,
       options?.existingSummaries || [],
       options?.activePlan,
+      options?.lastCompletedPlanSummary,
     );
 
     const allTools = await this.mcpClient.listTools();

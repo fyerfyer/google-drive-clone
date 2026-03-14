@@ -13,7 +13,12 @@
  */
 
 import { BaseAgent } from "./base-agent";
-import { AgentContext, AgentType, DRIVE_AGENT_TOOLS } from "./agent.types";
+import {
+  AgentContext,
+  AgentType,
+  DRIVE_AGENT_TOOLS,
+  REFERENCE_RESOLUTION_GUIDE,
+} from "./agent.types";
 import { McpClientService } from "../mcp-client.service";
 import { CapabilityGateway } from "./capability-gateway";
 import { logger } from "../../lib/logger";
@@ -150,6 +155,7 @@ When a task involves multiple items:
 - User ID: ${context.userId}
 - Timestamp: ${new Date().toISOString()}
 - Current Folder ID: ${context.folderId || "root"}
-${workspaceInfo}`;
+${workspaceInfo}
+${REFERENCE_RESOLUTION_GUIDE}`;
   }
 }

@@ -7,7 +7,7 @@
  * - 任务计划集成 — 将活跃的 TaskPlan 注入上下文
  */
 
-import { IMessage } from "../../models/Conversation.model";
+import { IMessage, IToolCall } from "../../models/Conversation.model";
 import { config } from "../../config/env";
 import { logger } from "../../lib/logger";
 import {
@@ -23,16 +23,71 @@ import {
 
 const SUMMARY_PROMPT = `You are a conversation summarizer. Given a series of messages from a chat between a user and an AI assistant for a cloud drive platform, create a concise summary that captures:
 1. Key user intents and requests
-2. Important actions taken (files created, moved, edited, etc.)
+2. Important actions taken and their RESULTS — especially resource IDs, file names, folder names, share links, and any created/modified/moved resources
 3. Any decisions made or preferences expressed
 4. Current context (what file/folder the user is working with)
+5. Unresolved requests, blocked actions, or items awaiting user confirmation
 
 Rules:
 - Be concise but preserve critical details
-- Include specific file/folder names, IDs, or paths that were discussed
+- ALWAYS include specific resource identifiers (file IDs, folder IDs, share links) from tool results
+- For create/move/rename/share operations, preserve both the resource name AND its ID
 - Preserve any unresolved requests or pending actions
 - Output the summary in the same language as the conversation
 - Maximum 300 words`;
+
+// 从单个工具调用结果中提取关键资源信息
+function summarizeOneToolCall(tc: IToolCall): string {
+  if (!tc.result || tc.isError) {
+    return tc.isError
+      ? `FAILED: ${(tc.result || "unknown error").slice(0, 100)}`
+      : "";
+  }
+
+  // 尝试解析 JSON 结果
+  let parsed: Record<string, unknown> | null = null;
+  try {
+    parsed = JSON.parse(tc.result);
+  } catch {
+    // 非 JSON 结果，取前 120 字符
+    return tc.result.slice(0, 120);
+  }
+
+  if (!parsed || typeof parsed !== "object") return tc.result.slice(0, 120);
+
+  // 提取常见的资源标识字段
+  const parts: string[] = [];
+
+  const id = parsed.id || parsed.fileId || parsed.folderId || parsed._id;
+  const name = parsed.name || parsed.fileName || parsed.folderName;
+  const link =
+    parsed.link || parsed.shareLink || parsed.downloadUrl || parsed.url;
+  const targetFolder = parsed.targetFolderId || parsed.destinationFolderId;
+
+  if (name) parts.push(`"${String(name)}"`);
+  if (id) parts.push(`(id: ${String(id)})`);
+  if (targetFolder) parts.push(`→ folder ${String(targetFolder)}`);
+  if (link) parts.push(`link: ${String(link)}`);
+
+  // 对搜索结果，提取 resultCount
+  const resultCount = parsed.resultCount ?? parsed.count ?? parsed.total;
+  if (resultCount !== undefined) parts.push(`${resultCount} results`);
+
+  return parts.length > 0 ? parts.join(" ") : tc.result.slice(0, 120);
+}
+
+// 为 assistant 消息生成紧凑的工具结果摘要块
+function summarizeToolCalls(toolCalls: IToolCall[]): string {
+  if (!toolCalls || toolCalls.length === 0) return "";
+
+  const lines = toolCalls.map((tc) => {
+    const summary = summarizeOneToolCall(tc);
+    const status = tc.isError ? "❌" : "✅";
+    return `${status} ${tc.toolName}: ${summary}`;
+  });
+
+  return `\n[Recent Actions]\n${lines.join("\n")}`;
+}
 
 async function generateSummary(messages: IMessage[]): Promise<string | null> {
   const apiKey = config.llmApiKey;
@@ -45,7 +100,13 @@ async function generateSummary(messages: IMessage[]): Promise<string | null> {
     .map((m) => {
       let text = `[${m.role}]: ${m.content}`;
       if (m.toolCalls?.length) {
-        text += `\n  (Tools used: ${m.toolCalls.map((t) => t.toolName).join(", ")})`;
+        const toolSummaries = m.toolCalls.map((tc) => {
+          const brief = summarizeOneToolCall(tc);
+          return brief
+            ? `  - ${tc.toolName}: ${brief}`
+            : `  - ${tc.toolName}${tc.isError ? " (failed)" : ""}`;
+        });
+        text += `\n  [Tool Results]\n${toolSummaries.join("\n")}`;
       }
       return text;
     })
@@ -98,6 +159,7 @@ export class MemoryManager {
     messages: IMessage[],
     existingSummaries: ConversationSummary[] = [],
     activePlan?: TaskPlan,
+    lastCompletedPlanSummary?: string,
   ): Promise<MemoryState> {
     const totalCount = messages.length;
 
@@ -106,6 +168,7 @@ export class MemoryManager {
         summaries: existingSummaries,
         recentMessages: messages,
         activePlan,
+        lastCompletedPlanSummary,
         totalMessageCount: totalCount,
       };
     }
@@ -149,6 +212,7 @@ export class MemoryManager {
       summaries: newSummaries,
       recentMessages,
       activePlan,
+      lastCompletedPlanSummary,
       totalMessageCount: totalCount,
     };
   }
@@ -181,6 +245,14 @@ export class MemoryManager {
       });
     }
 
+    // 注入最近完成计划摘要（让 LLM 知道上一轮任务产出了什么）
+    if (memoryState.lastCompletedPlanSummary) {
+      messages.push({
+        role: "system",
+        content: `## Last Completed Task\n${memoryState.lastCompletedPlanSummary}\n\nUse the resource IDs above when the user refers to "this file", "that folder", or similar references from the previous task.`,
+      });
+    }
+
     // 注入任务计划
     if (memoryState.activePlan && !memoryState.activePlan.isComplete) {
       const planBlock = this.formatTaskPlan(memoryState.activePlan);
@@ -190,15 +262,18 @@ export class MemoryManager {
       });
     }
 
-    // 注入滑动窗口消息
+    // 注入滑动窗口消息（含工具结果摘要）
     for (const msg of memoryState.recentMessages) {
       if (msg.role === "user") {
         messages.push({ role: "user", content: msg.content });
       } else if (msg.role === "assistant") {
-        messages.push({ role: "assistant", content: msg.content });
+        // A1: 将工具调用结果摘要附加到 assistant 消息中
+        let content = msg.content;
+        if (msg.toolCalls && msg.toolCalls.length > 0) {
+          content += summarizeToolCalls(msg.toolCalls);
+        }
+        messages.push({ role: "assistant", content });
       } else if (msg.role === "system") {
-        // 注入的 system 消息（比如 Attached resource）
-        // TODO：需要引入更严谨的逻辑吗？
         messages.push({ role: "system", content: msg.content });
       }
     }
@@ -229,6 +304,44 @@ export class MemoryManager {
     }
 
     return parts.length > 0 ? parts.join("\n") : undefined;
+  }
+
+  getPlanningContext(memoryState: MemoryState): string | undefined {
+    const parts: string[] = [];
+
+    if (memoryState.lastCompletedPlanSummary) {
+      parts.push(
+        `Last completed task:\n${memoryState.lastCompletedPlanSummary.slice(0, 600)}`,
+      );
+    }
+
+    const recentAssistantMsg = [...memoryState.recentMessages]
+      .reverse()
+      .find((m) => m.role === "assistant");
+    if (recentAssistantMsg?.content) {
+      parts.push(
+        `Most recent assistant output: ${recentAssistantMsg.content.slice(0, 400)}`,
+      );
+    }
+
+    const recentUserMsgs = memoryState.recentMessages
+      .filter((m) => m.role === "user")
+      .slice(-3)
+      .map((m) => m.content.slice(0, 150));
+
+    if (recentUserMsgs.length > 0) {
+      parts.push(`Recent user messages: ${recentUserMsgs.join(" | ")}`);
+    }
+
+    if (memoryState.summaries.length > 0) {
+      const lastSummary =
+        memoryState.summaries[memoryState.summaries.length - 1];
+      parts.push(
+        `Earlier conversation summary: ${lastSummary.summary.slice(0, 300)}`,
+      );
+    }
+
+    return parts.length > 0 ? parts.join("\n\n") : undefined;
   }
 
   private formatTaskPlan(plan: TaskPlan): string {

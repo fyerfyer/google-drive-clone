@@ -72,8 +72,14 @@ fileChunkSchema.index({ file: 1, chunkIndex: 1 });
 // 用户维度查询
 fileChunkSchema.index({ user: 1, isIndexed: 1 });
 
-// 关键词搜索（content全文索引）
-fileChunkSchema.index({ content: "text" });
+// 关键词搜索
+fileChunkSchema.index(
+  { content: "text", "metadata.fileName": "text" },
+  {
+    weights: { content: 1, "metadata.fileName": 3 },
+    name: "content_filename_text",
+  },
+);
 
 const FileChunk = mongoose.model<IFileChunk>("FileChunk", fileChunkSchema);
 export default FileChunk;

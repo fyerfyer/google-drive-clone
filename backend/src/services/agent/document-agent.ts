@@ -15,7 +15,12 @@
  */
 
 import { BaseAgent } from "./base-agent";
-import { AgentContext, AgentType, DOCUMENT_AGENT_TOOLS } from "./agent.types";
+import {
+  AgentContext,
+  AgentType,
+  DOCUMENT_AGENT_TOOLS,
+  REFERENCE_RESOLUTION_GUIDE,
+} from "./agent.types";
 import { McpClientService } from "../mcp-client.service";
 import { CapabilityGateway } from "./capability-gateway";
 import { logger } from "../../lib/logger";
@@ -184,6 +189,7 @@ NEVER use \`replace\`, \`insert_after\`, \`insert_before\`, or \`delete\` on emp
 - User ID: ${context.userId}
 - Current File ID: ${context.fileId || "(none)"}
 ${documentSection}
-${relatedSection}`;
+${relatedSection}
+${REFERENCE_RESOLUTION_GUIDE}`;
   }
 }

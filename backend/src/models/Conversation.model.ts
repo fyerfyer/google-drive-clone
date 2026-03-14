@@ -53,6 +53,7 @@ export interface IConversation extends Document {
   messages: IMessage[];
   summaries: IConversationSummary[];
   activePlan?: ITaskPlan;
+  lastCompletedPlanSummary?: string;
   routeDecision?: {
     confidence: number;
     source: string;
@@ -155,6 +156,7 @@ const conversationSchema = new Schema<IConversation>(
     messages: { type: [messageSchema], default: [] },
     summaries: { type: [conversationSummarySchema], default: [] },
     activePlan: { type: taskPlanSchema, default: undefined },
+    lastCompletedPlanSummary: { type: String, default: undefined },
     routeDecision: {
       type: new Schema(
         {

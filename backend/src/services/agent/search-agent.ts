@@ -13,7 +13,12 @@
  */
 
 import { BaseAgent } from "./base-agent";
-import { AgentContext, AgentType, SEARCH_AGENT_TOOLS } from "./agent.types";
+import {
+  AgentContext,
+  AgentType,
+  SEARCH_AGENT_TOOLS,
+  REFERENCE_RESOLUTION_GUIDE,
+} from "./agent.types";
 import { McpClientService } from "../mcp-client.service";
 import { CapabilityGateway } from "./capability-gateway";
 import { logger } from "../../lib/logger";
@@ -156,6 +161,7 @@ You have access to tools for:
 - Timestamp: ${new Date().toISOString()}
 - Current Folder: ${context.folderPath || "/ (root)"}
 ${resourceDirective}
-${indexSection}`;
+${indexSection}
+${REFERENCE_RESOLUTION_GUIDE}`;
   }
 }

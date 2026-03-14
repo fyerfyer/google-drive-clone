@@ -77,6 +77,11 @@ IMPORTANT CONTEXT: The user may be in one of two environments:
 - **Document Editor**: Currently viewing/editing a specific file. Context will include "currentFileId".
 - **Drive Browser**: Browsing files/folders. No currentFileId.
 
+Reference resolution rules:
+- If the user says "this", "that", "these", "上面的内容", "这些东西", or similar follow-up wording, resolve it against the recent conversation and most recent assistant result first.
+- Attached resources or the current folder are fallback context, not the default meaning of ambiguous follow-up references.
+- Do NOT reinterpret a follow-up writing request as "summarize the attached folder" unless the user explicitly mentions the folder/resources.
+
 A request NEEDS task planning (multi-step) when:
 - It implicitly requires operations across different domains. Examples:
   * "write a summary of file X" → needs: search(both semantic and keyword)/find file → read content → write summary (3 domains)
@@ -203,6 +208,11 @@ const PLANNER_PROMPT = `You are a task planner for a cloud drive AI assistant. G
    - "document" for editing the CURRENT open document only (patch operations)
 4. Keep step titles short (under 50 chars)
 5. Respond ONLY with valid JSON
+
+## Reference Resolution Rules
+- Resolve follow-up references like "this", "that", "these things", "上面的内容", "这些东西", or "刚才那个" against recent conversation results first.
+- Attached files/folders are source materials, not the default target of ambiguous pronouns.
+- Only generate a folder summarization step when the user explicitly asks about a folder, directory, or attached resources themselves.
 
 ## CRITICAL TOOL KNOWLEDGE — Batch Tools (Most Important!)
 The system has powerful batch tools that process multiple items in a SINGLE call. **ALWAYS prefer batch tools over generating separate steps for each file.**

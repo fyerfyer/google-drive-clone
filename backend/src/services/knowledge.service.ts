@@ -55,6 +55,14 @@ export interface SemanticSearchResult {
   score: number; // 余弦相似度 (0~1)
 }
 
+// B2: 语义搜索的结构化过滤参数
+export interface SemanticSearchFilters {
+  folderId?: string;
+  mimeTypes?: string[];
+  updatedAfter?: Date;
+  isTrashed?: boolean;
+}
+
 export interface IndexingStatus {
   totalFiles: number;
   indexedFiles: number;
@@ -391,7 +399,21 @@ export class KnowledgeService {
     userId: string,
     query: string,
     limit: number = 10,
+    filters?: SemanticSearchFilters,
   ): Promise<SemanticSearchResult[]> {
+    // 在 MongoDB 层面过滤，得到候选 fileIds
+    let candidateFileIds: string[] | undefined;
+    if (filters && this.hasActiveFilters(filters)) {
+      candidateFileIds = await this.preFilterFileIds(userId, filters);
+      if (candidateFileIds.length === 0) {
+        logger.info(
+          { userId, filters },
+          "Pre-filter returned 0 candidates, skipping search",
+        );
+        return [];
+      }
+    }
+
     // 1. 生成查询向量
     let queryEmbedding: number[];
     try {
@@ -402,19 +424,34 @@ export class KnowledgeService {
         { err: error },
         "Embedding generation failed, falling back to keyword search",
       );
-      return this.keywordSearch(userId, query, limit);
+      return this.keywordSearch(userId, query, limit, candidateFileIds);
     }
 
-    // 2. Qdrant 向量搜索
+    // 构建 Qdrant 过滤条件
+    const qdrantFilters: Array<Record<string, unknown>> = [];
+    if (candidateFileIds) {
+      // 使用 Qdrant 的 fileId payload 过滤能力
+      qdrantFilters.push({
+        key: "fileId",
+        match: { any: candidateFileIds },
+      });
+    }
+
     let searchResults;
     try {
-      searchResults = await searchPoints(queryEmbedding, userId, limit, 0.1);
+      searchResults = await searchPoints(
+        queryEmbedding,
+        userId,
+        limit,
+        0.1,
+        qdrantFilters.length > 0 ? qdrantFilters : undefined,
+      );
     } catch (error) {
       logger.warn(
         { err: error },
         "Qdrant search failed, falling back to keyword search",
       );
-      return this.keywordSearch(userId, query, limit);
+      return this.keywordSearch(userId, query, limit, candidateFileIds);
     }
 
     if (searchResults.length === 0) {
@@ -422,27 +459,24 @@ export class KnowledgeService {
         { userId },
         "No Qdrant results, falling back to keyword search",
       );
-      return this.keywordSearch(userId, query, limit);
+      return this.keywordSearch(userId, query, limit, candidateFileIds);
     }
 
-    // 3. 从 MongoDB 获取对应的 chunk 文本内容
-    // Qdrant point ID 是 UUID，通过 payload.mongoChunkId 反查 MongoDB
     const chunkIds = searchResults.map(
       (r) => (r.payload.mongoChunkId as string) || uuidToMongoId(r.id),
     );
+
     const chunks = await FileChunk.find({ _id: { $in: chunkIds } }).lean();
     const chunkMap = new Map(
       chunks.map((c) => [(c._id as mongoose.Types.ObjectId).toString(), c]),
     );
 
-    // 4. 获取对应的文件信息
     const fileIds = [
       ...new Set(searchResults.map((r) => r.payload.fileId as string)),
     ];
     const files = await File.find({ _id: { $in: fileIds } }).lean();
     const fileMap = new Map(files.map((f) => [f._id.toString(), f]));
 
-    // 5. 组装结果
     return searchResults
       .map((r) => {
         const mongoId =
@@ -471,15 +505,61 @@ export class KnowledgeService {
       .filter((r): r is SemanticSearchResult => r !== null);
   }
 
+  private hasActiveFilters(filters: SemanticSearchFilters): boolean {
+    return !!(
+      filters.folderId ||
+      (filters.mimeTypes && filters.mimeTypes.length > 0) ||
+      filters.updatedAfter ||
+      filters.isTrashed !== undefined
+    );
+  }
+
+  private async preFilterFileIds(
+    userId: string,
+    filters: SemanticSearchFilters,
+  ): Promise<string[]> {
+    const query: Record<string, unknown> = {
+      user: userId,
+      isTrashed: filters.isTrashed ?? false,
+    };
+
+    if (filters.folderId) {
+      // 支持直接在某个文件夹下搜索（或其子文件夹 — 使用 ancestors）
+      query.$or = [
+        { folder: filters.folderId },
+        { ancestors: filters.folderId },
+      ];
+    }
+
+    if (filters.mimeTypes && filters.mimeTypes.length > 0) {
+      query.mimeType = { $in: filters.mimeTypes };
+    }
+
+    if (filters.updatedAfter) {
+      query.updatedAt = { $gte: filters.updatedAfter };
+    }
+
+    const files = await File.find(query).select("_id").lean();
+    return files.map((f) => f._id.toString());
+  }
+
   private async keywordSearch(
     userId: string,
     query: string,
     limit: number,
+    candidateFileIds?: string[],
   ): Promise<SemanticSearchResult[]> {
+    const baseFilter: Record<string, unknown> = { user: userId };
+    if (candidateFileIds) {
+      baseFilter.file = {
+        $in: candidateFileIds.map((id) => new mongoose.Types.ObjectId(id)),
+      };
+    }
+
     let chunks: any[];
     try {
       chunks = await FileChunk.find(
-        { user: userId, $text: { $search: query } },
+        { ...baseFilter, $text: { $search: query } },
         { score: { $meta: "textScore" } },
       )
         .sort({ score: { $meta: "textScore" } })
@@ -493,7 +573,10 @@ export class KnowledgeService {
         .map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
       if (words.length === 0) return [];
       const regex = new RegExp(words.join("|"), "i");
-      chunks = await FileChunk.find({ user: userId, content: regex })
+      chunks = await FileChunk.find({
+        ...baseFilter,
+        $or: [{ content: regex }, { "metadata.fileName": regex }],
+      })
         .limit(limit)
         .lean();
     }

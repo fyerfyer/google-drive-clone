@@ -151,6 +151,8 @@ export interface MemoryState {
   recentMessages: IMessage[];
   //  当前活跃的任务计划
   activePlan?: TaskPlan;
+  // 最近完成的计划摘要（用于 follow-up 指代解析）
+  lastCompletedPlanSummary?: string;
   // 总消息数
   totalMessageCount: number;
 }
@@ -375,6 +377,21 @@ export const TASK_COMPLEXITY_THRESHOLD = 2;
 
 // 工具调用失败后的最大重试次数
 export const MAX_TOOL_RETRIES = 2;
+
+// 指代解析指引
+// 注入到所有 Agent 的 System Prompt 中
+export const REFERENCE_RESOLUTION_GUIDE = `
+## Reference Resolution (IMPORTANT)
+When the user says "this file", "that folder", "the document just created", "that summary", or similar references:
+1. First check: Is there an explicit fileId or folderId in the current context?
+2. Then check: Did a recent tool call in [Recent Actions] produce the resource? Use its ID directly.
+3. Then check: Does the [Last Completed Task] section mention the resource?
+4. Then check: Is there a unique resource mentioned in the last few messages?
+5. Only if NONE of the above resolves the reference, ask the user to clarify.
+
+Do NOT ask "which file do you mean?" if the answer is clearly available in the conversation context.
+Do NOT require an exact filename if the user is obviously referring to a recently created/edited/found resource.
+`;
 
 // Agent 事件类型（用于 SSE 流式传输）
 export const AGENT_EVENT_TYPE = {
