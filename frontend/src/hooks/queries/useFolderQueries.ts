@@ -1,18 +1,56 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useInfiniteQuery } from "@tanstack/react-query";
+import { useMemo } from "react";
 import { folderService } from "@/services/folder.service";
 import { fileService } from "@/services/file.service";
 import { queryKeys, getSpecialViewQueryKey } from "@/lib/queryClient";
 import type { ViewType } from "@/types/common.types";
-import type { Folder, BreadcrumbItem } from "@/types/folder.types";
+import type {
+  Folder,
+  BreadcrumbItem,
+  FolderContentResponse,
+} from "@/types/folder.types";
 import type { IFile } from "@/types/file.types";
 
-// Hook to fetch folder content (current folder info, subfolders, files, breadcrumbs)
+// Hook to fetch folder content with cursor-based pagination
+// Returns a flattened data shape compatible with existing consumers
 export const useFolderContent = (folderId: string) => {
-  return useQuery({
+  const infiniteQuery = useInfiniteQuery<FolderContentResponse, Error>({
     queryKey: queryKeys.folders.content(folderId),
-    queryFn: () => folderService.getFolderContent(folderId),
+    queryFn: ({ pageParam }) =>
+      folderService.getFolderContent(folderId, {
+        limit: 50,
+        cursor: pageParam as string | undefined,
+      }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) =>
+      lastPage.hasMore ? (lastPage.nextCursor ?? undefined) : undefined,
     enabled: !!folderId,
   });
+
+  // Flatten pages into single data object for backward compatibility
+  const data = useMemo((): FolderContentResponse | undefined => {
+    if (!infiniteQuery.data?.pages?.length) return undefined;
+    const pages = infiniteQuery.data.pages;
+    const lastPage = pages[pages.length - 1];
+    return {
+      currentFolder: pages[0].currentFolder,
+      breadcrumbs: pages[0].breadcrumbs ?? [],
+      folders: pages.flatMap((p) => p.folders),
+      files: pages.flatMap((p) => p.files),
+      hasMore: lastPage?.hasMore ?? false,
+      nextCursor: lastPage?.nextCursor,
+    };
+  }, [infiniteQuery.data?.pages]);
+
+  return {
+    data,
+    isLoading: infiniteQuery.isLoading,
+    error: infiniteQuery.error,
+    // Pagination helpers
+    hasNextPage: infiniteQuery.hasNextPage ?? false,
+    fetchNextPage: infiniteQuery.fetchNextPage,
+    isFetchingNextPage: infiniteQuery.isFetchingNextPage ?? false,
+  };
 };
 
 // Hook to fetch folder breadcrumbs/path

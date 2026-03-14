@@ -9,18 +9,11 @@ const USER_API_BASE = "/api/users";
 
 export const userService = {
   getCurrentUser: async (): Promise<User> => {
-    try {
-      const response = await api.get<UserResponse>(`${USER_API_BASE}/profile`);
-      if (response.success && response.data) {
-        return response.data.user;
-      }
-
-      throw new Error(response.message || "Failed to get user profile");
-    } catch (error) {
-      throw new Error(
-        error instanceof Error ? error.message : "Failed to get user profile",
-      );
+    const response = await api.get<UserResponse>(`${USER_API_BASE}/profile`);
+    if (response.success && response.data) {
+      return response.data.user;
     }
+    throw new Error(response.message || "Failed to get user profile");
   },
 
   searchUsers: async (email: string): Promise<User[]> => {

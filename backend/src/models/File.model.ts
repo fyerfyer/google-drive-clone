@@ -66,7 +66,6 @@ const fileSchema = new Schema<IFile>(
       type: Schema.Types.ObjectId,
       ref: "User",
       required: true,
-      index: true,
     },
 
     folder: {
@@ -74,20 +73,18 @@ const fileSchema = new Schema<IFile>(
       ref: "Folder",
       required: false,
       default: null,
-      index: true,
     },
 
     ancestors: [{ type: Schema.Types.ObjectId, ref: "Folder" }],
 
-    isStarred: { type: Boolean, required: true, index: true },
-    isTrashed: { type: Boolean, required: true, index: true },
+    isStarred: { type: Boolean, required: true },
+    isTrashed: { type: Boolean, required: true },
     trashedAt: { type: Date, default: null },
 
     embeddingStatus: {
       type: String,
       enum: Object.values(EMBEDDING_STATUS),
       default: EMBEDDING_STATUS.NONE,
-      index: true,
     },
     embeddingError: { type: String, default: null },
     processedChunks: { type: Number, default: 0 },
@@ -124,32 +121,32 @@ const fileSchema = new Schema<IFile>(
   },
 );
 
-// 唯一性约束
+// 同目录下不能有同名未删除文件
 fileSchema.index(
   { user: 1, folder: 1, name: 1 },
   { unique: true, partialFilterExpression: { isTrashed: false } },
 );
 
-// 搜索优化
+// 目录列表页：按用户 + 目录 + 未删除 + 创建时间倒序
 fileSchema.index({ user: 1, folder: 1, isTrashed: 1, createdAt: -1 });
 
-// 搜索子树（基于祖先）
+// 最近文件页：按用户 + 未删除 + 更新时间倒序
+fileSchema.index({ user: 1, isTrashed: 1, updatedAt: -1 });
+
+// 回收站页：按用户 + 已删除 + 删除时间倒序
+fileSchema.index({ user: 1, isTrashed: 1, trashedAt: -1 });
+
+// 星标文件页：按用户 + 星标 + 未删除 + 更新时间倒序
+fileSchema.index({ user: 1, isStarred: 1, isTrashed: 1, updatedAt: -1 });
+
+// 子树查询（基于祖先路径）
 fileSchema.index({ ancestors: 1 });
 
-// 类型筛选
-fileSchema.index({ user: 1, mimeType: 1 });
-
-// 快传索引
-fileSchema.index({ hash: 1 });
-
-// 加速查询用户已加星文件
-fileSchema.index({ user: 1, isStarred: 1, isTrashed: 1 });
-
-// 秒传：同一用户同一 hash
+// 秒传去重：同一用户同一 hash
 fileSchema.index({ user: 1, hash: 1 }, { sparse: true });
 
-// 加速回收站查询
-fileSchema.index({ user: 1, isTrashed: 1, trashedAt: -1 });
+// Embedding 状态筛选
+fileSchema.index({ user: 1, embeddingStatus: 1 });
 
 // 删除钩子，文件被彻底删除时清理权限表
 fileSchema.post("findOneAndDelete", async function (doc: IFile) {

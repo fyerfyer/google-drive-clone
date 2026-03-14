@@ -34,11 +34,15 @@ export const folderService = {
 
   getFolderContent: async (
     folderId: string,
+    options?: { limit?: number; cursor?: string },
   ): Promise<FolderContentResponse> => {
     try {
-      const response = await api.get<FolderContentResponse>(
-        `${FOLDER_API_BASE}/${folderId}/content`,
-      );
+      const params = new URLSearchParams();
+      if (options?.limit) params.set("limit", String(options.limit));
+      if (options?.cursor) params.set("cursor", options.cursor);
+      const qs = params.toString();
+      const url = `${FOLDER_API_BASE}/${folderId}/content${qs ? `?${qs}` : ""}`;
+      const response = await api.get<FolderContentResponse>(url);
       if (response.success && response.data) {
         return {
           ...response.data,

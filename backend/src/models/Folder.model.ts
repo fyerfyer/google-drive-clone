@@ -40,14 +40,12 @@ const folderSchema = new Schema<IFolder>(
       type: Schema.Types.ObjectId,
       ref: "User",
       required: true,
-      index: true, // 用户经常要查询，建索引可以快一些
     },
 
     parent: {
       type: Schema.Types.ObjectId,
       ref: "Folder",
       default: null,
-      index: true, // 父文件夹下面的内容也经常要查
     },
 
     ancestors: [{ type: Schema.Types.ObjectId, ref: "Folder" }],
@@ -59,13 +57,11 @@ const folderSchema = new Schema<IFolder>(
     isStarred: {
       type: Boolean,
       default: false,
-      index: true, // 要查询加星的文件
     },
 
     isTrashed: {
       type: Boolean,
       default: false,
-      index: true,
     },
 
     trashedAt: { type: Date, default: null },
@@ -101,23 +97,26 @@ const folderSchema = new Schema<IFolder>(
   },
 );
 
-// 唯一性约束，注意回收站不满足
+// 唯一性约束：同目录下不能有同名未删除文件夹
 folderSchema.index(
   { user: 1, parent: 1, name: 1 },
   { unique: true, partialFilterExpression: { isTrashed: false } },
 );
 
-// 查询优化：子文件夹
-folderSchema.index({ user: 1, parent: 1, isTrashed: 1 });
+// 目录列表页：按用户 + 父目录 + 未删除 + 创建时间倒序
+folderSchema.index({ user: 1, parent: 1, isTrashed: 1, createdAt: -1 });
 
-// 查询优化：搜索子树
-folderSchema.index({ ancestors: 1 });
+// 最近文件夹页：按用户 + 未删除 + 更新时间倒序
+folderSchema.index({ user: 1, isTrashed: 1, updatedAt: -1 });
 
-// 加速查询用户已加星文件夹
-folderSchema.index({ user: 1, isStarred: 1, isTrashed: 1 });
-
-// 加速回收站查询
+// 回收站页：按用户 + 已删除 + 删除时间倒序
 folderSchema.index({ user: 1, isTrashed: 1, trashedAt: -1 });
+
+// 星标文件夹页：按用户 + 星标 + 未删除 + 更新时间倒序
+folderSchema.index({ user: 1, isStarred: 1, isTrashed: 1, updatedAt: -1 });
+
+// 子树查询（基于祖先路径）
+folderSchema.index({ ancestors: 1 });
 
 folderSchema.post("findOneAndDelete", async function (doc: IFolder) {
   if (doc) {

@@ -54,18 +54,28 @@ export const useAuthStore = create<AuthStore>()(
               "auth/init-success",
             );
           } catch (error) {
-            authService.logout();
-            set(
-              {
-                user: null,
-                token: null,
-                isAuthenticated: false,
-                isLoading: false,
-                error: `Session expired: ${error}`,
-              },
-              false,
-              "auth/init-failure",
-            );
+            // Only treat 401/403 as a real auth failure (expired/revoked session).
+            // Network errors and 5xx server errors must NOT clear the session.
+            const status = (error as { status?: number })?.status;
+            const isAuthFailure = status === 401 || status === 403;
+
+            if (isAuthFailure) {
+              authService.logout();
+              set(
+                {
+                  user: null,
+                  token: null,
+                  isAuthenticated: false,
+                  isLoading: false,
+                  error: `Session expired: ${error instanceof Error ? error.message : "Please log in again"}`,
+                },
+                false,
+                "auth/init-failure",
+              );
+            } else {
+              // Server/network error on startup — keep the token and let the user retry.
+              set({ isLoading: false }, false, "auth/init-network-error");
+            }
           }
         } else {
           set({ isLoading: false }, false, "auth/init-no-token");

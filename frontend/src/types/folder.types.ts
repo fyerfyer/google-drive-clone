@@ -49,6 +49,8 @@ export interface FolderContentResponse {
   breadcrumbs: BreadcrumbItem[];
   folders: Folder[];
   files: IFile[];
+  nextCursor?: string | null;
+  hasMore: boolean;
 }
 
 export interface FolderCreateResponse {

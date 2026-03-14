@@ -70,6 +70,25 @@ export const useFolder = () => {
     ? (folderContentQuery.error?.message ?? null)
     : (specialViewQuery.error?.message ?? null);
 
+  // Pagination helpers
+  const hasMore = isNormalFolderView
+    ? (folderContentQuery.hasNextPage ?? false)
+    : false;
+
+  const loadMore = () => {
+    if (
+      isNormalFolderView &&
+      folderContentQuery.hasNextPage &&
+      !folderContentQuery.isFetchingNextPage
+    ) {
+      folderContentQuery.fetchNextPage();
+    }
+  };
+
+  const isFetchingMore = isNormalFolderView
+    ? (folderContentQuery.isFetchingNextPage ?? false)
+    : false;
+
   // Legacy API compatibility methods
   const loadFolderContent = (folderId: string) => {
     setCurrentFolderId(folderId);
@@ -102,6 +121,11 @@ export const useFolder = () => {
     filePaths,
     isLoading,
     error,
+
+    // Pagination
+    hasMore,
+    loadMore,
+    isFetchingMore,
 
     // UI State
     viewType,

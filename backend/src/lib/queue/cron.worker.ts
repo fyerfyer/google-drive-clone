@@ -19,23 +19,41 @@ export const maintainanceWorker = new Worker(
       const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 
       try {
+        // 只查顶层过期的文件（不在已被删除文件夹内的独立文件）
         const expiredFiles = await File.find({
           isTrashed: true,
           trashedAt: { $lte: thirtyDaysAgo },
-        }).select("_id user");
+        }).select("_id user folder");
 
+        // 只查顶层过期的文件夹（父文件夹未被删除或本身就在root的）
+        // batchDeletePermanent 会自动处理子文件夹和子文件
         const expiredFolders = await Folder.find({
           isTrashed: true,
           trashedAt: { $lte: thirtyDaysAgo },
-        }).select("_id user");
+        }).select("_id user parent");
 
         if (expiredFiles.length === 0 && expiredFolders.length === 0) {
           logger.info("No expired files or folders to delete from trash.");
           return;
         }
 
+        // 收集所有过期文件夹 ID，用来过滤子文件
+        const expiredFolderIds = new Set(
+          expiredFolders.map((f) => f._id.toString()),
+        );
+
+        // 过滤出顶层文件夹：父文件夹不在过期列表中的
+        const topLevelFolders = expiredFolders.filter(
+          (f) => !f.parent || !expiredFolderIds.has(f.parent.toString()),
+        );
+
+        // 过滤出独立过期文件：不属于任何过期文件夹的文件
+        const topLevelFiles = expiredFiles.filter(
+          (f) => !f.folder || !expiredFolderIds.has(f.folder.toString()),
+        );
+
         logger.info(
-          `Found ${expiredFiles.length} files and ${expiredFolders.length} folders to permanently delete from trash.`,
+          `Found ${topLevelFiles.length} top-level files and ${topLevelFolders.length} top-level folders to permanently delete from trash.`,
         );
 
         const tasksByUser = new Map<string, BatchItemRequest[]>();
@@ -46,14 +64,14 @@ export const maintainanceWorker = new Worker(
           tasksByUser.get(userId)!.push(item);
         };
 
-        expiredFiles.forEach((file) => {
+        topLevelFiles.forEach((file) => {
           addItem(file.user.toString(), {
             type: "file",
             id: file._id.toString(),
           });
         });
 
-        expiredFolders.forEach((folder) => {
+        topLevelFolders.forEach((folder) => {
           addItem(folder.user.toString(), {
             type: "folder",
             id: folder._id.toString(),

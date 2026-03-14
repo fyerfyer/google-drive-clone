@@ -74,6 +74,8 @@ export interface IFolderContent {
   breadcrumbs: IBreadcrumbItem[];
   folders: IFolderPublic[];
   files: IFilePublic[];
+  nextCursor?: string | null;
+  hasMore: boolean;
 }
 
 export class FolderService {
@@ -578,8 +580,10 @@ export class FolderService {
   async getFolderContent(
     folderId: string,
     userId: string,
+    options?: { limit?: number; cursor?: string },
   ): Promise<IFolderContent> {
     const userObjectId = new mongoose.Types.ObjectId(userId);
+    const pageSize = Math.min(options?.limit || 50, 200);
 
     // 前端定义了 root folder id
     const isRoot = folderId === "root";
@@ -599,27 +603,187 @@ export class FolderService {
       }
     }
 
-    const [folders, files, user] = await Promise.all([
-      Folder.find({
+    // 解析游标：格式 "folders:<createdAt>:<id>"，"files:<createdAt>:<id>"
+    let cursorPhase: "folders" | "files" = "folders";
+    let cursorDate: Date | null = null;
+    let cursorId: mongoose.Types.ObjectId | null = null;
+
+    if (options?.cursor) {
+      const parts = options.cursor.split(":");
+      if (parts.length === 3) {
+        cursorPhase = parts[0] as "folders" | "files";
+        cursorDate = new Date(parts[1]);
+        cursorId = new mongoose.Types.ObjectId(parts[2]);
+      }
+    }
+
+    let foldersPublic: IFolderPublic[] = [];
+    let filesPublic: IFilePublic[] = [];
+    let remaining = pageSize;
+    let nextCursor: string | null = null;
+    let hasMore = false;
+
+    const user = await User.findById(userObjectId);
+    const userBasic: IUserBasic = {
+      id: userId,
+      name: user?.name || "Unknown",
+      email: user?.email || "",
+      avatar: {
+        thumbnail: user?.avatar?.thumbnail || "",
+      },
+    };
+
+    if (cursorPhase === "folders") {
+      const folderQuery: Record<string, any> = {
         parent: folderObjectId,
         user: userObjectId,
         isTrashed: false,
-      }).sort({ createdAt: -1 }),
+      };
 
-      File.find({
+      if (cursorDate && cursorId) {
+        folderQuery.$or = [
+          { createdAt: { $lt: cursorDate } },
+          { createdAt: cursorDate, _id: { $lt: cursorId } },
+        ];
+      }
+
+      const folders = await Folder.find(folderQuery)
+        .sort({ createdAt: -1, _id: -1 })
+        .limit(remaining + 1);
+
+      if (folders.length > remaining) {
+        // 还有更多文件夹
+        folders.pop();
+        const last = folders[folders.length - 1];
+        nextCursor = `folders:${last.createdAt.toISOString()}:${last._id}`;
+        hasMore = true;
+      }
+
+      // 构建分享信息
+      const folderResourceIds = folders.map((f) => f._id);
+      const folderSharedMap =
+        await this.buildSharedAccessMap(folderResourceIds);
+      const folderOverrides = await buildShortcutFolderOverrides(folders);
+
+      foldersPublic = folders.map((folder) => {
+        const su = folderSharedMap[folder._id.toString()] || [];
+        const override = {
+          ...(folderOverrides.get(folder.id) || {}),
+          isShared: su.length > 0,
+          sharedUsers: su,
+        };
+        return this.toFolderPublic(folder, userBasic, override as any);
+      });
+
+      remaining -= folders.length;
+    }
+
+    // 获取文件（文件夹取完后或从文件游标继续）
+    if (remaining > 0 && !hasMore) {
+      const fileQuery: Record<string, any> = {
         folder: folderObjectId,
         user: userObjectId,
         isTrashed: false,
-      }).sort({ createdAt: -1 }),
+      };
 
-      User.findById(userObjectId),
-    ]);
+      if (cursorPhase === "files" && cursorDate && cursorId) {
+        fileQuery.$or = [
+          { createdAt: { $lt: cursorDate } },
+          { createdAt: cursorDate, _id: { $lt: cursorId } },
+        ];
+      }
 
-    // 获取文件夹的访问状态
-    const resourceIds = [
-      ...folders.map((f) => f._id),
-      ...files.map((f) => f._id),
-    ];
+      const files = await File.find(fileQuery)
+        .sort({ createdAt: -1, _id: -1 })
+        .limit(remaining + 1);
+
+      if (files.length > remaining) {
+        files.pop();
+        const last = files[files.length - 1];
+        nextCursor = `files:${last.createdAt.toISOString()}:${last._id}`;
+        hasMore = true;
+      }
+
+      const fileResourceIds = files.map((f) => f._id);
+      const fileSharedMap = await this.buildSharedAccessMap(fileResourceIds);
+      const fileOverrides = await buildShortcutFileOverrides(files);
+
+      filesPublic = files.map((file) => {
+        const su = fileSharedMap[file._id.toString()] || [];
+        const override = {
+          ...(fileOverrides.get(file.id) || {}),
+          isShared: su.length > 0,
+          sharedUsers: su,
+        };
+        return this.toFilePublic(file, userBasic, override as any);
+      });
+    }
+
+    // 首页请求才返回面包屑
+    let breadcrumbs: IBreadcrumbItem[] = [];
+    if (!options?.cursor) {
+      if (currentFolder && currentFolder.ancestors.length > 0) {
+        const ancestorDocs = await Folder.find({
+          _id: { $in: currentFolder.ancestors },
+          user: userObjectId,
+        }).select("name _id");
+
+        const ancestorMap = new Map(
+          ancestorDocs.map((doc) => [String(doc._id), doc]),
+        );
+
+        breadcrumbs = currentFolder.ancestors
+          .map((ancestorId) => {
+            const doc = ancestorMap.get(ancestorId.toString());
+            if (doc) {
+              return {
+                id: String(ancestorId),
+                name: doc.name,
+              };
+            }
+            return null;
+          })
+          .filter((item): item is IBreadcrumbItem => item !== null);
+      }
+
+      if (currentFolder && !isRoot) {
+        breadcrumbs.push({
+          id: String(currentFolder._id),
+          name: currentFolder.name,
+        });
+      }
+    }
+
+    // 为根文件夹创建虚拟文件夹对象
+    const currentFolderPublic: IFolderPublic = isRoot
+      ? {
+          id: "root",
+          name: "My Drive",
+          parent: null,
+          user: userBasic,
+          color: "#5F6368",
+          description: "Root folder",
+          isStarred: false,
+          isTrashed: false,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        }
+      : this.toFolderPublic(currentFolder!, userBasic);
+
+    return {
+      currentFolder: currentFolderPublic,
+      breadcrumbs,
+      folders: foldersPublic,
+      files: filesPublic,
+      nextCursor,
+      hasMore,
+    };
+  }
+
+  private async buildSharedAccessMap(
+    resourceIds: mongoose.Types.ObjectId[],
+  ): Promise<Record<string, IUserBasic[]>> {
+    if (resourceIds.length === 0) return {};
 
     const sharedAccesses = await SharedAccess.find({
       resource: { $in: resourceIds },
@@ -632,7 +796,7 @@ export class FolderService {
       avatar?: { thumbnail?: string };
     };
 
-    const sharedAccessMap = sharedAccesses.reduce(
+    return sharedAccesses.reduce(
       (acc: Record<string, IUserBasic[]>, access: any) => {
         const resourceIdStr = access.resource.toString();
         if (!acc[resourceIdStr]) {
@@ -654,96 +818,6 @@ export class FolderService {
       },
       {} as Record<string, IUserBasic[]>,
     );
-
-    // 用户基础信息
-    const userBasic: IUserBasic = {
-      id: userId,
-      name: user?.name || "Unknown",
-      email: user?.email || "",
-      avatar: {
-        thumbnail: user?.avatar?.thumbnail || "",
-      },
-    };
-
-    // 构建面包屑导航
-    let breadcrumbs: IBreadcrumbItem[] = [];
-    if (currentFolder && currentFolder.ancestors.length > 0) {
-      const ancestorDocs = await Folder.find({
-        _id: { $in: currentFolder.ancestors },
-        user: userObjectId,
-      }).select("name _id");
-
-      const ancestorMap = new Map(
-        ancestorDocs.map((doc) => [String(doc._id), doc]),
-      );
-
-      breadcrumbs = currentFolder.ancestors
-        .map((ancestorId) => {
-          const doc = ancestorMap.get(ancestorId.toString());
-          if (doc) {
-            return {
-              id: String(ancestorId),
-              name: doc.name,
-            };
-          }
-          return null;
-        })
-        .filter((item): item is IBreadcrumbItem => item !== null);
-    }
-
-    // 添加当前文件夹到面包屑导航
-    if (currentFolder && !isRoot) {
-      breadcrumbs.push({
-        id: String(currentFolder._id),
-        name: currentFolder.name,
-      });
-    }
-
-    // 为根文件夹创建虚拟文件夹对象
-    const folderOverrides = await buildShortcutFolderOverrides(folders);
-
-    const currentFolderPublic: IFolderPublic = isRoot
-      ? {
-          id: "root",
-          name: "My Drive",
-          parent: null,
-          user: userBasic,
-          color: "#5F6368",
-          description: "Root folder",
-          isStarred: false,
-          isTrashed: false,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        }
-      : this.toFolderPublic(currentFolder!, userBasic);
-
-    const foldersPublic: IFolderPublic[] = folders.map((folder) => {
-      const su = sharedAccessMap[folder._id.toString()] || [];
-      const override = {
-        ...(folderOverrides.get(folder.id) || {}),
-        isShared: su.length > 0,
-        sharedUsers: su,
-      };
-      return this.toFolderPublic(folder, userBasic, override as any);
-    });
-
-    const fileOverrides = await buildShortcutFileOverrides(files);
-    const filesPublic: IFilePublic[] = files.map((file) => {
-      const su = sharedAccessMap[file._id.toString()] || [];
-      const override = {
-        ...(fileOverrides.get(file.id) || {}),
-        isShared: su.length > 0,
-        sharedUsers: su,
-      };
-      return this.toFilePublic(file, userBasic, override as any);
-    });
-
-    return {
-      currentFolder: currentFolderPublic,
-      breadcrumbs,
-      folders: foldersPublic,
-      files: filesPublic,
-    };
   }
 
   async starFolder(folderId: string, userId: string, star: boolean = true) {

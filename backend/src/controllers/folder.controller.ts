@@ -154,8 +154,15 @@ export class FolderController {
 
     const userId = req.user.id;
     const folderId = extractParam(req.params.folderId);
+    const limit = req.query.limit
+      ? parseInt(req.query.limit as string, 10)
+      : undefined;
+    const cursor = req.query.cursor as string | undefined;
 
-    const result = await this.folderService.getFolderContent(folderId, userId);
+    const result = await this.folderService.getFolderContent(folderId, userId, {
+      limit,
+      cursor,
+    });
 
     return ResponseHelper.ok<FolderContentResponse>(res, result);
   }

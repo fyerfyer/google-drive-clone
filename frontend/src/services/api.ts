@@ -92,13 +92,20 @@ apiClient.interceptors.response.use(
           originalRequest.headers.Authorization = `Bearer ${newToken}`;
           return apiClient(originalRequest);
         }
-      } catch {
-        // Refresh failed, clear tokens and redirect
-        localStorage.removeItem("token");
-        localStorage.removeItem("deviceId");
-        const isLoginPage = window.location.pathname === "/login";
-        if (!isLoginPage) {
-          window.location.href = "/login";
+      } catch (refreshError) {
+        // Only clear tokens and redirect on a genuine auth failure (401/403).
+        // Do NOT log the user out on a server/network error (5xx, no response).
+        const refreshStatus = (
+          refreshError as { response?: { status?: number } }
+        )?.response?.status;
+        const isAuthFailure = refreshStatus === 401 || refreshStatus === 403;
+        if (isAuthFailure) {
+          localStorage.removeItem("token");
+          localStorage.removeItem("deviceId");
+          const isLoginPage = window.location.pathname === "/login";
+          if (!isLoginPage) {
+            window.location.href = "/login";
+          }
         }
         return Promise.reject(error);
       } finally {
