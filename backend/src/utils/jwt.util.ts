@@ -14,14 +14,14 @@ interface JwtPayload {
 export const generateToken = (payload: JwtPayload): string => {
   const secret: string = config.jwtSecret;
   return jwt.sign(payload, secret, {
-    expiresIn: "15m",
+    expiresIn: config.jwtExpire,
   } as jwt.SignOptions);
 };
 
 export const generateRefreshToken = (payload: JwtPayload): string => {
   const secret: string = config.jwtRefreshSecret;
   return jwt.sign(payload, secret, {
-    expiresIn: "30d",
+    expiresIn: config.jwtRefreshExpire,
   } as jwt.SignOptions);
 };
 

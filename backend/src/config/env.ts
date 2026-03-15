@@ -16,6 +16,7 @@ interface EnvConfig {
   mongodbUri: string;
   jwtSecret: string;
   jwtExpire: string;
+  jwtRefreshExpire: string;
   jwtRefreshSecret: string;
   corsOrigin: string;
   trashRetentionDays: number;
@@ -55,7 +56,8 @@ export const config: EnvConfig = {
   nodeEnv: process.env.NODE_ENV || "development",
   mongodbUri: process.env.MONGODB_URI!,
   jwtSecret: process.env.JWT_SECRET!,
-  jwtExpire: process.env.JWT_EXPIRE || "7d",
+  jwtExpire: process.env.JWT_EXPIRE || "15m",
+  jwtRefreshExpire: process.env.JWT_REFRESH_EXPIRE || "30d",
   jwtRefreshSecret:
     process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET! + "_refresh",
   corsOrigin: process.env.CORS_ORIGIN || "http://localhost:5173",

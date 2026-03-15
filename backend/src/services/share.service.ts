@@ -53,11 +53,6 @@ export class ShareService {
     this.permissionService = permissionService || new PermissionService();
   }
 
-  // ==================== ShareLink Management ====================
-
-  /**
-   * 创建分享链接
-   */
   async createShareLink(data: CreateShareLinkRequest): Promise<IShareLink> {
     const { actorId, resourceId, resourceType, options = {} } = data;
 

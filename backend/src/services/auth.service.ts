@@ -7,7 +7,7 @@ import {
 } from "../utils/jwt.util";
 import { UserService, IUserPublic, toPublicUser } from "./user.service";
 import { redisClient } from "../config/redis";
-import { randomUUID } from "crypto";
+import { randomUUID, createHash } from "crypto";
 
 interface RegisterDTO {
   email: string;
@@ -56,6 +56,10 @@ const ACCESS_TOKEN_TTL = 15 * 60;
 const REFRESH_TOKEN_TTL = 30 * 24 * 60 * 60;
 const MAX_SESSIONS_PER_USER = 5;
 
+function hashToken(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
+}
+
 export class AuthService {
   constructor(private userService: UserService) {}
 
@@ -69,12 +73,13 @@ export class AuthService {
     refreshToken: string,
     meta: { userAgent: string; ip: string },
   ): Promise<void> {
+    const existing = await this.getStoredSession(userId, deviceId);
     const session: StoredSession = {
-      refreshToken,
+      refreshToken: hashToken(refreshToken),
       userAgent: meta.userAgent,
       ip: meta.ip,
       lastActive: new Date().toISOString(),
-      createdAt: new Date().toISOString(),
+      createdAt: existing?.createdAt ?? new Date().toISOString(),
     };
     await redisClient.set(
       this.sessionKey(userId, deviceId),
@@ -97,7 +102,21 @@ export class AuthService {
   }
 
   private async getUserSessionKeys(userId: string): Promise<string[]> {
-    return redisClient.keys(`${SESSION_PREFIX}${userId}:*`);
+    const pattern = `${SESSION_PREFIX}${userId}:*`;
+    const keys: string[] = [];
+    let cursor = "0";
+    do {
+      const [nextCursor, batch] = await redisClient.scan(
+        cursor,
+        "MATCH",
+        pattern,
+        "COUNT",
+        100,
+      );
+      cursor = nextCursor;
+      keys.push(...batch);
+    } while (cursor !== "0");
+    return keys;
   }
 
   private async enforceMaxSessions(userId: string): Promise<void> {
@@ -205,7 +224,7 @@ export class AuthService {
     const { id, email, deviceId } = verifyRefreshToken(refreshToken);
 
     const stored = await this.getStoredSession(id, deviceId);
-    if (!stored || stored.refreshToken !== refreshToken) {
+    if (!stored || stored.refreshToken !== hashToken(refreshToken)) {
       await this.removeSession(id, deviceId);
       await this.revokeDevice(id, deviceId);
       throw new AppError(StatusCodes.UNAUTHORIZED, "Refresh token revoked");
