@@ -1,11 +1,9 @@
 import type {
   IFile,
-  UploadFileProgress,
   FileUploadResponse,
   FileDownloadResponse,
 } from "@/types/file.types";
-import { api, apiClient } from "@/services/api";
-import type { AxiosProgressEvent } from "axios";
+import { api } from "@/services/api";
 import { normalizeFile, normalizeFiles } from "@/lib/type-guards";
 import HashWorker from "@/workers/hash.worker?worker";
 
@@ -42,80 +40,6 @@ export const fileService = {
 
       worker.postMessage({ file });
     });
-  },
-
-  async uploadFile(
-    file: File,
-    folderId: string,
-    onProgress?: (progress: UploadFileProgress) => void,
-  ): Promise<IFile> {
-    const hash = await this.calculateHash(file);
-    const uniqueFileId = crypto.randomUUID();
-    const formData = new FormData();
-    formData.append("file", file);
-    formData.append("folderId", folderId);
-    formData.append("hash", hash);
-
-    try {
-      // 这里需要使用 apiClient 来使用 onProgress
-      const response = await apiClient.post<{
-        success: boolean;
-        data?: FileUploadResponse;
-        message?: string;
-      }>(`${FILE_API_BASE}/upload`, formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-        onUploadProgress: (progressEvent?: AxiosProgressEvent) => {
-          if (onProgress && progressEvent?.total && progressEvent?.loaded) {
-            const progress = Math.round(
-              (progressEvent.loaded * 100) / progressEvent.total,
-            );
-            onProgress({
-              file,
-              fileId: uniqueFileId,
-              progress,
-              status: "uploading",
-            });
-          }
-        },
-      });
-
-      if (!response.data.success || !response.data.data?.file) {
-        throw new Error(response.data.message || "File upload failed");
-      }
-      onProgress?.({
-        file,
-        fileId: uniqueFileId,
-        progress: 100,
-        status: "success",
-      });
-      return normalizeFile(response.data.data.file);
-    } catch (error) {
-      let message = "An unknown error occurred during file upload.";
-      if (error instanceof Error) {
-        message = error.message;
-      }
-      onProgress?.({
-        file,
-        fileId: uniqueFileId,
-        progress: 0,
-        status: "error",
-        message: message,
-      });
-      throw error;
-    }
-  },
-
-  async uploadFiles(
-    files: File[],
-    folderId: string,
-    onProgress?: (progress: UploadFileProgress) => void,
-  ): Promise<IFile[]> {
-    const uploadPromises = files.map((file) => {
-      return this.uploadFile(file, folderId, onProgress);
-    });
-
-    const results = await Promise.all(uploadPromises);
-    return results;
   },
 
   getDownloadInfo: async (

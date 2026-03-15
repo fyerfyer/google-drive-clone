@@ -231,6 +231,7 @@ export class FolderService {
     } catch (error) {
       logger.error({ err: error, folderId, userId }, "Failed to trash folder");
       await session.abortTransaction();
+      if (error instanceof AppError) throw error;
       throw new AppError(
         StatusCodes.INTERNAL_SERVER_ERROR,
         "Failed to trash folder",
@@ -413,6 +414,7 @@ export class FolderService {
         "Failed to delete folder permanently",
       );
       await session.abortTransaction();
+      if (error instanceof AppError) throw error;
       throw new AppError(
         StatusCodes.INTERNAL_SERVER_ERROR,
         "Failed to delete folder permanently",
@@ -518,10 +520,17 @@ export class FolderService {
         "Folder ancestors updated",
       );
 
-      // 更新所有子目录
+      // 更新所有子目录，同时为每个子目录计算新的 ancestors 用于更新其下的文件
       const sonFolders = await Folder.find({
         ancestors: folderObjectId,
       }).session(session);
+
+      // 收集每个子目录的新 ancestors，用于后续更新文件
+      const subFolderNewAncestors = new Map<
+        string,
+        mongoose.Types.ObjectId[]
+      >();
+
       if (sonFolders.length > 0) {
         const bulkOps = sonFolders.map((folder) => {
           const index = folder.ancestors.findIndex((id) =>
@@ -533,6 +542,7 @@ export class FolderService {
             folderObjectId,
             ...relatedPath,
           ];
+          subFolderNewAncestors.set(folder._id.toString(), updatedAncestors);
           return {
             updateOne: {
               filter: { _id: folder._id },
@@ -543,6 +553,42 @@ export class FolderService {
 
         await Folder.bulkWrite(bulkOps, { session });
       }
+
+      // 更新文件的 ancestors（文件的 ancestors = 所在文件夹的 ancestors + 文件夹本身）
+      // 被移动文件夹中的直接文件
+      const fileBulkOps: Parameters<typeof File.bulkWrite>[0] = [
+        {
+          updateMany: {
+            filter: { folder: folderObjectId },
+            update: { $set: { ancestors: [...newAncestors, folderObjectId] } },
+          },
+        },
+      ];
+
+      // 各子文件夹中的文件
+      for (const [
+        subFolderId,
+        updatedFolderAncestors,
+      ] of subFolderNewAncestors) {
+        const subFolderObjectId = new mongoose.Types.ObjectId(subFolderId);
+        fileBulkOps.push({
+          updateMany: {
+            filter: { folder: subFolderObjectId },
+            update: {
+              $set: {
+                ancestors: [...updatedFolderAncestors, subFolderObjectId],
+              },
+            },
+          },
+        });
+      }
+
+      await File.bulkWrite(fileBulkOps, { session });
+
+      logger.debug(
+        { folderId, destinationId, movedFolderCount: sonFolders.length + 1 },
+        "Folder and file ancestors updated successfully",
+      );
 
       await session.commitTransaction();
     } catch (error) {
@@ -556,6 +602,7 @@ export class FolderService {
         "Failed to move folder",
       );
       await session.abortTransaction();
+      if (error instanceof AppError) throw error;
       throw new AppError(
         StatusCodes.INTERNAL_SERVER_ERROR,
         "Failed to move folder",
