@@ -280,6 +280,7 @@ export const DRIVE_AGENT_TOOLS = new Set([
 export const DOCUMENT_AGENT_TOOLS = new Set([
   "extract_file_content",
   "patch_file",
+  "write_file",
   "get_file_info",
   // Context 增强
   "list_folder_contents",

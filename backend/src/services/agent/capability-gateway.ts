@@ -14,6 +14,7 @@
  */
 
 import { logger } from "../../lib/logger";
+import { redisClient } from "../../config/redis";
 import {
   AgentType,
   ApprovalRequest,
@@ -37,23 +38,19 @@ import {
   waitForApproval as waitForApprovalFromStore,
 } from "./approval-store";
 
-interface RateWindow {
-  count: number;
-  windowStart: number;
-}
-
-const rateLimits = new Map<string, RateWindow>();
-const RATE_WINDOW_MS = 60_000; // 1 min
+// 限流参数。计数器存储在 Redis，所有节点共享同一窗口。
+const RATE_WINDOW_SECONDS = 60;
 const MAX_OPS_PER_WINDOW = 50;
+const RATE_KEY_PREFIX = "agent:ratelimit:";
 
 export class CapabilityGateway {
-  checkToolPermission(
+  async checkToolPermission(
     agentType: AgentType,
     toolName: string,
     userId: string,
     conversationId: string,
     args: Record<string, unknown>,
-  ): GatewayDecision {
+  ): Promise<GatewayDecision> {
     // ACL
     const toolSets: Record<AgentType, Set<string>> = {
       drive: DRIVE_AGENT_TOOLS,
@@ -81,7 +78,7 @@ export class CapabilityGateway {
     }
 
     // Rate limit
-    if (!this.checkRateLimit(userId)) {
+    if (!(await this.checkRateLimit(userId))) {
       return {
         allowed: false,
         requiresApproval: false,
@@ -110,7 +107,7 @@ export class CapabilityGateway {
       };
     }
 
-    this.incrementRateCounter(userId);
+    await this.incrementRateCounter(userId);
     return { allowed: true, requiresApproval: false };
   }
 
@@ -171,7 +168,7 @@ export class CapabilityGateway {
     if (!request) return null;
 
     if (approved) {
-      this.incrementRateCounter(userId);
+      await this.incrementRateCounter(userId);
     }
 
     return request;
@@ -218,25 +215,26 @@ export class CapabilityGateway {
     return descriptions[toolName] || `Execute dangerous operation: ${toolName}`;
   }
 
-  private checkRateLimit(userId: string): boolean {
-    const now = Date.now();
-    const window = rateLimits.get(userId);
-
-    if (!window || now - window.windowStart > RATE_WINDOW_MS) {
+  private async checkRateLimit(userId: string): Promise<boolean> {
+    try {
+      const raw = await redisClient.get(RATE_KEY_PREFIX + userId);
+      const count = raw ? parseInt(raw, 10) : 0;
+      return count < MAX_OPS_PER_WINDOW;
+    } catch (err) {
+      // Redis 故障时降级为放行，避免误伤正常用户
+      logger.warn({ err, userId }, "Rate limit check failed, allowing by default");
       return true;
     }
-
-    return window.count < MAX_OPS_PER_WINDOW;
   }
 
-  private incrementRateCounter(userId: string): void {
-    const now = Date.now();
-    const window = rateLimits.get(userId);
-
-    if (!window || now - window.windowStart > RATE_WINDOW_MS) {
-      rateLimits.set(userId, { count: 1, windowStart: now });
-    } else {
-      window.count++;
+  private async incrementRateCounter(userId: string): Promise<void> {
+    try {
+      const count = await redisClient.incr(RATE_KEY_PREFIX + userId);
+      if (count === 1) {
+        await redisClient.expire(RATE_KEY_PREFIX + userId, RATE_WINDOW_SECONDS);
+      }
+    } catch (err) {
+      logger.warn({ err, userId }, "Rate limit increment failed, skipping");
     }
   }
 }

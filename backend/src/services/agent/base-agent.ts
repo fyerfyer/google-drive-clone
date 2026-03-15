@@ -285,7 +285,7 @@ export abstract class BaseAgent {
           }).catch(() => {});
         }
 
-        const decision: GatewayDecision = this.gateway.checkToolPermission(
+        const decision: GatewayDecision = await this.gateway.checkToolPermission(
           this.agentType,
           name,
           context.userId,

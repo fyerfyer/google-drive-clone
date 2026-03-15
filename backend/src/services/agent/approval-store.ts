@@ -16,6 +16,9 @@ import {
 
 const APPROVAL_KEY_PREFIX = "agent:approval:";
 const APPROVAL_CHANNEL = "agent:approval:resolved";
+// 每个用户一个 Set，存放该用户的所有 approvalId。
+// 查询时直接 SMEMBERS 而不再 SCAN 全库。
+const USER_APPROVALS_KEY_PREFIX = "agent:approvals:user:";
 
 export interface ApprovalResolution {
   approved: boolean;
@@ -68,10 +71,21 @@ function ensureSubscribed(): void {
   });
 }
 
-// 将 ApprovalRequest 写入 Redis Hash，设置 TTL
+// 将 ApprovalRequest 写入 Redis，同时将 approvalId 加入用户索引 Set
 export async function storeApproval(request: ApprovalRequest): Promise<void> {
   const key = APPROVAL_KEY_PREFIX + request.id;
+  const userSetKey = USER_APPROVALS_KEY_PREFIX + request.userId;
+
+  // 注意顺序：先写主数据，再建索引。两者不天然原子，
+  // 但对审批场景条件下允许极小的不一致性。
   await redisClient.set(key, JSON.stringify(request), "EX", request.ttlSeconds);
+  // 索引 Set 不设独立 TTL：过期的 approvalId 对应的主 key 会自动失效，
+  // 查询时过滤就好。索引 Set 本身用较长 TTL 做兼容清理。
+  await redisClient.sadd(userSetKey, request.id);
+  await redisClient.expire(
+    userSetKey,
+    request.ttlSeconds * 10, // 应大于单个审批的 TTL，确保多个审批共存期间不会过早失效
+  );
   logger.info(
     {
       approvalId: request.id,
@@ -92,38 +106,43 @@ export async function getApproval(
 }
 
 // 获取某用户所有 pending 审批
-// 通过 SCAN 遍历前缀匹配的 key。
+// 通过用户索引 Set 直接查询，避免 SCAN 全库 key。
 export async function getPendingApprovals(
   userId: string,
 ): Promise<ApprovalRequest[]> {
+  const userSetKey = USER_APPROVALS_KEY_PREFIX + userId;
+  const approvalIds = await redisClient.smembers(userSetKey);
+  if (approvalIds.length === 0) return [];
+
+  const keys = approvalIds.map((id) => APPROVAL_KEY_PREFIX + id);
+  const values = await redisClient.mget(...keys);
+
   const results: ApprovalRequest[] = [];
-  let cursor = "0";
+  const staleIds: string[] = [];
 
-  do {
-    const [nextCursor, keys] = await redisClient.scan(
-      cursor,
-      "MATCH",
-      APPROVAL_KEY_PREFIX + "*",
-      "COUNT",
-      100,
-    );
-    cursor = nextCursor;
-
-    if (keys.length > 0) {
-      const values = await redisClient.mget(...keys);
-      for (const raw of values) {
-        if (!raw) continue;
-        try {
-          const req = JSON.parse(raw) as ApprovalRequest;
-          if (req.userId === userId && req.status === APPROVAL_STATUS.PENDING) {
-            results.push(req);
-          }
-        } catch {
-          /* skip malformed */
-        }
-      }
+  for (let i = 0; i < values.length; i++) {
+    const raw = values[i];
+    if (!raw) {
+      // 主 key 已过期，清理索引
+      staleIds.push(approvalIds[i]);
+      continue;
     }
-  } while (cursor !== "0");
+    try {
+      const req = JSON.parse(raw) as ApprovalRequest;
+      if (req.status === APPROVAL_STATUS.PENDING) {
+        results.push(req);
+      }
+    } catch {
+      staleIds.push(approvalIds[i]);
+    }
+  }
+
+  // 异步清理过期成员，不阻塞返回
+  if (staleIds.length > 0) {
+    redisClient.srem(userSetKey, ...staleIds).catch((err) => {
+      logger.warn({ err, staleIds }, "Failed to clean stale approval ids from user set");
+    });
+  }
 
   return results;
 }
@@ -145,10 +164,15 @@ export async function resolveApproval(
 
   // 检查是否已过期
   const elapsed = Date.now() - new Date(request.createdAt).getTime();
+
+  // 过期情况：从用户索引移除
   if (elapsed > request.ttlSeconds * 1000) {
     request.status = APPROVAL_STATUS.EXPIRED;
     request.resolvedAt = new Date();
     await redisClient.del(key);
+    await redisClient
+      .srem(USER_APPROVALS_KEY_PREFIX + request.userId, approvalId)
+      .catch((err) => logger.warn({ err, approvalId }, "Failed to remove expired approval from user set"));
 
     // 广播过期决议，让等待的 Agent 继续
     await redisClient.publish(
@@ -170,6 +194,11 @@ export async function resolveApproval(
     request.ttlSeconds - Math.floor(elapsed / 1000),
   );
   await redisClient.set(key, JSON.stringify(request), "EX", remainingTtl);
+
+  // 审批已决，从用户索引移除（不再 pending）
+  await redisClient
+    .srem(USER_APPROVALS_KEY_PREFIX + request.userId, approvalId)
+    .catch((err) => logger.warn({ err, approvalId }, "Failed to remove resolved approval from user set"));
 
   // 通过 Pub/Sub 广播
   await redisClient.publish(
@@ -197,7 +226,12 @@ export async function consumeApproval(
   const raw = await redisClient.get(key);
   if (raw) {
     await redisClient.del(key);
-    return JSON.parse(raw) as ApprovalRequest;
+    const request = JSON.parse(raw) as ApprovalRequest;
+    // 从用户索引清理
+    await redisClient
+      .srem(USER_APPROVALS_KEY_PREFIX + request.userId, approvalId)
+      .catch((err) => logger.warn({ err, approvalId }, "Failed to remove consumed approval from user set"));
+    return request;
   }
   return null;
 }

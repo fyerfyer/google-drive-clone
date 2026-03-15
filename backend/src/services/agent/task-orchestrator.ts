@@ -41,7 +41,6 @@ export interface StepResult {
   pendingApprovals: AgentLoopResult["pendingApprovals"];
   success: boolean;
   error?: string;
-  /** If set, the full content was offloaded to ephemeral store */
   ephemeralId?: string;
 }
 
@@ -293,7 +292,7 @@ export class TaskOrchestrator {
         title: step.title,
       },
     });
-    
+
     const folderId = baseContext.folderId || "root";
     const cacheKey = `${agentType}:${folderId}`;
     let stepContext: AgentContext;
@@ -319,7 +318,7 @@ export class TaskOrchestrator {
         documentContent: stepContext.documentContent,
         documentName: stepContext.documentName,
       });
-      skipEnrichment = true; 
+      skipEnrichment = true;
     }
 
     const stepMessages = this.buildStepMessages(
